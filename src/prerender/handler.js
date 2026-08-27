@@ -41,7 +41,7 @@ import { isAiOnlyMode, getModeFromData } from './mode-selector.js';
 import { handleAiOnlyMode } from './ai-only-handler.js';
 import { sendPrerenderGuidanceRequestToMystique } from './guidance-request.js';
 import { submitForScraping } from './submit-for-scraping.js';
-import { evictOldestSuggestionsOverCap } from './evict-suggestions-over-cap.js';
+import { evictStaleSuggestions } from './evict-stale-suggestions.js';
 
 const LOG_PREFIX = 'Prerender -';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
@@ -836,7 +836,7 @@ export async function writeToCitabilityRecords(comparisonResults, siteId, contex
  * @param {Object} context - Processing context
  * @returns {Promise<Array<{url: string, scrapedAt: string}>>} The merged pages array written
  *   to status.json (empty array on early-return or failure), reused by
- *   evictOldestSuggestionsOverCap so it doesn't need a redundant S3 read.
+ *   evictStaleSuggestions so it doesn't need a redundant S3 read.
  */
 export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
   const {
@@ -1280,10 +1280,8 @@ export async function processContentAndGenerateOpportunities(context) {
     // Upload status summary to S3 (post-processing)
     const mergedPages = await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
 
-    // Enforce the domain-wide active-suggestion cap (LLMO-6533/LLMO-6638) by evicting the
-    // least-recently-scraped suggestions, using the freshly-written status.json scrapedAt
-    // timestamps as the recency signal.
-    await evictOldestSuggestionsOverCap(opportunityWithSuggestions, context, mergedPages);
+    // Evict suggestions stale for more than SUGGESTION_STALENESS_DAYS (LLMO-7038).
+    await evictStaleSuggestions(opportunityWithSuggestions, context, mergedPages);
 
     return {
       status: 'complete',

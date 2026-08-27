@@ -22,7 +22,7 @@
  *   2. Explicit CSV urls (auditContext.urls present and non-empty)
  *        -> dedups + scope-filters only that list. Bypasses every gate below
  *           (sticky bot block) and never touches organic/included/agentic
- *           sources or the suggestion cap.
+ *           sources.
  *   3. Sticky bot block (non-Slack runs only): status.json has scrapeForbidden
  *      with scrapeForbiddenSince inside a 3-day window
  *        -> { urls: [], auditContext: { domainBlocked: true } }.
@@ -34,13 +34,11 @@
  * sliced to DAILY_BATCH_SIZE; Slack-triggered runs (without explicit urls)
  * submit the full merged set instead and skip agentic sourcing entirely.
  *
- * Note: submitForScraping does NOT enforce the active-suggestion cap
- * (LLMO-6533/LLMO-6638) — new URLs always flow through here. The cap is
- * enforced downstream in Step 3 (evict-suggestions-over-cap.js's
- * evictOldestSuggestionsOverCap, called from handler.js), which evicts the
- * least-recently-scraped suggestions once the site's PRERENDER opportunity
- * exceeds MAX_ACTIVE_SUGGESTIONS, so the freshest incoming traffic displaces
- * stale entries instead of being blocked here.
+ * Note: submitForScraping does NOT enforce stale-suggestion eviction (LLMO-7038) —
+ * new URLs always flow through here. Eviction happens downstream in Step 3
+ * (evict-stale-suggestions.js's evictStaleSuggestions, called from handler.js),
+ * which marks suggestions OUTDATED once their scrapedAt exceeds
+ * SUGGESTION_STALENESS_DAYS.
  *
  * The return shape is always:
  *   { urls: [{ url }], siteId, processingType: 'prerender', maxScrapeAge: 0,
@@ -49,7 +47,7 @@
  * Not covered here (see their own behaviour files instead):
  *   - Site-scope filtering across every URL source -> site-scope-protection.behaviour.test.js
  *   - AI-only mode step 1/3 semantics -> ai-only-mode.test.js
- *   - Active-suggestion cap eviction -> handler.test.js
+ *   - Stale-suggestion eviction -> handler.test.js
  */
 
 /* eslint-env mocha */

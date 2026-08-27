@@ -174,8 +174,8 @@ function buildScrapeStepResult(urls, siteId, auditContext) {
 
 /**
  * Gate: explicit CSV/Slack-command URL list (auditContext.urls). When present, this is the
- * only URL source considered — every gate below (sticky bot block, suggestion cap) and every
- * other source (organic/included/agentic) is bypassed.
+ * only URL source considered — every gate below (sticky bot block) and every other source
+ * (organic/included/agentic) is bypassed.
  * @param {Object} context - Audit context (uses auditContext, log)
  * @param {{preferredBase: string, siteBaseUrl: string, siteId: string}} derived
  * @returns {Object|null} Step 2 result, or null if there is no explicit URL list
@@ -354,11 +354,10 @@ async function buildAutomaticBatchCandidates(context, {
  * organic/included/agentic sources — Slack-triggered runs via buildSlackTriggeredCandidates,
  * automatic runs via buildAutomaticBatchCandidates.
  *
- * Note: the domain-wide active-suggestion cap (LLMO-6533/LLMO-6638) is NOT enforced here.
- * New URLs are always submitted for scraping; capping happens downstream in Step 3
- * (processContentAndGenerateOpportunities), which evicts the least-recently-scraped
- * suggestions once the cap is exceeded, so the freshest incoming traffic always displaces
- * stale entries rather than being blocked from entering at all.
+ * Note: stale-suggestion eviction (LLMO-7038) is NOT enforced here. New URLs are always
+ * submitted for scraping; eviction happens downstream in Step 3
+ * (processContentAndGenerateOpportunities), which marks suggestions OUTDATED once their
+ * scrapedAt exceeds SUGGESTION_STALENESS_DAYS.
  *
  * @param {Object} context - Audit context with site and dataAccess
  * @returns {Promise<Object>} - URLs to scrape and metadata OR ai-only result

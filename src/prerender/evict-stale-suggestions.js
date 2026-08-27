@@ -16,9 +16,10 @@ import {
   isPathSuggestionData,
   normalizePathnameWithQuery,
 } from './utils/utils.js';
-import { MAX_ACTIVE_SUGGESTIONS } from './utils/constants.js';
+import { SUGGESTION_STALENESS_DAYS } from './utils/constants.js';
 
 const LOG_PREFIX = 'Prerender -';
+const STALENESS_MS = SUGGESTION_STALENESS_DAYS * 24 * 60 * 60 * 1000;
 
 /**
  * True when a suggestion was last touched by a non-system actor (typically a customer email
@@ -33,14 +34,13 @@ function isManuallyEditedSuggestion(suggestion) {
 }
 
 /**
- * Statuses protected from cap eviction, beyond OUTDATED/FIXED (checked separately below).
+ * Statuses protected from stale eviction, beyond OUTDATED/FIXED (checked separately below).
  * Mirrors handleOutdatedSuggestions' excludedStatuses in ../utils/data-access.js — the
  * "disappeared URL" outdating path already refuses to touch these because they represent an
  * operator/customer decision (SKIPPED, REJECTED, APPROVED) or active work in flight
- * (IN_PROGRESS, ERROR-pending-retry). The cap-based eviction path must not be looser than
- * that: it should never force-outdate a suggestion the normal sync logic would leave alone.
+ * (IN_PROGRESS, ERROR-pending-retry). This path must not be looser than that.
  */
-const CAP_PROTECTED_STATUSES = [
+const EVICTION_PROTECTED_STATUSES = [
   Suggestion.STATUSES.ERROR,
   Suggestion.STATUSES.SKIPPED,
   Suggestion.STATUSES.REJECTED,
@@ -49,17 +49,13 @@ const CAP_PROTECTED_STATUSES = [
 ];
 
 /**
- * Determines whether a suggestion counts toward the active-suggestion cap and is eligible
- * for eviction (LLMO-6533/LLMO-6638): an individual per-URL suggestion (not domain-wide or
- * path-type) that is not already OUTDATED or FIXED, not deployed at the edge, not covered by
- * an active domain-wide deployment, not in a protected status (see CAP_PROTECTED_STATUSES),
- * and not manually edited by a customer. Those states are either already resolved, off the
- * Current tab, reflect a deliberate decision, or are otherwise protected — excluded from
- * both the count and eviction.
+ * True for an individual per-URL suggestion (not domain-wide/path-type) that is eligible for
+ * stale eviction: not already OUTDATED/FIXED, not deployed at the edge, not covered by an
+ * active domain-wide deployment, not in a protected status, and not manually edited.
  * @param {Object} suggestion - Suggestion entity
  * @returns {boolean}
  */
-function isCapEligibleSuggestion(suggestion) {
+function isEligibleForStaleEviction(suggestion) {
   const data = suggestion.getData();
   const status = suggestion.getStatus();
   return !!data?.url
@@ -67,40 +63,36 @@ function isCapEligibleSuggestion(suggestion) {
     && !isPathSuggestionData(data)
     && status !== Suggestion.STATUSES.OUTDATED
     && status !== Suggestion.STATUSES.FIXED
-    && !CAP_PROTECTED_STATUSES.includes(status)
+    && !EVICTION_PROTECTED_STATUSES.includes(status)
     && !data.edgeDeployed
     && !data.coveredByDomainWide
     && !isManuallyEditedSuggestion(suggestion);
 }
 
 /**
- * Enforces the domain-wide active-suggestion cap (LLMO-6533/LLMO-6638) by evicting the
- * least-recently-scraped suggestions once the count exceeds MAX_ACTIVE_SUGGESTIONS.
+ * Evicts (marks OUTDATED) eligible PRERENDER suggestions whose most recent scrape is more
+ * than SUGGESTION_STALENESS_DAYS old (LLMO-7038) — consistent with the customer promise that
+ * ABV runs weekly audits. Recency comes from status.json's per-URL scrapedAt (the mergedPages
+ * returned by uploadStatusSummaryToS3), stamped on every run regardless of whether that URL's
+ * analysis output changed. Missing scrapedAt is treated as stale.
  *
- * Recency comes from status.json's per-URL scrapedAt (the mergedPages returned by
- * uploadStatusSummaryToS3), which is stamped on every run regardless of whether that URL's
- * analysis output changed. A URL that keeps showing up in agentic/organic/included traffic
- * naturally stays "fresh" and is never evicted; only URLs that stop appearing in the daily
- * batch age out — so the active set is always the most recently-scraped
- * MAX_ACTIVE_SUGGESTIONS URLs, a rolling window driven by the live input source.
- *
- * Non-critical post-processing, same as uploadStatusSummaryToS3: an empty mergedPages
- * (e.g. that upload failed this run) means we have no reliable recency signal, so eviction
- * is skipped entirely rather than evicting in an arbitrary order; and any failure here is
- * caught and logged rather than allowed to fail an otherwise-successful audit run.
+ * Non-critical post-processing, same as uploadStatusSummaryToS3: an empty mergedPages (e.g.
+ * that upload failed this run) means we have no reliable recency signal, so eviction is
+ * skipped entirely rather than evicting on stale/incomplete data; any failure here is caught
+ * and logged rather than allowed to fail an otherwise-successful audit run.
  *
  * @param {Object|null} opportunity - The opportunity object (no-op if null)
  * @param {Object} context - Audit context with dataAccess and log
  * @param {Array<{url: string, scrapedAt: string}>} mergedPages - status.json pages array
  * @returns {Promise<void>}
  */
-export async function evictOldestSuggestionsOverCap(opportunity, context, mergedPages) {
+export async function evictStaleSuggestions(opportunity, context, mergedPages) {
   const { log, site, dataAccess } = context;
   if (!opportunity || typeof opportunity.getSuggestions !== 'function') {
     return;
   }
   if (mergedPages.length === 0) {
-    log.warn(`${LOG_PREFIX} Skipping suggestion cap eviction: no status.json page data available this run. baseUrl=${site.getBaseURL()}, siteId=${site.getId()}`);
+    log.warn(`${LOG_PREFIX} Skipping stale suggestion eviction: no status.json page data available this run. baseUrl=${site.getBaseURL()}, siteId=${site.getId()}`);
     return;
   }
 
@@ -112,27 +104,25 @@ export async function evictOldestSuggestionsOverCap(opportunity, context, merged
     );
 
     const suggestions = await opportunity.getSuggestions();
-    const eligible = suggestions.filter(isCapEligibleSuggestion);
+    const eligible = suggestions.filter(isEligibleForStaleEviction);
 
-    const overflow = eligible.length - MAX_ACTIVE_SUGGESTIONS;
-    if (overflow <= 0) {
+    const staleCutoffMs = Date.now() - STALENESS_MS;
+    const toEvict = eligible.filter((s) => {
+      const scrapedAt = scrapedAtByUrl.get(normalizePathnameWithQuery(s.getData().url));
+      return !scrapedAt || new Date(scrapedAt).getTime() < staleCutoffMs;
+    });
+
+    if (toEvict.length === 0) {
       return;
     }
 
-    // Missing scrapedAt (shouldn't normally happen, since status.json pages only grow) sorts
-    // first via '' — treated as the oldest, so it's evicted before any dated entry.
-    const getScrapedAt = (s) => scrapedAtByUrl.get(normalizePathnameWithQuery(s.getData().url)) ?? '';
-    const toEvict = [...eligible]
-      .sort((a, b) => getScrapedAt(a).localeCompare(getScrapedAt(b)))
-      .slice(0, overflow);
-
     await dataAccess.Suggestion.bulkUpdateStatus(toEvict, Suggestion.STATUSES.OUTDATED);
 
-    log.info(`${LOG_PREFIX} Active suggestion cap exceeded: eligible=${eligible.length}, `
-      + `cap=${MAX_ACTIVE_SUGGESTIONS}, evicted=${toEvict.length}, `
+    log.info(`${LOG_PREFIX} Stale suggestions evicted: eligible=${eligible.length}, `
+      + `staleAfterDays=${SUGGESTION_STALENESS_DAYS}, evicted=${toEvict.length}, `
       + `baseUrl=${site.getBaseURL()}, siteId=${site.getId()}`);
   } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to enforce active-suggestion cap: ${error.message}. baseUrl=${site.getBaseURL()}, siteId=${site.getId()}`, error);
+    log.error(`${LOG_PREFIX} Failed to evict stale suggestions: ${error.message}. baseUrl=${site.getBaseURL()}, siteId=${site.getId()}`, error);
     // Don't throw - this is a non-critical post-processing step; the audit itself succeeded.
   }
 }
