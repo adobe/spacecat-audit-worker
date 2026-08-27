@@ -291,13 +291,7 @@ export default async function handler(message, context) {
           ? `${slackMessage}\n${extraLines.join('\n')}`
           : slackMessage;
 
-        try {
-          await postMessageOptional(context, channelId, fullMessage, { threadTs });
-        } catch (error) {
-          ologOpp.warn('slack_notify', 'Failed to post outcome to Slack', {
-            peer: PEER.SLACK, outcome: OUTCOME.DEGRADED, ...errorField(error),
-          });
-        }
+        await postMessageOptional(context, channelId, fullMessage, { threadTs });
       }
     }
 

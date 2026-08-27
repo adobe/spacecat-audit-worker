@@ -113,7 +113,9 @@ async function postWikipediaOutcomeToSlack(context, auditId, text) {
     await postMessageOptional(context, channelId, text, { threadTs });
   } catch (e) {
     createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, auditId })
-      .warn('slack_notify', 'Failed to post outcome to Slack', { peer: PEER.SLACK, ...errorField(e) });
+      .warn('audit_persistence_slack_notified', 'Failed to post outcome to Slack', {
+        peer: PEER.SLACK, reason: 'slack_notify_failed', ...errorField(e),
+      });
   }
 }
 
