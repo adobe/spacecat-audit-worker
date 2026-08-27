@@ -13,7 +13,7 @@
 import rs from 'text-readability';
 import { load as cheerioLoad } from 'cheerio';
 import { franc } from 'franc-min';
-import { saveIntermediateResults } from '../../preflight/utils.js';
+import { saveIntermediateResults, formatStructuredAuditLog } from '../../preflight/utils.js';
 
 import { sendReadabilityToMystique } from '../shared/async-mystique.js';
 import {
@@ -96,7 +96,7 @@ async function checkForExistingSuggestions(
         audit.opportunities.forEach((opportunity, index) => {
           // Find matching suggestion by original text (suggestions stored directly as objects)
           const matchingSuggestion = suggestions.find(
-            (suggestion) => suggestion?.originalText === opportunity.textContent,
+            (suggestion) => suggestion?.originalText === opportunity.elements?.[0]?.textContent,
           );
 
           if (matchingSuggestion) {
@@ -157,6 +157,14 @@ export default async function readability(context, auditContext) {
     site, job, log,
   } = context;
   let isProcessing = false;
+  // Failure signals for the structured completion line. Unlike accessibility/form-accessibility
+  // (which poll S3 for an expected set of result files, so they compare found-vs-expected),
+  // readability scores in-process from the scrapedObjects it is handed - there is no "expected
+  // files/pages" count to fall short of. Its degradation modes are therefore: a per-element
+  // scoring error (scoringErrors), or the suggest-step Mystique dispatch throwing
+  // (suggestSendFailed).
+  let scoringErrors = 0;
+  let suggestSendFailed = false;
   const {
     previewUrls,
     step,
@@ -202,6 +210,10 @@ export default async function readability(context, auditContext) {
 
     let processedElements = 0;
     let poorReadabilityCount = 0;
+    // Per-page scoring-error tally; rolled up into the function-level scoringErrors after this
+    // page's analyses settle. Kept page-local so the in-loop analyzeReadability closure only
+    // mutates loop-scoped state (avoids no-loop-func on the shared counter).
+    let pageScoringErrors = 0;
     const detectedLanguages = new Set(); // Track languages actually detected
 
     // Helper function to detect if text is in a supported language
@@ -256,11 +268,13 @@ export default async function readability(context, auditContext) {
             fleschReadingEase: readabilityScore,
             language: detectedLanguage,
             seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
-            textContent: text, // Store normalized text for AI processing
-            ...toElementTargets(selector),
+            // The offending passage lives once, in elements[].textContent (single source of
+            // truth). The Mystique request derives its matching key from there (see below).
+            ...toElementTargets({ selector, textContent: text }),
           });
         }
       } catch (error) {
+        pageScoringErrors += 1;
         const errorContext = `element with index ${elementIndex}`;
         log.error(
           `[readability-suggest handler] readability: Error calculating readability for ${errorContext} `
@@ -350,6 +364,10 @@ export default async function readability(context, auditContext) {
     // eslint-disable-next-line no-await-in-loop
     await Promise.all(readabilityPromises);
 
+    // Roll this page's scoring errors into the run-level total (mutated here in the loop body,
+    // not inside the in-loop analyze closure, to satisfy no-loop-func).
+    scoringErrors += pageScoringErrors;
+
     const detectedLanguagesList = detectedLanguages.size > 0
       ? Array.from(detectedLanguages).join(', ')
       : 'none detected';
@@ -370,6 +388,10 @@ export default async function readability(context, auditContext) {
         // Add page URL to each issue for context
         const issuesWithContext = audit.opportunities.map((issue) => ({
           ...issue,
+          // Shared Mystique sender/matching keys on a top-level textContent; derive it from the
+          // single source (elements[].textContent) for the request copy only, so the response
+          // opportunity itself carries no duplicate top-level field.
+          textContent: issue.elements?.[0]?.textContent,
           pageUrl: pageResult.pageUrl,
         }));
         allReadabilityIssues.push(...issuesWithContext);
@@ -423,6 +445,7 @@ export default async function readability(context, auditContext) {
             + 'readability issues already have suggestions');
         }
       } catch (error) {
+        suggestSendFailed = true;
         log.error('[readability-suggest handler] readability: Error sending issues to Mystique:', {
           error: error.message,
           stack: error.stack,
@@ -466,10 +489,19 @@ export default async function readability(context, auditContext) {
   const readabilityElapsed = ((readabilityEndTime - readabilityStartTime) / 1000).toFixed(2);
   const auditStepName = step === 'suggest' ? 'readability-suggestions' : 'readability';
 
-  log.debug(
-    `[readability-suggest handler] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
-    + `Readability audit completed in ${readabilityElapsed} seconds`,
-  );
+  // Single structured completion line (info + [preflight-audit] prefix + pfauditmetric marker) so
+  // the SITES-49489 dashboard picks up readability, consistent with the other two handlers. fail =
+  // any per-element scoring error, or the suggest-step Mystique dispatch threw.
+  const failed = scoringErrors > 0 || suggestSendFailed;
+  const structured = formatStructuredAuditLog({
+    audit: PREFLIGHT_READABILITY,
+    status: failed ? 'fail' : 'ok',
+    durationMs: readabilityEndTime - readabilityStartTime,
+    error: failed
+      ? `readability degraded (scoring errors: ${scoringErrors}, suggestion dispatch failed: ${suggestSendFailed})`
+      : undefined,
+  });
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Readability audit completed in ${readabilityElapsed} seconds.${structured}`);
 
   timeExecutionBreakdown.push({
     name: auditStepName,

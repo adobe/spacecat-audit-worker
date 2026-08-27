@@ -34,6 +34,14 @@ describe('Reddit Analysis Guidance Handler', () => {
   let fetchAnalysisStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
+  let supersededRunSnapshotCreationStub;
+  let findSnapshotByTriggerAuditIdStub;
+  let resolveEvergreenOffsiteOpportunityStub;
+  let isSuppressedRunStub;
+  let prepareSuppressedRunSnapshotStub;
+  let prepareSupersededRunSnapshotStub;
+  let deleteExpiredSnapshotsStub;
+  let deleteExpiredOutdatedSuggestionsStub;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
@@ -59,6 +67,8 @@ describe('Reddit Analysis Guidance Handler', () => {
       setStatus: sandbox.stub(),
       setScopeType: sandbox.stub(),
       setScopeId: sandbox.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       save: sandbox.stub().resolves(),
     };
 
@@ -67,6 +77,69 @@ describe('Reddit Analysis Guidance Handler', () => {
     fetchAnalysisStub = sandbox.stub();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
+    supersededRunSnapshotCreationStub = sandbox.stub().resolves(null);
+    findSnapshotByTriggerAuditIdStub = sandbox.stub().resolves(null);
+    resolveEvergreenOffsiteOpportunityStub = sandbox.stub().callsFake(
+      async ({ dataAccess: da, siteId: sid, auditType: at }) => {
+        const opps = await da.Opportunity.allBySiteIdAndStatus(sid, 'NEW');
+        const matching = (opps || []).filter((o) => o.getType() === at);
+        if (matching.length === 0) return null;
+        if (matching.length === 1) return matching[0];
+
+        const [evergreen, ...duplicates] = [...matching].sort(
+          (a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()),
+        );
+        duplicates.forEach((duplicate) => {
+          duplicate.setStatus('IGNORED');
+          duplicate.setUpdatedBy('system');
+        });
+        await da.Opportunity.saveMany(duplicates);
+        return evergreen;
+      },
+    );
+    isSuppressedRunStub = sandbox.stub().callsFake((status) => status === 'IGNORED');
+
+    prepareSuppressedRunSnapshotStub = sandbox.stub().callsFake(async ({
+      triggerAuditId, opportunityData, evergreenOpportunity, log: callLog,
+    }) => {
+      if (!triggerAuditId) {
+        callLog.warn('[OffsiteSnapshot] Missing auditId; snapshot idempotency and traceability are unavailable');
+      }
+      const existingSnapshot = triggerAuditId ? await findSnapshotByTriggerAuditIdStub() : null;
+      return {
+        opportunityToUpdate: existingSnapshot,
+        opportunityData: {
+          ...opportunityData,
+          tags: [...new Set([...(opportunityData.tags || []), 'offsite-snapshot'])],
+          data: {
+            ...(opportunityData.data || {}),
+            snapshot: {
+              ...(evergreenOpportunity ? { evergreenOpportunityId: evergreenOpportunity.getId() } : {}),
+              kind: 'suppressed-refresh',
+              ...(triggerAuditId ? { triggerAuditId } : {}),
+            },
+          },
+        },
+      };
+    });
+
+    prepareSupersededRunSnapshotStub = sandbox.stub().callsFake(async ({
+      dataAccess: da, siteId: sid, auditType: at, triggerAuditId, opportunityData, evergreenOpportunity, log: callLog,
+    }) => {
+      if (evergreenOpportunity) {
+        await supersededRunSnapshotCreationStub({
+          dataAccess: da, siteId: sid, auditType: at, triggerAuditId, evergreenOpportunity, log: callLog,
+        });
+        if (!triggerAuditId) {
+          callLog.warn('[OffsiteSnapshot] Missing auditId; snapshot idempotency and traceability are unavailable');
+        }
+      }
+      return { opportunityData, opportunityToUpdate: evergreenOpportunity };
+    });
+    deleteExpiredSnapshotsStub = sandbox.stub().resolves({ eligible: 0, deleted: 0 });
+    deleteExpiredOutdatedSuggestionsStub = sandbox.stub().resolves({
+      scanned: 0, eligible: 0, deleted: 0, failed: 0,
+    });
 
     handler = await esmock('../../../src/reddit-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
@@ -74,6 +147,12 @@ describe('Reddit Analysis Guidance Handler', () => {
       },
       '../../../src/common/offsite-refresh.js': {
         persistOffsiteOpportunity: convertToOpportunityStub,
+        resolveEvergreenOffsiteOpportunity: resolveEvergreenOffsiteOpportunityStub,
+        isSuppressedRun: isSuppressedRunStub,
+      },
+      '../../../src/common/offsite-snapshot.js': {
+        prepareSuppressedRunSnapshot: prepareSuppressedRunSnapshotStub,
+        prepareSupersededRunSnapshot: prepareSupersededRunSnapshotStub,
       },
       '../../../src/utils/slack-utils.js': { postMessageOptional: mockPostMessageOptional },
       '../../../src/utils/analysis-fetch.js': {
@@ -82,6 +161,10 @@ describe('Reddit Analysis Guidance Handler', () => {
       '../../../src/utils/brand-resolver.js': {
         resolveBrandResultForSite: resolveBrandResultForSiteStub,
         applyScopeToOpportunity: realApplyScopeToOpportunity,
+      },
+      '../../../src/common/offsite-retention.js': {
+        deleteExpiredSnapshots: deleteExpiredSnapshotsStub,
+        deleteExpiredOutdatedSuggestions: deleteExpiredOutdatedSuggestionsStub,
       },
     });
 
@@ -145,7 +228,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('NEW');
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully processed Reddit analysis/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Run processed successfully/));
     });
 
     it('should pass opportunityData from BO JSON to persistOffsiteOpportunity', async () => {
@@ -232,7 +315,9 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(204);
       expect(convertToOpportunityStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith('[Reddit] No suggestions found in analysis');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/No suggestions found in analysis/).and(sinon.match(/event=audit_persistence_end/)).and(sinon.match(/outcome=skip/)),
+      );
     });
 
     it('should return noContent when suggestions property is missing from analysis', async () => {
@@ -266,8 +351,10 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(204);
+      // The upstream error text is routed to the quoted mystiqueError field, not the message.
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Mystique returned an error.*400 Bad Request/),
+        sinon.match(/Mystique returned an error/)
+          .and(sinon.match(/mystiqueError="HTTP error.*400 Bad Request"/)),
       );
       expect(convertToOpportunityStub).to.not.have.been.called;
     });
@@ -282,7 +369,9 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[Reddit] No analysis data provided in message');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/No analysis data provided in message/).and(sinon.match(/event=audit_persistence_end/)),
+      );
     });
 
     it('should return notFound when site not found', async () => {
@@ -736,9 +825,71 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
+      // The outer catch folds the error into a structured audit_persistence_end failure line
+      // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
+      // purely for stack capture (Fix B).
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing Reddit analysis/),
-        sinon.match.any,
+        sinon.match(/Error processing analysis/)
+          .and(sinon.match(/event=audit_persistence_end/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=unexpected_error/))
+          .and(sinon.match(/errorName=Error/)),
+      );
+      const outerCatchCall = context.log.error.getCalls().find(
+        (c) => /event=audit_persistence_end/.test(String(c.args[0])),
+      );
+      expect(outerCatchCall.args).to.have.lengthOf(2);
+      expect(outerCatchCall.args[1]).to.be.an('error');
+    });
+
+    it('logs a structured suggestion_sync failure and propagates when syncSuggestions throws', async () => {
+      syncSuggestionsStub.rejects(new Error('sync exploded'));
+
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=postgres/))
+          .and(sinon.match(/errorName=Error/)),
+      );
+    });
+
+    it('logs a structured suggestion_sync success on the happy path', async () => {
+      const message = {
+        siteId,
+        auditId,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            suggestions: [
+              { id: 's1', priority: 'HIGH', title: 'Test', description: 'Test' },
+            ],
+          },
+        },
+      };
+
+      await handler.default(message, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=postgres/))
+          .and(sinon.match(/opportunityId=opp-123/)),
       );
     });
 
@@ -767,7 +918,9 @@ describe('Reddit Analysis Guidance Handler', () => {
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
-      expect(context.log.error).to.have.been.calledWith('[Reddit] No analysis data provided in message');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/No analysis data provided in message/).and(sinon.match(/event=audit_persistence_end/)),
+      );
     });
 
     it('should return notFound when audit not found', async () => {
@@ -836,7 +989,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Received Reddit analysis guidance for siteId/),
+        sinon.match(/Guidance received/),
       );
     });
 
@@ -1029,10 +1182,10 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
       expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
-      // existingOpportunity is explicitly null so persistOffsiteOpportunity creates a record
+      // opportunityToUpdate is explicitly null so persistOffsiteOpportunity creates a record
       // a new opportunity, never reusing (or re-querying for) the visible one.
       const propsArg = convertToOpportunityStub.firstCall.args[5];
-      expect(propsArg).to.have.property('existingOpportunity', null);
+      expect(propsArg).to.have.property('opportunityToUpdate', null);
     });
 
     // Whether nothing exists yet, or the only prior opportunity is already IGNORED, the
@@ -1059,7 +1212,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(mockOpportunity.setStatus).to.have.been.calledWith('IGNORED');
       const propsArg = convertToOpportunityStub.firstCall.args[5];
-      expect(propsArg).to.have.property('existingOpportunity', null);
+      expect(propsArg).to.have.property('opportunityToUpdate', null);
     });
 
     it('should hand the resolved evergreen to persistOffsiteOpportunity for a surfaced run', async () => {
@@ -1078,10 +1231,13 @@ describe('Reddit Analysis Guidance Handler', () => {
       await handler.default(message, context);
 
       const propsArg = convertToOpportunityStub.firstCall.args[5];
-      expect(propsArg.existingOpportunity).to.equal(visibleOpportunity);
+      expect(propsArg.opportunityToUpdate).to.equal(visibleOpportunity);
       expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledOnce;
     });
 
+    // resolveEvergreenOffsiteOpportunityStub intentionally mirrors the duplicate-retirement
+    // logic in offsite-refresh.js (setStatus IGNORED + saveMany), so the assertions below
+    // exercise the stub's fidelity to that real behavior, not just the handler's plumbing.
     it('should lazily retire duplicate NEW opportunities of the same type via saveMany, keeping the most recent as evergreen', async () => {
       const older = {
         getId: sandbox.stub().returns('older-opp'),
@@ -1115,7 +1271,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(saveManyStub).to.have.been.calledOnce;
       expect(saveManyStub.firstCall.args[0]).to.deep.equal([older]);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
-      expect(convertToOpportunityStub.firstCall.args[5].existingOpportunity).to.equal(newer);
+      expect(convertToOpportunityStub.firstCall.args[5].opportunityToUpdate).to.equal(newer);
     });
 
     it('should propagate the error (badRequest) when duplicate retirement fails, without proceeding', async () => {
@@ -1159,9 +1315,484 @@ describe('Reddit Analysis Guidance Handler', () => {
 
       expect(result.status).to.equal(400);
       // A transient read failure must never be treated as "nothing exists yet" (which
-      // would otherwise create a duplicate NEW opportunity) — conversion is never attempted.
+      // would otherwise create a duplicate NEW opportunity) — persistence is never attempted.
       expect(convertToOpportunityStub).to.not.have.been.called;
       expect(syncSuggestionsStub).to.not.have.been.called;
+    });
+  });
+
+  describe('Suppressed and superseded run snapshots', () => {
+    const validMessage = (overrides = {}) => ({
+      siteId,
+      auditId,
+      data: {
+        companyName: 'Example Corp',
+        analysis: {
+          suggestions: [
+            { id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' },
+          ],
+        },
+      },
+      ...overrides,
+    });
+
+    it('snapshots the evergreen opportunity before a surfaced run overwrites it', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('reddit-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      await handler.default(validMessage(), context);
+
+      expect(supersededRunSnapshotCreationStub).to.have.been.calledOnce;
+      const callArgs = supersededRunSnapshotCreationStub.firstCall.args[0];
+      expect(callArgs.siteId).to.equal(siteId);
+      expect(callArgs.auditType).to.equal('reddit-analysis');
+      expect(callArgs.triggerAuditId).to.equal(auditId);
+      expect(callArgs.evergreenOpportunity).to.equal(visibleOpportunity);
+    });
+
+    it('does not attempt a snapshot on a genuine first-ever run (no evergreen exists yet)', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      await handler.default(validMessage(), context);
+
+      expect(supersededRunSnapshotCreationStub).to.not.have.been.called;
+    });
+
+    it('passes suppressed run snapshot identity in the initial create data, linked to the evergreen', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('reddit-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: {
+              status: 'IGNORED',
+              tags: ['custom-tag'],
+              data: { qa: 'suppressed' },
+            },
+            suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' }],
+          },
+        },
+      });
+
+      await handler.default(message, context);
+
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityData.tags).to.include.members(['custom-tag', 'offsite-snapshot']);
+      expect(propsArg.opportunityData.data).to.deep.equal({
+        qa: 'suppressed',
+        snapshot: {
+          evergreenOpportunityId: 'existing-opp-1',
+          kind: 'suppressed-refresh',
+          triggerAuditId: auditId,
+        },
+      });
+    });
+
+    it('passes initial suppressed run snapshot identity without a linked evergreen when none exists yet', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' }],
+          },
+        },
+      });
+
+      await handler.default(message, context);
+
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityData.tags).to.include('offsite-snapshot');
+      expect(propsArg.opportunityData.data.snapshot).to.deep.equal({
+        kind: 'suppressed-refresh',
+        triggerAuditId: auditId,
+      });
+    });
+
+    it('does not label a surfaced (NEW) run as a snapshot', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      await handler.default(validMessage(), context);
+    });
+
+    it('reuses a snapshot already tagged for this auditId instead of creating a duplicate on suppressed-run redelivery', async () => {
+      const existingSuppressedRunSnapshot = {
+        getId: sandbox.stub().returns('snapshot-opp-1'),
+      };
+      findSnapshotByTriggerAuditIdStub.resolves(existingSuppressedRunSnapshot);
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' }],
+          },
+        },
+      });
+
+      await handler.default(message, context);
+
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityToUpdate).to.equal(existingSuppressedRunSnapshot);
+    });
+
+    it('propagates the error (badRequest) when the suppressed-run snapshot idempotency lookup fails', async () => {
+      findSnapshotByTriggerAuditIdStub.rejects(new Error('DB down'));
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' }],
+          },
+        },
+      });
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(400);
+      expect(convertToOpportunityStub).to.not.have.been.called;
+    });
+
+    it('creates a superseded snapshot for a surfaced refresh when auditId is missing', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('reddit-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const result = await handler.default(validMessage({ auditId: undefined }), context);
+
+      expect(result.status).to.equal(200);
+      expect(supersededRunSnapshotCreationStub).to.have.been.calledOnce;
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(context.log.warn).to.have.been.calledWithMatch(/idempotency.*traceability/i);
+    });
+
+    it('creates a managed suppressed snapshot without lookup when auditId is missing', async () => {
+      const message = validMessage({
+        auditId: undefined,
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED', data: { qa: 'legacy' } },
+            suggestions: [{ id: 'test_1', priority: 'HIGH', title: 'Test', description: 'Test' }],
+          },
+        },
+      });
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(findSnapshotByTriggerAuditIdStub).to.not.have.been.called;
+      const propsArg = convertToOpportunityStub.firstCall.args[5];
+      expect(propsArg.opportunityData.tags).to.include('offsite-snapshot');
+      expect(propsArg.opportunityData.data).to.deep.equal({
+        qa: 'legacy',
+        snapshot: { kind: 'suppressed-refresh' },
+      });
+      expect(propsArg.opportunityData.data.snapshot).to.not.have.property('triggerAuditId');
+    });
+  });
+
+  describe('Snapshot retention', () => {
+    const validMessage = (overrides = {}) => ({
+      siteId,
+      auditId,
+      data: {
+        companyName: 'Example Corp',
+        analysis: {
+          suggestions: [
+            {
+              id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: { title: 'Test' },
+            },
+          ],
+        },
+      },
+      ...overrides,
+    });
+
+    it('deletes old snapshots once, scoped to (siteId, auditType), after a surfaced run', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('reddit-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(deleteExpiredSnapshotsStub).to.have.been.calledOnce;
+      const callArgs = deleteExpiredSnapshotsStub.firstCall.args[0];
+      expect(callArgs.siteId).to.equal(siteId);
+      expect(callArgs.auditType).to.equal('reddit-analysis');
+    });
+
+    it('deletes old snapshots once after a suppressed run', async () => {
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([]),
+      };
+
+      const message = validMessage({
+        data: {
+          companyName: 'Example Corp',
+          analysis: {
+            opportunity: { status: 'IGNORED' },
+            suggestions: [{ id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: {} }],
+          },
+        },
+      });
+
+      const result = await handler.default(message, context);
+
+      expect(result.status).to.equal(200);
+      expect(deleteExpiredSnapshotsStub).to.have.been.calledOnce;
+      const callArgs = deleteExpiredSnapshotsStub.firstCall.args[0];
+      expect(callArgs.siteId).to.equal(siteId);
+      expect(callArgs.auditType).to.equal('reddit-analysis');
+    });
+
+    it('still returns ok() when retention throws', async () => {
+      deleteExpiredSnapshotsStub.rejects(new Error('retention blew up'));
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_opportunities_deleted/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/errorMessage="retention blew up"/)),
+      );
+    });
+
+    it('does not run retention when the refresh itself fails before reaching the success path', async () => {
+      syncSuggestionsStub.rejects(new Error('sync blew up'));
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(400);
+      expect(deleteExpiredSnapshotsStub).to.not.have.been.called;
+    });
+  });
+
+  describe('Outdated-suggestion retention', () => {
+    const validMessage = (overrides = {}) => ({
+      siteId,
+      auditId,
+      data: {
+        companyName: 'Example Corp',
+        analysis: {
+          suggestions: [
+            {
+              id: 'test_1', rank: 1, type: 'CONTENT_UPDATE', data: { title: 'Test' },
+            },
+          ],
+        },
+      },
+      ...overrides,
+    });
+
+    it('prunes the refreshed opportunity after a surfaced (NEW) run, scoped correctly', async () => {
+      const visibleOpportunity = {
+        getId: sandbox.stub().returns('existing-opp-1'),
+        getType: sandbox.stub().returns('reddit-analysis'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getUpdatedAt: sandbox.stub().returns('2026-01-01T00:00:00.000Z'),
+      };
+      context.dataAccess.Opportunity = {
+        allBySiteIdAndStatus: sandbox.stub().resolves([visibleOpportunity]),
+      };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(deleteExpiredOutdatedSuggestionsStub).to.have.been.calledOnce;
+      const callArgs = deleteExpiredOutdatedSuggestionsStub.firstCall.args[0];
+      expect(callArgs.siteId).to.equal(siteId);
+      expect(callArgs.auditType).to.equal('reddit-analysis');
+      expect(callArgs.opportunity).to.equal(mockOpportunity);
+    });
+
+    it('runs suggestion retention after sync and before snapshot deletion', async () => {
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+      await handler.default(validMessage(), context);
+      expect(deleteExpiredOutdatedSuggestionsStub).to.have.been.calledAfter(syncSuggestionsStub);
+      expect(deleteExpiredOutdatedSuggestionsStub)
+        .to.have.been.calledBefore(deleteExpiredSnapshotsStub);
+    });
+
+    it('emits a single combined audit_housekeeping_end summary after both cleanups resolve', async () => {
+      deleteExpiredOutdatedSuggestionsStub.resolves({
+        scanned: 5, eligible: 3, deleted: 3, failed: 0,
+      });
+      deleteExpiredSnapshotsStub.resolves({ eligible: 2, deleted: 2 });
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/suggestionsScanned=5/))
+          .and(sinon.match(/suggestionsEligible=3/))
+          .and(sinon.match(/suggestionsDeleted=3/))
+          .and(sinon.match(/suggestionsFailed=0/))
+          .and(sinon.match(/snapshotsEligible=2/))
+          .and(sinon.match(/snapshotsDeleted=2/)),
+      );
+      expect(deleteExpiredSnapshotsStub).to.have.been.calledOnce;
+      expect(deleteExpiredOutdatedSuggestionsStub).to.have.been.calledOnce;
+    });
+
+    it('emits a degraded audit_housekeeping_end summary when suggestion cleanup fails', async () => {
+      deleteExpiredOutdatedSuggestionsStub.rejects(new Error('sugg cleanup blew up'));
+      deleteExpiredSnapshotsStub.resolves({ eligible: 0, deleted: 0 });
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      // suggestionsErrored is true because the cleanup threw, so the summary fields for
+      // suggestions fall back to the zero-defaults set before the try/catch, not any partial
+      // values from the (rejected) promise; snapshots resolved normally with its own zeros.
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/reason=partial_cleanup_failure/))
+          .and(sinon.match(/suggestionsScanned=0/))
+          .and(sinon.match(/suggestionsEligible=0/))
+          .and(sinon.match(/suggestionsDeleted=0/))
+          .and(sinon.match(/suggestionsFailed=0/))
+          .and(sinon.match(/snapshotsEligible=0/))
+          .and(sinon.match(/snapshotsDeleted=0/)),
+      );
+    });
+
+    it('escalates to degraded independently via snapshotsErrored when snapshot cleanup throws (suggestions succeed normally)', async () => {
+      deleteExpiredOutdatedSuggestionsStub.resolves({
+        scanned: 4, eligible: 1, deleted: 1, failed: 0,
+      });
+      deleteExpiredSnapshotsStub.rejects(new Error('snapshot cleanup blew up'));
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      // snapshotsErrored is true because the cleanup threw, so the summary fields for
+      // snapshots fall back to the zero-defaults; suggestions resolved normally with no
+      // failures, distinct from the already-tested "suggestions throws" path above.
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/reason=partial_cleanup_failure/))
+          .and(sinon.match(/suggestionsScanned=4/))
+          .and(sinon.match(/suggestionsEligible=1/))
+          .and(sinon.match(/suggestionsDeleted=1/))
+          .and(sinon.match(/suggestionsFailed=0/))
+          .and(sinon.match(/snapshotsEligible=0/))
+          .and(sinon.match(/snapshotsDeleted=0/)),
+      );
+    });
+
+    it('escalates to degraded when suggestion cleanup resolves normally but reports a per-batch failure (failed > 0)', async () => {
+      // This exercises the suggestionsSummary.failed > 0 branch of housekeepingHadFailure,
+      // independent of the suggestionsErrored/exception path above: deleteExpiredOutdatedSuggestions
+      // resolves normally (no throw) but its own returned summary reports a nonzero failed count
+      // (a per-batch delete failure caught inside that function).
+      deleteExpiredOutdatedSuggestionsStub.resolves({
+        scanned: 10, eligible: 4, deleted: 2, failed: 2,
+      });
+      deleteExpiredSnapshotsStub.resolves({ eligible: 0, deleted: 0 });
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/reason=partial_cleanup_failure/))
+          .and(sinon.match(/suggestionsScanned=10/))
+          .and(sinon.match(/suggestionsEligible=4/))
+          .and(sinon.match(/suggestionsDeleted=2/))
+          .and(sinon.match(/suggestionsFailed=2/))
+          .and(sinon.match(/snapshotsEligible=0/))
+          .and(sinon.match(/snapshotsDeleted=0/)),
+      );
+    });
+
+    it('does NOT run retention when the handler returns before a successful sync', async () => {
+      // syncSuggestions throwing means the refresh never completed — retention must not run.
+      syncSuggestionsStub.rejects(new Error('sync blew up'));
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(400);
+      expect(deleteExpiredOutdatedSuggestionsStub).to.not.have.been.called;
+    });
+
+    it('does NOT run retention on the empty-suggestions early return (204)', async () => {
+      const result = await handler.default(validMessage({
+        data: { companyName: 'Example Corp', analysis: { suggestions: [] } },
+      }), context);
+      expect(result.status).to.equal(204);
+      expect(deleteExpiredOutdatedSuggestionsStub).to.not.have.been.called;
+    });
+
+    it('still returns ok() when retention throws (local try/catch second safety net)', async () => {
+      deleteExpiredOutdatedSuggestionsStub.rejects(new Error('retention blew up'));
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await handler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_suggestions_deleted/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/errorMessage="retention blew up"/)),
+      );
     });
   });
 });

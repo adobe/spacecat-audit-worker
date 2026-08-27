@@ -213,7 +213,7 @@ describe('CDN Analysis Handler', () => {
     it('successfully processes CDN analysis with valid configuration', async function () {
       const result = await cdnLogsAnalysisRunner('https://example.com', context, site);
       expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
-      expect(result.auditResult.database).to.equal('cdn_logs_example_com');
+      expect(result.auditResult.database).to.equal('cdn_logs_test_site_id');
       expect(result.auditResult.providers).to.be.an('array');
 
       const deleteWasCalled = context.s3Client.send.getCalls()
@@ -757,6 +757,8 @@ describe('CDN Analysis Handler', () => {
       expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
       expect(aggregatedCall.args[0]).to.include("NOT REGEXP_LIKE(url_extract_path(COALESCE(url, ''))");
       expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|llms(-full)?\\.txt|sitemap)')");
+      // Adobe internal/proxied user agents must be filtered out at ingestion
+      expect(aggregatedCall.args[0]).to.include("AND NOT REGEXP_LIKE(request_user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
 
       expect(referralCall.args[0]).to.include("lower(response_content_type) LIKE 'text/html%'");
       expect(referralCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");

@@ -44,6 +44,11 @@ describe('offsite refresh handler composition', () => {
       getData: () => state.data,
       getUpdatedAt: () => '2026-07-01T00:00:00.000Z',
       setAuditId: sandbox.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sandbox.stub(),
+      setScopeId: sandbox.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setData: sandbox.stub().callsFake((data) => {
         state.data = data;
       }),
@@ -55,6 +60,13 @@ describe('offsite refresh handler composition', () => {
     };
     const syncSuggestions = sandbox.stub().resolves();
     const checkGoogleConnection = sandbox.stub().resolves(true);
+    const prepareSuppressedRunSnapshot = sandbox.stub();
+    const prepareSupersededRunSnapshot = sandbox.stub().callsFake(
+      async ({ opportunityData, evergreenOpportunity: evergreenOpportunityToRefresh }) => ({
+        opportunityData,
+        opportunityToUpdate: evergreenOpportunityToRefresh,
+      }),
+    );
     const log = {
       info: sandbox.spy(),
       error: sandbox.spy(),
@@ -87,6 +99,10 @@ describe('offsite refresh handler composition', () => {
     const handler = await esmock('../../src/cited-analysis/guidance-handler.js', {
       '../../src/common/opportunity-utils.js': {
         checkGoogleConnection,
+      },
+      '../../src/common/offsite-snapshot.js': {
+        prepareSuppressedRunSnapshot,
+        prepareSupersededRunSnapshot,
       },
       '../../src/utils/data-access.js': {
         syncSuggestions,

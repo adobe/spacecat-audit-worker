@@ -238,6 +238,9 @@ export default async function handler(message, context) {
       if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
         return { ...existingData };
       }
+      // Customer-edited improvements (isEdited) never reach this function on the
+      // matched-key path — syncSuggestions' centralized guard hard-skips them
+      // before merge is called (LLMO-6761).
       if (newData.shouldExclude) {
         const merged = {
           ...existingData,
@@ -273,10 +276,16 @@ export default async function handler(message, context) {
       if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
         return null;
       }
+      // Customer-edited suggestions (isEdited) never reach this function on the
+      // matched-key path — syncSuggestions' centralized guard hard-skips them
+      // before merge/status functions are called (LLMO-6761).
       return newDataItem.shouldExclude
         ? SuggestionModel.STATUSES.SKIPPED
         : defaultMergeStatusFunction(existing, newDataItem, mergeCtx);
     },
+    // Scenario 1 (LLMO-6761): keep edited improvements as-is on re-detection
+    // instead of a per-field merge.
+    skipEditedOnMatch: true,
   });
 
   // Delete the S3 response file only after syncSuggestions succeeds

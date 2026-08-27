@@ -43,6 +43,12 @@ function rebaseUrl(url, preferredBase, log) {
   }
 }
 
+// filterBySiteScope fails closed on an empty siteBaseUrl (rejects everything); prerender wants
+// an unconfigured baseURL to fall back to the unfiltered candidate list instead.
+function scopeToBaseUrl(urls, siteBaseUrl) {
+  return siteBaseUrl ? filterBySiteScope(urls, siteBaseUrl) : urls;
+}
+
 /**
  * @param {Object} status - Parsed status.json
  * @returns {boolean}
@@ -185,7 +191,7 @@ function buildExplicitCsvResult(context, { preferredBase, siteBaseUrl, siteId })
     rebasedCsvUrls,
     { includeQueryParams: true },
   );
-  const explicitUrls = filterBySiteScope(mergedCsvUrls, siteBaseUrl);
+  const explicitUrls = scopeToBaseUrl(mergedCsvUrls, siteBaseUrl);
   const scopeFilteredCount = mergedCsvUrls.length - explicitUrls.length;
 
   log.info(`
@@ -249,7 +255,7 @@ function buildSlackTriggeredCandidates({
     { includeQueryParams: true },
   );
   // Single site-scope filter on the merged candidate set (scoped here, not per-source).
-  const finalUrls = filterBySiteScope(crossDeduped, siteBaseUrl);
+  const finalUrls = scopeToBaseUrl(crossDeduped, siteBaseUrl);
 
   return {
     finalUrls,
@@ -316,7 +322,7 @@ async function buildAutomaticBatchCandidates(context, {
   );
   // Single site-scope filter on the merged candidate set, applied before the daily-batch
   // slice so out-of-scope URLs don't consume batch slots and starve in-scope ones.
-  const scopedUrls = filterBySiteScope(crossDeduped, siteBaseUrl);
+  const scopedUrls = scopeToBaseUrl(crossDeduped, siteBaseUrl);
   const finalUrls = scopedUrls.slice(0, DAILY_BATCH_SIZE);
 
   const organicUrlSet = new Set(organicDeduped);

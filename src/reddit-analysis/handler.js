@@ -21,7 +21,9 @@ import {
   MYSTIQUE_URLS_LIMIT,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  resolveForwardedUrlLimit,
   resolveEnableBrandProfile,
+  resolveEnableSemrush,
   requestOffsiteScrape,
   buildAnalysisScrapeStatusMessage,
   formatDrsExtras,
@@ -32,8 +34,15 @@ import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
+import {
+  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
+} from '../utils/offsite-logging.js';
 
-const LOG_PREFIX = '[Reddit]';
+// Human prefix for the one offsite-audit-utils helper that still logs via a passed-in prefix
+// string (resolveEnableBrandProfile, shared with the offsite-brand-presence handler). All other
+// logging in this file goes through the bound offsite logger (createOffsiteLogger), which emits
+// the same `[offsite:<audit>]` prefix.
+const HUMAN_PREFIX = `[offsite:${AUDIT.REDDIT}]`;
 
 /**
  * Reddit Analysis Audit Handler
@@ -79,12 +88,10 @@ function getRedditConfig(site) {
  */
 async function fetchStoreData(siteId, context, site) {
   const { log } = context;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.REDDIT, siteId });
   const storeClient = StoreClient.createFrom(context);
 
-  log.info(`${LOG_PREFIX} Fetching data from stores for siteId: ${siteId}`);
-
   const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.REDDIT, { sortBy: 'createdAt', sortOrder: 'desc' });
-  log.info(`${LOG_PREFIX} Retrieved ${rawUrls.length} Reddit URLs from URL Store`);
 
   const drsClient = DrsClient.createFrom(context);
   const { datasetIds } = OFFSITE_DOMAINS['reddit.com'];
@@ -93,14 +100,16 @@ async function fetchStoreData(siteId, context, site) {
     datasetIds,
     siteId,
     drsClient,
-    log,
-    LOG_PREFIX,
+    olog,
   );
-  log.info(`${LOG_PREFIX} ${urls.length} Reddit URLs available in DRS${formatDrsExtras(counts)}`);
+  olog.success('data_acquisition_drs_scrape_content_checked', `${urls.length} Reddit URLs available in DRS${formatDrsExtras(counts)}`, {
+    peer: PEER.DRS, direction: 'outbound', available: urls.length,
+  });
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
-  log.info(`${LOG_PREFIX} Computed ${topics.length} topics from brand presence data`);
-  log.debug(`${LOG_PREFIX} Brand-presence topics payload: ${JSON.stringify(topics)}`);
+  olog.success('data_acquisition_bp_data_topics_resolved', 'Computed topics from brand presence data', {
+    count: topics.length,
+  });
 
   let guidelines = [];
   try {
@@ -111,13 +120,11 @@ async function fetchStoreData(siteId, context, site) {
     guidelines = sentimentConfig.guidelines ?? [];
   } catch (error) {
     if (error instanceof StoreEmptyError) {
-      log.info(`${LOG_PREFIX} No guidelines configured for reddit-analysis, proceeding without`);
+      // store-client's getGuidelines already logged the skip; nothing else to do here.
     } else {
       throw error;
     }
   }
-
-  log.info(`${LOG_PREFIX} Retrieved ${guidelines.length} guidelines`);
 
   return {
     urls,
@@ -132,27 +139,31 @@ async function fetchStoreData(siteId, context, site) {
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
  * @param {Object} [auditContext] - SQS audit context; optional `messageData` from `message.data`
- *   (e.g. urlLimit, enableBrandProfile from Slack)
+ *   (e.g. urlLimit, enableBrandProfile, enableSemrush from Slack)
  * @returns {Promise<Object>} Audit result
  */
 async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
   const { log } = context;
   const siteId = site.getId();
+  const olog = createOffsiteLogger(log, { audit: AUDIT.REDDIT, siteId });
   // Phase-timing anchor for the Mystique phase; combined with the DRS timings threaded in
   // via auditContext (from the offsite-brand-presence DRS status handler) in the guidance
   // handler to report DRS / Mystique / total durations.
   const analysisStartedAt = Date.now();
 
-  log.info(`${LOG_PREFIX} Starting Reddit analysis audit for site: ${siteId}`);
-  log.info(`${LOG_PREFIX} auditContext: ${JSON.stringify(auditContext)}`);
+  olog.start('audit_orchestration_start', 'Audit started');
 
-  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, LOG_PREFIX);
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
+  const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
+  const enableSemrush = resolveEnableSemrush(auditContext, olog);
 
   try {
     const redditConfig = getRedditConfig(site);
 
     if (!redditConfig.companyName) {
-      log.warn(`${LOG_PREFIX} No company name configured for site, skipping audit`);
+      olog.failure('audit_orchestration_brand_profile_resolved', 'No company name configured for site; producing no result this run', {
+        outcome: OUTCOME.FAILURE, reason: 'no_company_name',
+      });
       return {
         auditResult: {
           success: false,
@@ -162,21 +173,36 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    log.info(`${LOG_PREFIX} Config: companyName=${redditConfig.companyName}, website=${redditConfig.companyWebsite}`);
+    olog.success('audit_orchestration_brand_profile_resolved', 'Brand profile resolved', {
+      companyName: redditConfig.companyName,
+      website: redditConfig.companyWebsite,
+      competitors: redditConfig.competitors.length,
+    });
+    if (redditConfig.competitors.length === 0) {
+      // Surfaces the misconfiguration before the SQS hop to Mystique. With an
+      // empty list Mystique will only count the primary brand in Share of Voice
+      // (no hardcoded fallback) — see LLMO-4909 / cited_sentiment_flow.py.
+      olog.warn('audit_orchestration_brand_profile_resolved', 'No competitors configured; Share of Voice will only include the primary brand', {
+        outcome: OUTCOME.DEGRADED, reason: 'no_competitors',
+      });
+    }
+
+    olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS', {});
 
     const storeData = await fetchStoreData(siteId, context, site);
-    log.info(`${LOG_PREFIX} Successfully fetched all store data for ${redditConfig.companyName}`);
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
     // a prior scrape (direct/scheduled run) changes the log and Slack wording so the thread
     // reads as a coherent sequence rather than a contradictory "no scrape needed".
     const scrapedNow = scrapedThisCycle(auditContext);
-    log.info(
+    olog.success(
+      'data_acquisition_end',
       scrapedNow
-        ? `${LOG_PREFIX} DRS scrape finished this cycle; ${storeData.urls.length} URL(s) ready, proceeding to Mystique`
-        : `${LOG_PREFIX} Reusing previously scraped DRS content for ${storeData.urls.length} URL(s); no new scrape needed, proceeding to Mystique`,
+        ? 'DRS scrape finished this cycle; proceeding to Mystique'
+        : 'Reusing previously scraped DRS content; no new scrape needed, proceeding to Mystique',
+      { status: 'pending_analysis', urls: storeData.urls.length, scrapedNow },
     );
 
-    const urlLimit = resolveMystiqueUrlLimit(auditContext, log, LOG_PREFIX);
+    const urlLimit = resolveMystiqueUrlLimit(auditContext, olog);
 
     const { slackContext } = auditContext;
 
@@ -196,6 +222,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       }),
       { threadTs: slackContext?.threadTs },
     );
+
+    olog.success('audit_orchestration_end', 'Audit complete', { status: 'pending_analysis' });
 
     return {
       auditResult: {
@@ -219,7 +247,9 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       // A scoped scrape already ran and the store is STILL empty → the brand has no
       // Reddit URLs to analyze. Report a terminal message instead of looping.
       if (auditContext.drsScrapeRequested) {
-        log.error(`${LOG_PREFIX} URL store still empty after scrape: ${error.message}`);
+        olog.failure('data_acquisition_url_store_read', 'URL store still empty after scrape', {
+          peer: PEER.URL_STORE, direction: 'inbound', reason: 'store_empty_after_scrape', ...errorField(error),
+        });
         await postMessageOptional(
           context,
           channelId,
@@ -234,7 +264,9 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       // First individual run with an empty store: collect + scrape just this bucket via a
       // domain-scoped offsite-brand-presence run, which re-triggers this analysis when DRS
       // completes — no need to run offsite-brand-presence for all buckets manually.
-      log.info(`${LOG_PREFIX} URL store empty, requesting a scoped scrape for reddit.com`);
+      olog.warn('data_acquisition_end', 'URL store empty, requesting a scoped scrape for reddit.com', {
+        outcome: OUTCOME.SKIP, status: 'pending_scrape', peer: PEER.URL_STORE, direction: 'inbound', reason: 'store_empty_first_attempt',
+      });
       await postMessageOptional(
         context,
         channelId,
@@ -242,7 +274,16 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
           + 'collecting & scraping Reddit URLs first, will retry automatically.',
         { threadTs },
       );
-      await requestOffsiteScrape(context, siteId, 'reddit.com', slackContext, enableBrandProfile);
+      await requestOffsiteScrape(
+        context,
+        siteId,
+        'reddit.com',
+        slackContext,
+        enableBrandProfile,
+        forwardedUrlLimit,
+        enableSemrush,
+        olog,
+      );
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
@@ -254,7 +295,9 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       const { channelId, threadTs } = slackContext || {};
       if (auditContext.drsScrapeRequested) {
         // A scrape already ran this cycle and DRS still reports no scraped content → terminal.
-        log.error(`${LOG_PREFIX} No DRS content available after scraping: ${error.message}`);
+        olog.failure('data_acquisition_drs_scrape_content_checked', 'No DRS content available after scraping', {
+          peer: PEER.DRS, direction: 'outbound', reason: 'content_not_scraped_after_retry', ...errorField(error),
+        });
         await postMessageOptional(
           context,
           channelId,
@@ -266,7 +309,9 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
           fullAuditRef: url,
         };
       }
-      log.info(`${LOG_PREFIX} URLs stored but not scraped in DRS yet, requesting a scrape for reddit.com`);
+      olog.warn('data_acquisition_end', 'URLs stored but not scraped in DRS yet, requesting a scrape for reddit.com', {
+        outcome: OUTCOME.SKIP, status: 'pending_scrape', peer: PEER.DRS, direction: 'outbound', reason: 'content_not_scraped_first_attempt',
+      });
       await postMessageOptional(
         context,
         channelId,
@@ -274,14 +319,23 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
           + 'starting a DRS scrape for reddit.com, will analyze automatically when it finishes.',
         { threadTs },
       );
-      await requestOffsiteScrape(context, siteId, 'reddit.com', slackContext, enableBrandProfile);
+      await requestOffsiteScrape(
+        context,
+        siteId,
+        'reddit.com',
+        slackContext,
+        enableBrandProfile,
+        forwardedUrlLimit,
+        enableSemrush,
+        olog,
+      );
       return {
         auditResult: { success: false, status: 'pending_scrape', error: error.message },
         fullAuditRef: url,
       };
     }
 
-    log.error(`${LOG_PREFIX} Audit failed: ${error.message}`);
+    olog.failure('audit_orchestration_end', 'Audit failed', { reason: 'unexpected_error', ...errorField(error) });
     return {
       auditResult: {
         success: false,
@@ -304,14 +358,19 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     log, sqs, env, dataAccess, audit,
   } = context;
   const { siteId, auditResult } = auditData;
+  const olog = createOffsiteLogger(log, { audit: AUDIT.REDDIT, siteId, auditId: audit?.getId() });
 
   if (!auditResult.success) {
-    log.info(`${LOG_PREFIX} Audit failed, skipping Mystique message`);
+    olog.warn('audit_analysis_start', 'Audit failed, skipping Mystique message', {
+      outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed',
+    });
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.warn(`${LOG_PREFIX} SQS or Mystique queue not configured, skipping message`);
+    olog.failure('audit_analysis_start', 'SQS or Mystique queue not configured; message dispatch unavailable this run', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'mystique_not_configured',
+    });
     return auditData;
   }
 
@@ -319,13 +378,15 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      log.warn(`${LOG_PREFIX} Site not found, skipping Mystique message`);
+      olog.failure('audit_analysis_start', 'Site not found, skipping Mystique message', {
+        outcome: OUTCOME.FAILURE, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found_at_dispatch',
+      });
       return auditData;
     }
 
     const { config, storeData } = auditResult;
     const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
-    log.info(`${LOG_PREFIX} urlLimit=${urlLimit} (URLs sent to Mystique)`);
+    olog.success('audit_analysis_scope_resolved', 'URL limit resolved', { scopeKind: 'url_limit', urlLimit });
 
     const { urls, sentimentConfig } = storeData;
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
@@ -355,22 +416,30 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     try {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
-      log.warn(`${LOG_PREFIX} Brand resolution failed unexpectedly; proceeding without scope: ${brandError.message}`);
+      olog.warn('audit_analysis_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
+        scopeKind: 'brand', outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
+      });
     }
     const message = applyBrandScope(baseMessage, brand);
 
-    log.debug(`${LOG_PREFIX} Built Mystique message type ${message.type}`);
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    const scopeForLog = brand
-      ? ` brandId=${brand.brandId}`
-      : '';
-    log.info(
-      `${LOG_PREFIX} Queued Reddit analysis request to Mystique for ${config.companyName} `
-        + `with ${enrichedUrls.length} URLs${scopeForLog}`,
+    olog.success(
+      'audit_analysis_start',
+      'Queued analysis request to Mystique',
+      {
+        peer: PEER.MYSTIQUE,
+        direction: 'outbound',
+        companyName: config.companyName,
+        urls: enrichedUrls.length,
+        messageType: message.type,
+        ...(brand && { brandId: brand.brandId }),
+      },
     );
     return auditData;
   } catch (error) {
-    log.error(`${LOG_PREFIX} Failed to send Mystique message: ${error.message}`);
+    olog.failure('audit_analysis_start', 'Failed to send Mystique message', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'unexpected_error', ...errorField(error),
+    });
     throw error;
   }
 }
@@ -378,5 +447,5 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(runRedditAnalysisAudit)
-  .withPostProcessors([sendMystiqueMessagePostProcessor])
+  .withPostProcessors([sendMystiqueMessagePostProcessor, withAuditPersistLog(AUDIT.REDDIT)])
   .build();

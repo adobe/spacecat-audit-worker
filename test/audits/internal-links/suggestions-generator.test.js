@@ -1761,6 +1761,118 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     );
   });
 
+  it('does NOT outdate a missing suggestion whose source page was not crawled this run (SITES-49911)', async () => {
+    // Coverage gap: urlFrom was not in the crawl set, so absence from newDataKeys is
+    // not evidence the link was fixed — the page simply was not re-examined this run.
+    const missingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/uncrawled-from',
+        urlTo: 'https://example.com/old-to',
+      }),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+    };
+    testOpportunity.getSuggestions.resolves([missingSuggestion]);
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/new-from',
+        urlTo: 'https://example.com/new-to',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+      crawledUrlFromSet: new Set(['https://example.com/new-from']),
+    });
+
+    expect(testContext.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+  });
+
+  it('outdates a missing suggestion whose source page WAS crawled this run (SITES-49911)', async () => {
+    // Page was re-crawled and the broken link is gone from the new set -> genuine fix.
+    const missingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/crawled-from',
+        urlTo: 'https://example.com/old-to',
+      }),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+    };
+    testOpportunity.getSuggestions.resolves([missingSuggestion]);
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/new-from',
+        urlTo: 'https://example.com/new-to',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+      crawledUrlFromSet: new Set([
+        'https://example.com/crawled-from',
+        'https://example.com/new-from',
+      ]),
+    });
+
+    expect(testContext.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+      [missingSuggestion],
+      SuggestionDataAccess.STATUSES.OUTDATED,
+    );
+  });
+
+  it('falls back to absence-only outdating when no crawl coverage set is provided (SITES-49911)', async () => {
+    // RUM-only runs pass no crawledUrlFromSet; prior behavior (outdate on absence) holds.
+    const missingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/old-from',
+        urlTo: 'https://example.com/old-to',
+      }),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+    };
+    testOpportunity.getSuggestions.resolves([missingSuggestion]);
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/new-from',
+        urlTo: 'https://example.com/new-to',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+      crawledUrlFromSet: new Set(),
+    });
+
+    expect(testContext.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
+      [missingSuggestion],
+      SuggestionDataAccess.STATUSES.OUTDATED,
+    );
+  });
+
+  it('protects edited missing suggestions from OUTDATED on rerun (LLMO-6761)', async () => {
+    // internal-links passes protectEditedFromOutdated:true, so a customer-edited
+    // suggestion whose key is absent from the new set stays put rather than being
+    // swept to OUTDATED (out of the LLMO-6761 scope, prior behavior preserved).
+    const editedMissingSuggestion = {
+      getData: testSandbox.stub().returns({
+        urlFrom: 'https://example.com/old-from',
+        urlTo: 'https://example.com/old-to',
+        isEdited: true,
+      }),
+      getStatus: testSandbox.stub().returns(SuggestionDataAccess.STATUSES.NEW),
+    };
+    testOpportunity.getSuggestions.resolves([editedMissingSuggestion]);
+
+    await syncBrokenInternalLinksSuggestions({
+      opportunity: testOpportunity,
+      brokenInternalLinks: [{
+        urlFrom: 'https://example.com/new-from',
+        urlTo: 'https://example.com/new-to',
+      }],
+      context: testContext,
+      opportunityId: 'oppty-id-1',
+    });
+
+    expect(testContext.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+  });
+
   it('does not save REJECTED suggestions on rerun (frozen updatedAt, SITES-44646)', async () => {
     const existingSuggestion = {
       getData: testSandbox.stub().returns({

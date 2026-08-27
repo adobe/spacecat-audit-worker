@@ -19,7 +19,7 @@ import {
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
-import { PROVIDER_USER_AGENT_PATTERNS } from '../common/user-agent-classification.js';
+import { PROVIDER_USER_AGENT_PATTERNS, buildAdobeInternalUaExclusion } from '../common/user-agent-classification.js';
 
 /* c8 ignore start */
 export const CDN_TYPES = {
@@ -407,16 +407,24 @@ export function resolveConsolidatedBucketName(context, region) {
   return `spacecat-${environment}-cdn-logs-aggregates-${resolvedRegion}`;
 }
 
+export function siteCatalogKey(siteId) {
+  if (!siteId) {
+    throw new Error('siteCatalogKey requires a siteId');
+  }
+  return String(siteId).replace(/-/g, '_');
+}
+
 export function getS3Config(site, context) {
   const region = resolveSiteCdnRegion(site, context);
   const siteKey = extractSiteKeyFromBaseURL(site);
   const siteKeyParts = siteKey.split(/[._]/);
   const siteName = siteKeyParts[0] === 'www' && siteKeyParts.length > 1 ? siteKeyParts[1] : siteKeyParts[0];
   const bucket = resolveConsolidatedBucketName(context, region);
-  const siteId = site?.getId?.();
-  const databaseName = `cdn_logs_${siteKey}`;
-  const tableName = `aggregated_logs_${siteKey}_consolidated`;
-  const referralTableName = `aggregated_referral_logs_${siteKey}_consolidated`;
+  const siteId = site.getId();
+  const catalogKey = siteCatalogKey(siteId);
+  const databaseName = `cdn_logs_${catalogKey}`;
+  const tableName = `aggregated_logs_${catalogKey}`;
+  const referralTableName = `aggregated_referral_logs_${catalogKey}`;
 
   return {
     bucket,
@@ -427,8 +435,8 @@ export function getS3Config(site, context) {
     databaseName,
     tableName,
     referralTableName,
-    aggregatedLocation: siteId ? `s3://${bucket}/aggregated/${siteId}/` : undefined,
-    aggregatedReferralLocation: siteId ? `s3://${bucket}/aggregated-referral/${siteId}/` : undefined,
+    aggregatedLocation: `s3://${bucket}/aggregated/${siteId}/`,
+    aggregatedReferralLocation: `s3://${bucket}/aggregated-referral/${siteId}/`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
 }
@@ -613,12 +621,12 @@ export function buildUserAgentFilter() {
   } = PROVIDER_USER_AGENT_PATTERNS;
 
   return `(
-    REGEXP_LIKE(user_agent, '${chatgpt}') OR 
-    REGEXP_LIKE(user_agent, '${perplexity}') OR 
+    REGEXP_LIKE(user_agent, '${chatgpt}') OR
+    REGEXP_LIKE(user_agent, '${perplexity}') OR
     REGEXP_LIKE(user_agent, '${googleai}') OR
     REGEXP_LIKE(user_agent, '${claude}') OR
     REGEXP_LIKE(user_agent, '${mistralai}') OR
     REGEXP_LIKE(user_agent, '${amazon}')
-  )`;
+  ) AND ${buildAdobeInternalUaExclusion()}`;
 }
 /* c8 ignore end */

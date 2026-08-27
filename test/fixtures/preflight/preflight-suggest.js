@@ -24,7 +24,7 @@ export const suggestionData = [
             seoImpact: 'Moderate',
             seoRecommendation: 'Add more meaningful content to the page',
             elements: [
-              { selector: 'body' },
+              { selector: 'body', textContent: 'Page 1 H1Page 1 H1' },
             ],
           },
         ],
@@ -44,8 +44,8 @@ export const suggestionData = [
             seoImpact: 'High',
             seoRecommendation: 'Use exactly one H1 tag per page for better SEO structure',
             elements: [
-              { selector: 'body > h1:nth-of-type(1)' },
-              { selector: 'body > h1:nth-of-type(2)' },
+              { selector: 'body > h1:nth-of-type(1)', textContent: 'Page 1 H1' },
+              { selector: 'body > h1:nth-of-type(2)', textContent: 'Page 1 H1' },
             ],
           },
         ],
@@ -59,6 +59,7 @@ export const suggestionData = [
             issue: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
             seoImpact: 'Moderate',
             seoRecommendation: 'Update the canonical URL to point to itself',
+            url: 'https://main--example--page.aem.page/wrong',
           },
         ],
       },
@@ -108,8 +109,8 @@ export const suggestionData = [
             seoRecommendation: 'Found 2 h1 elements: Pages should have only one H1 element.',
             suggestion: 'Change additional H1 elements to H2 or appropriate levels.',
             elements: [
-              { selector: 'body > h1:nth-of-type(1)' },
-              { selector: 'body > h1:nth-of-type(2)' },
+              { selector: 'body > h1:nth-of-type(1)', textContent: 'Page 1 H1' },
+              { selector: 'body > h1:nth-of-type(2)', textContent: 'Page 1 H1' },
             ],
           },
         ],

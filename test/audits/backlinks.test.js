@@ -133,6 +133,10 @@ describe('Backlinks Tests', function () {
     brokenBacklinksOpportunity = {
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
+      setScopeType: sinon.stub(),
+      setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       save: sinon.stub(),
       getSuggestions: sinon.stub().returns([]),
       addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1, 2, 3] }),
@@ -528,6 +532,158 @@ describe('Backlinks Tests', function () {
       );
 
       expect(result.auditResult.brokenBacklinks).to.have.length(0);
+    });
+  });
+
+  describe('sub-path (base-path) scoping (SITES-49721)', () => {
+    it('keeps only /us/* targets for a sub-path site, dropping same-host and boundary paths', async () => {
+      const backlinks = [
+        {
+          title: 'in scope',
+          url_from: 'https://ref.com/a',
+          url_to: 'https://foo.com/us/procurement',
+          traffic_domain: 50,
+        },
+        {
+          title: 'same host, different agency — should be dropped',
+          url_from: 'https://ref.com/b',
+          url_to: 'https://foo.com/other-agency',
+          traffic_domain: 40,
+        },
+        {
+          title: 'directory boundary sibling — should be dropped',
+          url_from: 'https://ref.com/c',
+          url_to: 'https://foo.com/us-budget/report',
+          traffic_domain: 30,
+        },
+      ];
+
+      // Only the in-scope target should ever be fetched (others are filtered out first).
+      nock('https://foo.com')
+        .get('/us/procurement')
+        .reply(404);
+
+      const subPathSite = {
+        getId: () => 'subpath-site',
+        getBaseURL: () => 'https://foo.com/us',
+        getConfig: () => Config({}),
+      };
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, subPathSite);
+      const resultUrls = result.auditResult.brokenBacklinks.map((b) => b.url_to);
+      expect(resultUrls).to.deep.equal(['https://foo.com/us/procurement']);
+    });
+
+    it('scopes to the sub-path of the configured overrideBaseURL', async () => {
+      const backlinks = [
+        {
+          title: 'in scope on override host',
+          url_from: 'https://ref.com/a',
+          url_to: 'https://applyonline.hdfc.bank.in/us/loan',
+          traffic_domain: 50,
+        },
+        {
+          title: 'boundary sibling on override host — should be dropped',
+          url_from: 'https://ref.com/b',
+          url_to: 'https://applyonline.hdfc.bank.in/us-budget',
+          traffic_domain: 40,
+        },
+      ];
+
+      nock('https://applyonline.hdfc.bank.in')
+        .get('/us/loan')
+        .reply(404);
+
+      const siteWithOverride = {
+        getId: () => 'override-subpath-site',
+        getBaseURL: () => 'https://applyonline.hdfcbank.com',
+        getConfig: () => Config({
+          fetchConfig: { overrideBaseURL: 'https://applyonline.hdfc.bank.in/us' },
+        }),
+      };
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(
+        'applyonline.hdfc.bank.in',
+        context,
+        siteWithOverride,
+      );
+      const resultUrls = result.auditResult.brokenBacklinks.map((b) => b.url_to);
+      expect(resultUrls).to.deep.equal(['https://applyonline.hdfc.bank.in/us/loan']);
+    });
+
+    it('is a no-op for root-domain sites (all same-host paths kept)', async () => {
+      const backlinks = [
+        {
+          title: 'path a',
+          url_from: 'https://ref.com/a',
+          url_to: 'https://foo.com/us/procurement',
+          traffic_domain: 50,
+        },
+        {
+          title: 'path b',
+          url_from: 'https://ref.com/b',
+          url_to: 'https://foo.com/other-agency',
+          traffic_domain: 40,
+        },
+      ];
+
+      nock('https://foo.com').get('/us/procurement').reply(404);
+      nock('https://foo.com').get('/other-agency').reply(404);
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, site2);
+      const resultUrls = result.auditResult.brokenBacklinks.map((b) => b.url_to);
+      expect(resultUrls).to.include('https://foo.com/us/procurement');
+      expect(resultUrls).to.include('https://foo.com/other-agency');
+    });
+
+    it('keeps a scheme-less in-scope target and drops a scheme-less out-of-scope one', async () => {
+      // Semrush target_url can be scheme-less; without prependSchema, isWithinAuditScope
+      // treats it as a relative path and silently drops it even when in scope.
+      const backlinks = [
+        {
+          title: 'scheme-less in scope',
+          url_from: 'https://ref.com/a',
+          url_to: 'foo.com/us/procurement',
+          traffic_domain: 50,
+        },
+        {
+          title: 'scheme-less sibling — out of scope',
+          url_from: 'https://ref.com/b',
+          url_to: 'foo.com/us-budget/report',
+          traffic_domain: 40,
+        },
+      ];
+
+      const subPathSite = {
+        getId: () => 'subpath-site',
+        getBaseURL: () => 'https://foo.com/us',
+        getConfig: () => Config({}),
+      };
+
+      mockSeoClient.getBrokenBacklinks.resolves({
+        result: { backlinks },
+        fullAuditRef: auditUrl,
+      });
+
+      const result = await brokenBacklinksAuditRunner(auditUrl, context, subPathSite);
+      const resultUrls = result.auditResult.brokenBacklinks.map((b) => b.url_to);
+      expect(resultUrls).to.include('foo.com/us/procurement');
+      expect(resultUrls).to.not.include('foo.com/us-budget/report');
     });
   });
 
@@ -1527,6 +1683,10 @@ describe('Backlinks Tests', function () {
       const mockOpportunity = {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub(),
         getSuggestions: sinon.stub().returns([]),
         addSuggestions: sinon.stub().returns(brokenBacklinksSuggestions),
@@ -1603,6 +1763,10 @@ describe('Backlinks Tests', function () {
       const mockOpportunity = {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub(),
         getSuggestions: sinon.stub().returns([]),
         addSuggestions: sinon.stub().returns(brokenBacklinksSuggestions),
@@ -1691,6 +1855,10 @@ describe('Backlinks Tests', function () {
       const mockOpportunity = {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub(),
         getSuggestions: sinon.stub().returns([]),
         addSuggestions: sinon.stub().returns(brokenBacklinksSuggestions),

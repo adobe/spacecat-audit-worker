@@ -339,7 +339,7 @@ describe('offsite-brand-presence-enrichment', function () {
       );
 
       expect(result).to.deep.equal([]);
-      expect(log.info).to.have.been.calledWithMatch(
+      expect(log.warn).to.have.been.calledWithMatch(
         /No PostgREST data for brandalf-enabled site/,
       );
     });
@@ -391,7 +391,7 @@ describe('offsite-brand-presence-enrichment', function () {
       const site = makeSite();
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
       expect(result).to.deep.equal([]);
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to read query-index for site/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to read query-index/);
     });
 
     it('aggregates topics from brand presence rows (US, reddit URL, topic)', async () => {
@@ -409,7 +409,7 @@ describe('offsite-brand-presence-enrichment', function () {
       expect(result[0].urls[0].subPrompts).to.deep.equal(['Why choose us?']);
     });
 
-    it('skips non-US rows and rows without Sources', async () => {
+    it('skips rows without Sources but processes every region', async () => {
       await setupSharePointStubs([
         { Sources: 'https://reddit.com/r/a', Region: 'EU', Topics: 'T' },
         { Sources: '', Region: 'US', Topics: 'T' },
@@ -417,7 +417,10 @@ describe('offsite-brand-presence-enrichment', function () {
       const site = makeSite();
 
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
-      expect(result).to.deep.equal([]);
+
+      // The EU row is no longer filtered on region; only the empty-Sources row is skipped.
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].name).to.equal('T');
     });
 
     it('skips empty source segments and invalid URL tokens', async () => {
@@ -482,7 +485,7 @@ describe('offsite-brand-presence-enrichment', function () {
 
       const site = makeSite();
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
-      expect(log.error).to.have.been.calledWithMatch(/Error reading brand presence sheet/);
+      expect(log.warn).to.have.been.calledWithMatch(/Error reading brand presence sheet/);
       expect(result).to.have.lengthOf(1);
     });
 
@@ -628,7 +631,7 @@ describe('offsite-brand-presence-enrichment', function () {
       });
 
       expect(result).to.be.null;
-      expect(log.info).to.have.been.calledWithMatch(
+      expect(log.warn).to.have.been.calledWithMatch(
         /No PostgREST data for brandalf-enabled site/,
       );
     });
@@ -650,7 +653,7 @@ describe('offsite-brand-presence-enrichment', function () {
       expect(result.data).to.have.lengthOf(1);
       expect(result.data[0].Sources).to.equal(row.Sources);
       expect(result.data[0].Topics).to.equal(row.Topics);
-      expect(log.info).to.have.been.calledWithMatch(
+      expect(log.warn).to.have.been.calledWithMatch(
         /No PostgREST data for brandalf-enabled site/,
       );
     });
@@ -873,7 +876,7 @@ describe('offsite-brand-presence-enrichment', function () {
       });
 
       expect(result).to.be.null;
-      expect(log.info).to.have.been.calledWithMatch(/Found 0 brand presence files/);
+      expect(log.info).to.have.been.calledWithMatch(/Found brand presence files.*files=0/);
     });
 
     it('skips a brand-presence sheet whose workbook has no worksheets', async () => {

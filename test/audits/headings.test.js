@@ -998,6 +998,9 @@ describe('Headings Audit', () => {
       expect(syncCall.args[0]).to.have.property('opportunity');
       expect(syncCall.args[0]).to.have.property('newData', auditData.suggestions.headings);
       expect(syncCall.args[0]).to.have.property('context', context);
+      // headings edited suggestions stay protected from the OUTDATED sweep — out of
+      // the LLMO-6761 scope, so prior behavior must be preserved (LLMO-6761).
+      expect(syncCall.args[0]).to.have.property('protectEditedFromOutdated', true);
     });
   });
 
@@ -2686,6 +2689,9 @@ describe('Headings Audit', () => {
       expect(syncCall.args[0]).to.have.property('opportunity');
       expect(syncCall.args[0]).to.have.property('newData', auditData.suggestions.headings);
       expect(syncCall.args[0]).to.have.property('context', context);
+      // headings edited suggestions stay protected from the OUTDATED sweep — out of
+      // the LLMO-6761 scope, so prior behavior must be preserved (LLMO-6761).
+      expect(syncCall.args[0]).to.have.property('protectEditedFromOutdated', true);
     });
 
     it('tests mapNewSuggestion function execution in opportunityAndSuggestions', async () => {
@@ -3288,6 +3294,11 @@ describe('Headings Audit', () => {
                   ]
                 }),
                 setAuditId: sinon.stub(),
+                // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+                setScopeType: sinon.stub(),
+                setScopeId: sinon.stub(),
+                getScopeType: () => null,
+                getScopeId: () => null,
                 setData: sinon.stub(),
                 setUpdatedBy: sinon.stub(),
                 save: sinon.stub().resolves(),

@@ -15,7 +15,8 @@ import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { getScrapedDataForSiteId, limitConcurrency } from '../support/utils.js';
 import { handleOutdatedSuggestions } from '../utils/data-access.js';
-import { filterByAuditScope, extractPathPrefix } from './subpath-filter.js';
+import { filterByAuditScope, extractPathPrefix, isWithinAuditScope } from './subpath-filter.js';
+import { normalizeComparableUrl } from './link-key.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
@@ -315,6 +316,16 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
         const cleanLink = { ...updatedLink };
         delete cleanLink.filteredSiteData;
         delete cleanLink.filteredHeaderLinks;
+        // Enforce audit scope/subpath on the final AI suggestions so a broken /uk/
+        // link is not "fixed" with an out-of-subpath URL (SITES-49911). On sites with
+        // no subpath, isWithinAuditScope is a no-op. If nothing survives, fall back to
+        // the in-scope site base URL rather than emitting a cross-subpath link.
+        if (Array.isArray(cleanLink.urlsSuggested) && cleanLink.urlsSuggested.length > 0) {
+          const inScope = cleanLink.urlsSuggested.filter((u) => isWithinAuditScope(u, baseURL));
+          cleanLink.urlsSuggested = inScope.length > 0
+            ? inScope
+            : getDefaultSuggestedUrls(site, {});
+        }
         return cleanLink;
       },
     ),
@@ -327,10 +338,25 @@ export async function syncBrokenInternalLinksSuggestions({
   brokenInternalLinks,
   context,
   opportunityId,
+  crawledUrlFromSet = null,
 }) {
   if (!context) {
     return;
   }
+
+  // Scope-coverage guard (SITES-49911): a broken-link suggestion should only be
+  // marked OUTDATED when its source page (urlFrom) was actually crawled this run.
+  // Absence from newDataKeys after crawling that page means the link was genuinely
+  // fixed/removed; absence when the page was never crawled is a coverage gap, not a
+  // fix. When we have no crawl coverage manifest (e.g. RUM-only runs), fall back to
+  // the previous absence-only behavior so we don't suppress legitimate outdating.
+  const isWithinCoverage = (data) => {
+    if (!crawledUrlFromSet || crawledUrlFromSet.size === 0) {
+      return true;
+    }
+    const from = normalizeComparableUrl(data?.urlFrom);
+    return Boolean(from) && crawledUrlFromSet.has(from);
+  };
 
   // Include itemType in key to distinguish between links and assets pointing to same URL
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}-${item.itemType || 'link'}`;
@@ -400,6 +426,12 @@ export async function syncBrokenInternalLinksSuggestions({
     newDataKeys,
     buildKey,
     statusToSetForOutdated: SuggestionDataAccess.STATUSES.OUTDATED,
+    // Preserve prior behavior: internal-links edited suggestions stay protected
+    // from the OUTDATED sweep. Only FAQ/Summarization/Readability changed in
+    // LLMO-6761; internal-links is out of scope (LLMO-6761).
+    protectEditedFromOutdated: true,
+    // SITES-49911: only outdate a pair whose crawled source page was covered this run.
+    isWithinCoverage,
   });
 
   // SKIPPED and REJECTED suggestions are operator decisions that must not be

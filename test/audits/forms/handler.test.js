@@ -72,6 +72,44 @@ describe('Forms Vitals audit', () => {
     );
     expect(result).to.deep.equal(expectedFormVitalsData);
   });
+
+  it('queries RUM by the bare hostname (not the sub-path) so the domainkey resolves', async () => {
+    await formsAuditRunner('https://example.com/foo', context, site);
+
+    // The RUM `domain` must be the hostname, not the sub-path audit URL.
+    const call = context.rumApiClient.queryMulti.getCalls().at(-1);
+    expect(call.args[1].domain).to.equal('example.com');
+  });
+
+  it('scopes form-vitals to the site base path, dropping out-of-scope forms', async () => {
+    const subpathContext = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+        site: { getBaseURL: () => 'https://example.com/foo' },
+        rumApiClient: {
+          queryMulti: sinon.stub().resolves({
+            cwv: [],
+            'form-vitals': [
+              { url: 'https://example.com/foo/contact' },
+              { url: 'https://example.com/foo/signup' },
+              { url: 'https://example.com/other/contact' }, // sibling agency — out of scope
+              { url: 'https://example.com/foobar' }, // boundary sibling — out of scope
+            ],
+          }),
+        },
+      })
+      .build();
+
+    const result = await formsAuditRunner('https://example.com/foo', subpathContext);
+
+    const urls = result.auditResult.formVitals.map((v) => v.url);
+    expect(urls).to.deep.equal([
+      'https://example.com/foo/contact',
+      'https://example.com/foo/signup',
+    ]);
+  });
 });
 
 describe('audit and send scraping step', () => {
@@ -105,6 +143,11 @@ describe('audit and send scraping step', () => {
       formsOppty: {
         getId: () => 'opportunity-id',
         setAuditId: sinon.stub(),
+        // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+        setScopeType: sinon.stub(),
+        setScopeId: sinon.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
         save: sinon.stub(),
         getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
       },
@@ -1351,6 +1394,11 @@ describe('process opportunity step', () => {
   let formsOppty = {
     getId: () => 'opportunity-id',
     setAuditId: sinon.stub(),
+    // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+    setScopeType: sinon.stub(),
+    setScopeId: sinon.stub(),
+    getScopeType: () => null,
+    getScopeId: () => null,
     save: sinon.stub(),
     getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
   };
@@ -1366,6 +1414,11 @@ describe('process opportunity step', () => {
     formsOppty = {
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sinon.stub(),
+      setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       save: sinon.stub(),
       getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
     };
@@ -1412,6 +1465,11 @@ describe('process opportunity step', () => {
         formsOppty: {
           getId: 'opportunity-id',
           setAuditId: sinon.stub(),
+          // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+          setScopeType: sinon.stub(),
+          setScopeId: sinon.stub(),
+          getScopeType: () => null,
+          getScopeId: () => null,
           save: sinon.stub(),
           getType: FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
         },

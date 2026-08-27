@@ -64,9 +64,15 @@ async function addSuggestions(
       if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
         return { ...existingData };
       }
+      // Customer-edited summaries (isEdited) never reach this function on the
+      // matched-key path — syncSuggestions' centralized guard hard-skips them
+      // before merge is called (LLMO-6761).
       return { ...existingData, ...newData };
     },
     scrapedUrlsSet,
+    // Scenario 1 (LLMO-6761): keep edited summaries as-is on re-detection instead
+    // of a per-field merge.
+    skipEditedOnMatch: true,
   });
 }
 

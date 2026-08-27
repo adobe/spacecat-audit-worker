@@ -16,8 +16,7 @@ import { prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
  * Checks if a URL is within the audit scope defined by baseURL.
  * For baseURL with subpath (e.g., bulk.com/uk), only URLs starting with that subpath are included.
  * For baseURL without subpath (e.g., bulk.com), all URLs are included.
- *
- * This follows the same pattern as redirect-chains audit (handler.js lines 458-493).
+ * The section landing page (`${basePath}.html`) is treated as in scope.
  *
  * @param {string} url - The URL to check (can be relative or absolute)
  * @param {string} baseURL - The base URL defining the audit scope
@@ -30,11 +29,12 @@ export function isWithinAuditScope(url, baseURL) {
   }
 
   try {
-    // Parse baseURL to extract path
+    // Parse baseURL to extract path. Trim trailing slash(es) so a baseURL like
+    // `example.com/foo/` doesn't become `/foo//` and drop legit in-scope URLs.
     const baseURLWithSchema = prependSchema(baseURL);
     const parsedBaseURL = new URL(baseURLWithSchema);
-    const basePath = parsedBaseURL.pathname;
-    const hasBasePath = basePath && basePath !== '/';
+    const basePath = parsedBaseURL.pathname.replace(/\/+$/, '');
+    const hasBasePath = basePath.length > 0;
 
     // If baseURL has no subpath, include all URLs
     if (!hasBasePath) {
@@ -43,11 +43,13 @@ export function isWithinAuditScope(url, baseURL) {
 
     // Ensure we match with a trailing slash to avoid false positives (e.g., /fr/ not /french)
     const basePathWithSlash = `${basePath}/`;
+    // The section's landing page (e.g. /foo.html) is in scope too.
+    const basePathLanding = `${basePath}.html`;
 
     // Handle relative URLs
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       // Relative URL - check if it starts with the scope path
-      return url.startsWith(basePathWithSlash) || url === basePath;
+      return url.startsWith(basePathWithSlash) || url === basePath || url === basePathLanding;
     }
 
     // Handle absolute URLs
@@ -62,7 +64,9 @@ export function isWithinAuditScope(url, baseURL) {
     }
 
     // Compare paths (protocol-agnostic)
-    return parsedUrl.pathname.startsWith(basePathWithSlash) || parsedUrl.pathname === basePath;
+    return parsedUrl.pathname.startsWith(basePathWithSlash)
+      || parsedUrl.pathname === basePath
+      || parsedUrl.pathname === basePathLanding;
   } catch (error) {
     // If URL parsing fails, exclude it to be safe
     return false;
@@ -93,8 +97,9 @@ export function filterByAuditScope(items, baseURL, options = {}, log = console) 
   try {
     const baseURLWithSchema = prependSchema(baseURL);
     const parsedBaseURL = new URL(baseURLWithSchema);
-    const basePath = parsedBaseURL.pathname;
-    const hasBasePath = basePath && basePath !== '/';
+    // Trim trailing slash(es) to stay consistent with isWithinAuditScope.
+    const basePath = parsedBaseURL.pathname.replace(/\/+$/, '');
+    const hasBasePath = basePath.length > 0;
 
     // If baseURL has no subpath, return all items
     if (!hasBasePath) {

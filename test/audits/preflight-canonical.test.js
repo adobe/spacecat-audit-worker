@@ -141,6 +141,30 @@ describe('Preflight Canonical Audit', () => {
       expect(checks).to.include('canonical-tag-multiple');
     });
 
+    it('surfaces every canonical tag selector for canonical-tag-multiple, not just the first', async () => {
+      // Protects: the whole point of this check is "there is more than one" — surfacing only
+      // one tag's selector would hide the rest from the author (SITES-48646 follow-up).
+      const ctx = buildContext();
+      const rawBody = `<html><head>
+        <link rel="canonical" href="${PAGE_URL}">
+        <link rel="canonical" href="${PAGE_URL}/duplicate">
+      </head><body></body></html>`;
+      const auditCtx = buildAuditContext([buildScrapedObject(
+        { exists: true, count: 2, href: PAGE_URL, inHead: true },
+        rawBody,
+      )]);
+
+      await canonicalHandler(ctx, auditCtx);
+
+      const { opportunities } = getCanonicalAudit(auditCtx.auditsResult);
+      const multipleTagsOpp = opportunities.find((o) => o.check === 'canonical-tag-multiple');
+      expect(multipleTagsOpp.elements).to.have.lengthOf(2);
+      expect(multipleTagsOpp.elements.map((e) => e.selector)).to.deep.equal([
+        'head > link:nth-of-type(1)',
+        'head > link:nth-of-type(2)',
+      ]);
+    });
+
     it('reports canonical-tag-empty when href is blank whitespace', async () => {
       const ctx = buildContext();
       const auditCtx = buildAuditContext([buildScrapedObject({
@@ -326,6 +350,9 @@ describe('Preflight Canonical Audit', () => {
       const [opp] = getCanonicalAudit(auditCtx.auditsResult).opportunities;
       expect(opp).to.have.all.keys('check', 'issue', 'seoImpact', 'seoRecommendation');
       expect(opp.seoImpact).to.equal('Moderate');
+      // No `suggestion` URL is emitted: the page's own URL is the editor host for
+      // author pages, so suggesting it as the canonical would be wrong.
+      expect(opp).to.not.have.property('suggestion');
     });
   });
 
@@ -352,6 +379,44 @@ describe('Preflight Canonical Audit', () => {
       await canonicalHandler(ctx, auditCtx);
 
       expect(ctx.dataAccess.AsyncJob.findById).to.have.been.calledWith('job-123');
+    });
+  });
+
+  describe('error handling', () => {
+    it('logs a structured failure line, still records timing, and rethrows', async () => {
+      const ctx = buildContext();
+      // Empty audits map: `audits.get(url)` resolves to undefined, so `.audits.push(...)`
+      // throws inside the try block — exercises the catch/finally without invasive mocking.
+      const auditCtx = buildAuditContext([], { audits: new Map() });
+
+      await expect(canonicalHandler(ctx, auditCtx)).to.be.rejected;
+
+      expect(ctx.log.error).to.have.been.calledOnce;
+      expect(ctx.log.error.getCall(0).args[0]).to.include('Canonical audit failed');
+
+      const completionCall = ctx.log.info.getCalls()
+        .find((c) => c.args[0].includes('Canonical audit completed'));
+      expect(completionCall).to.exist;
+      expect(completionCall.args[0]).to.match(/audit=canonical status=fail duration_ms=\d+ error="/);
+
+      const breakdown = auditCtx.timeExecutionBreakdown.find((e) => e.name === 'canonical');
+      expect(breakdown).to.exist;
+    });
+
+    it('logs a structured status=ok line at info level on the happy path', async () => {
+      const ctx = buildContext();
+      const auditCtx = buildAuditContext([buildScrapedObject({
+        exists: true, count: 1, href: PAGE_URL, inHead: true,
+      })]);
+
+      await canonicalHandler(ctx, auditCtx);
+
+      const completionCall = ctx.log.info.getCalls()
+        .find((c) => c.args[0].includes('Canonical audit completed'));
+      expect(completionCall).to.exist;
+      expect(completionCall.args[0]).to.match(/audit=canonical status=ok duration_ms=\d+/);
+      // No error= token on the success path.
+      expect(completionCall.args[0]).to.not.include('error=');
     });
   });
 });

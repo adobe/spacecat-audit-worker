@@ -16,6 +16,11 @@ import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import * as handlerConstants from '../../src/offsite-brand-presence/constants.js';
 import { SCRAPE_DATASET_IDS } from '@adobe/spacecat-shared-drs-client';
+import {
+  SEMRUSH_NOT_ENTITLED_REASON,
+  SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
+  SEMRUSH_ENTITLEMENT_REASONS,
+} from '../../src/utils/semrush-entitlement.js';
 
 const {
   DRS_URLS_LIMIT,
@@ -27,9 +32,12 @@ const DEFAULT_WEEK = 7;
 const DEFAULT_WEEK_2 = 6;
 const DEFAULT_YEAR = 2026;
 
-describe('Offsite Brand Presence Handler', () => {
+describe('Offsite Brand Presence Handler', function () {
+  this.timeout(10000);
+
   let sandbox;
   let mockLoadBrandPresenceData;
+  let mockLoadCitedUrlsFromSemrush;
   let mockGetPreviousWeeks;
   let mockSubmitScrapeJob;
   let mockDrsIsConfigured;
@@ -52,6 +60,7 @@ describe('Offsite Brand Presence Handler', () => {
     sandbox = sinon.createSandbox();
 
     mockLoadBrandPresenceData = sandbox.stub();
+    mockLoadCitedUrlsFromSemrush = sandbox.stub().resolves(null);
     mockGetPreviousWeeks = sandbox.stub().returns([
       { week: DEFAULT_WEEK, year: DEFAULT_YEAR },
       { week: DEFAULT_WEEK_2, year: DEFAULT_YEAR },
@@ -64,6 +73,9 @@ describe('Offsite Brand Presence Handler', () => {
       '../../src/utils/offsite-brand-presence-enrichment.js': {
         getPreviousWeeks: mockGetPreviousWeeks,
         loadBrandPresenceData: mockLoadBrandPresenceData,
+      },
+      '../../src/utils/offsite-brand-presence-semrush.js': {
+        loadCitedUrlsFromSemrush: mockLoadCitedUrlsFromSemrush,
       },
       '@adobe/spacecat-shared-drs-client': {
         default: {
@@ -201,6 +213,356 @@ describe('Offsite Brand Presence Handler', () => {
     });
   });
 
+  describe('Semrush source (OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED)', () => {
+    it('does not invoke the Semrush loader when the flag is off (regression)', async () => {
+      // flag unset in env
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult).to.not.have.property('fallbackReason');
+      expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      // Logged unconditionally so "disabled" and "event never reached" don't look
+      // identical in Splunk, and so decidedBy tells apart a Slack override from the
+      // standing env-var default.
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_bp_data_semrush_read/)
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/reason=disabled/))
+          .and(sinon.match(/decidedBy=env-var/)),
+      );
+    });
+
+    it('treats a non-"true" flag value as off (strict === true)', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'TRUE';
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
+    });
+
+    it('treats "1" as off, not a truthy flag value (strict === true)', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = '1';
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=x']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
+    });
+
+    it('uses the Semrush loader (with the expected args) and skips the legacy source when it yields URLs', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+        ['https://www.reddit.com/r/test/comments/1/p', { count: 3, domain: 'reddit.com' }],
+      ]));
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('semrush');
+      expect(result.auditResult).to.not.have.property('fallbackReason');
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
+      expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
+      // Assert the integration seam wires the right args through (site + the
+      // www-stripped siteHostname that owned-URL filtering depends on).
+      const args = mockLoadCitedUrlsFromSemrush.firstCall.args[0];
+      expect(args.site).to.equal(site);
+      expect(args.siteHostname).to.equal('example.com');
+      expect(args.context).to.equal(context);
+      expect(args.previousWeeks).to.deep.equal([
+        { week: DEFAULT_WEEK, year: DEFAULT_YEAR },
+        { week: DEFAULT_WEEK_2, year: DEFAULT_YEAR },
+      ]);
+      expect(mockLoadBrandPresenceData).to.not.have.been.called;
+    });
+
+    it('emits a structured success with the loaded URL count on a clean Semrush run', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+      ]));
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      // The happy-path load emits a structured success with the loaded URL count.
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/Loaded 1 cited URL\(s\) from Semrush/)
+          .and(sinon.match(/event=data_acquisition_bp_data_semrush_read/))
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=semrush/))
+          .and(sinon.match(/count=1/)),
+      );
+    });
+
+    it('wires onProgress to post Semrush progress updates into the Slack thread', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+      ]));
+      const slackContext = { channelId: 'C-semrush', threadTs: '111.222' };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, { slackContext });
+
+      const args = mockLoadCitedUrlsFromSemrush.firstCall.args[0];
+      expect(args.onProgress).to.be.a('function');
+
+      await args.onProgress(':mag: test update');
+
+      expect(mockPostMessageOptional).to.have.been.calledWithMatch(
+        context,
+        'C-semrush',
+        `*offsite-brand-presence* for *${BASE_URL}* — :mag: test update`,
+        { threadTs: '111.222' },
+      );
+    });
+
+    it('hard-stops (success:false, no legacy) when an enableSemrush:true run fails', async () => {
+      // Forced on via the Slack override — a failure must be visible, not masked.
+      mockLoadCitedUrlsFromSemrush.resolves(null); // null = Semrush FAILED
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']); // must NOT be used
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL, context, site, { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.dataSource).to.equal('semrush');
+      expect(result.auditResult.fallbackReason).to.equal('semrush_failed');
+      expect(result.auditResult.error).to.match(/hard stop/);
+      expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
+      expect(mockLoadBrandPresenceData).to.not.have.been.called; // no legacy fallback
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Semrush source failed/)
+          .and(sinon.match(/event=data_acquisition_bp_data_semrush_read/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/peer=semrush/))
+          .and(sinon.match(/reason=semrush_failed/)),
+      );
+    });
+
+    it('falls back to legacy when an ENV-enabled Semrush run fails (no hard stop)', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true'; // env, not the override
+      mockLoadCitedUrlsFromSemrush.resolves(null);
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal('semrush_failed');
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/falling back to PostgREST\/SharePoint/)
+          .and(sinon.match(/event=data_acquisition_bp_data_semrush_read/))
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/peer=semrush/))
+          .and(sinon.match(/reason=semrush_failed/)),
+      );
+    });
+
+    it('treats a genuinely-empty Semrush result as a zero-URL semrush run (no legacy)', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map()); // success, 0 URLs (not a failure)
+      stubBrandPresenceData(['https://www.reddit.com/r/test/comments/1/thread']); // must NOT be used
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('semrush');
+      expect(result.auditResult.urlCounts['reddit.com']).to.equal(0);
+      expect(result.auditResult).to.not.have.property('fallbackReason');
+      expect(mockLoadBrandPresenceData).to.not.have.been.called; // no legacy fallback
+    });
+
+    it('a Slack-requested enableSemrush:true override invokes the Semrush loader even when the env var is off', async () => {
+      // flag unset in env
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+      ]));
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL,
+        context,
+        site,
+        { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
+      expect(mockLoadBrandPresenceData).to.not.have.been.called;
+    });
+
+    it('a Slack-requested enableSemrush:false override skips the Semrush loader even when the env var is on', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL,
+        context,
+        site,
+        { messageData: { enableSemrush: false } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockLoadCitedUrlsFromSemrush).to.not.have.been.called;
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_bp_data_semrush_read/)
+          .and(sinon.match(/reason=disabled/))
+          .and(sinon.match(/decidedBy=slack-override/)),
+      );
+    });
+
+    it('an invalid enableSemrush override is ignored and the env var value applies, with a warning logged', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/abc', { count: 5, domain: 'youtube.com' }],
+      ]));
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL,
+        context,
+        site,
+        { messageData: { enableSemrush: 'maybe' } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockLoadCitedUrlsFromSemrush).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWithMatch(/Invalid override value in auditContext/);
+    });
+
+    it('env-enabled fallback surfaces dataSource+fallbackReason even when legacy also yields nothing', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(null);
+      mockLoadBrandPresenceData.resolves(null); // legacy empty too
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal('semrush_failed');
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+    });
+
+    it('surfaces entitlementReason on the no-URLs-found path too, when legacy also yields nothing', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = SEMRUSH_NOT_ENTITLED_REASON;
+          diagnostics.entitlementReason = SEMRUSH_ENTITLEMENT_REASONS.FLAG_DISABLED;
+        }
+        return null;
+      });
+      mockLoadBrandPresenceData.resolves(null); // legacy empty too
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal(SEMRUSH_NOT_ENTITLED_REASON);
+      expect(result.auditResult.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.FLAG_DISABLED);
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+    });
+
+    it('surfaces the loader diagnostics fallbackReason code on hard stop', async () => {
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = 'ims_token_failed';
+        }
+        return null;
+      });
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL, context, site, { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.dataSource).to.equal('semrush');
+      expect(result.auditResult.fallbackReason).to.equal('ims_token_failed');
+      expect(mockLoadBrandPresenceData).to.not.have.been.called;
+    });
+
+    it('falls back to legacy (never hard-stops) on a not-entitled brand, even with enableSemrush:true', async () => {
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = SEMRUSH_NOT_ENTITLED_REASON;
+          diagnostics.entitlementReason = SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE;
+        }
+        return null;
+      });
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL, context, site, { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal(SEMRUSH_NOT_ENTITLED_REASON);
+      expect(result.auditResult.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE);
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(log.error).to.not.have.been.called;
+      // A deliberate entitlement skip logs at warn with outcome=skip — distinct from a
+      // genuine technical failure, which logs at warn with outcome=degraded (checked
+      // below via the differing message text). A regression that swaps these branches
+      // must fail this test.
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Semrush skipped \(not_entitled\); falling back to PostgREST\/SharePoint/,
+      );
+      expect(log.warn).to.have.been.calledWithMatch(/outcome=skip/);
+      expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
+    });
+
+    it('falls back to legacy (never hard-stops) when the entitlement check itself fails, even with enableSemrush:true', async () => {
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON;
+          diagnostics.entitlementReason = SEMRUSH_ENTITLEMENT_REASONS.NO_CLIENT;
+        }
+        return null;
+      });
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL, context, site, { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal(SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON);
+      expect(result.auditResult.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_CLIENT);
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(log.error).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWithMatch(
+        /Semrush skipped \(entitlement_check_failed\); falling back to PostgREST\/SharePoint/,
+      );
+      expect(log.warn).to.have.been.calledWithMatch(/outcome=skip/);
+      expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
+    });
+
+    it('does not surface entitlementReason on a non-entitlement Semrush failure', async () => {
+      context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
+      mockLoadCitedUrlsFromSemrush.resolves(null); // fallbackReason defaults to 'semrush_failed'
+      stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.fallbackReason).to.equal('semrush_failed');
+      expect(result.auditResult).to.not.have.property('entitlementReason');
+      expect(log.warn).to.have.been.calledWithMatch(/Semrush source failed \(semrush_failed\); falling back to PostgREST\/SharePoint/);
+    });
+  });
+
   describe('URL Extraction', () => {
     it('should extract youtube.com and reddit.com URLs including subdomains', async () => {
       const urls = 'https://www.youtube.com/watch?v=x;https://www.reddit.com/r/test/';
@@ -259,24 +621,40 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
     });
 
-    it('extracts rows from accepted regions and skips others', async () => {
+    it('extracts rows from every region without any region filtering', async () => {
       mockLoadBrandPresenceData.resolves({
         data: [
-          // Not in ACCEPTED_REGIONS -> skipped.
           { Sources: 'https://youtube.com/v1', Region: 'EU' },
-          // Accepted region.
           { Sources: 'https://youtube.com/v2', Region: 'US' },
-          // Accepted non-US region.
           { Sources: 'https://youtube.com/ok', Region: 'GB' },
-          { Sources: 'https://reddit.com/r/ok/', Region: 'US' },
+          { Sources: 'https://reddit.com/r/ok/', Region: 'IN' },
         ],
       });
 
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
 
-      // US + GB YouTube URLs counted; the EU row is excluded.
-      expect(result.auditResult.urlCounts['youtube.com']).to.equal(2);
+      // All regions counted; nothing is excluded on region.
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(3);
       expect(result.auditResult.urlCounts['reddit.com']).to.equal(1);
+    });
+
+    it('merges the same URL cited from two different regions into one URL-store entry', async () => {
+      // Region never enters the allUrls map key (it's keyed by normalized URL only), so this
+      // is a regression-lock guarantee test that guards against a future change that starts
+      // keying by region.
+      mockLoadBrandPresenceData.resolves({
+        data: [
+          { Sources: 'https://www.youtube.com/watch?v=shared', Region: 'US' },
+          { Sources: 'https://www.youtube.com/watch?v=shared', Region: 'GB' },
+        ],
+      });
+
+      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
+
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
+      const createCalls = dataAccess.AuditUrl.create.getCalls()
+        .filter((c) => c.args[0].url === 'https://youtu.be/shared');
+      expect(createCalls).to.have.lengthOf(1);
     });
 
     it('should ignore non-offsite and substring-matching domains', async () => {
@@ -499,8 +877,11 @@ describe('Offsite Brand Presence Handler', () => {
       // wikipedia is no longer a scraped offsite domain, so it is not counted.
       expect(result.auditResult.urlCounts).to.not.have.property('wikipedia.org');
       expect(result.fullAuditRef).to.equal(FINAL_URL);
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/No offsite URLs found/),
+      // A clean "nothing to report this week" finding still deviates from the full happy
+      // path, so it is logged at warn while keeping outcome=skip (deliberate no-op).
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/No offsite URLs found/)
+          .and(sinon.match(/outcome=skip/)),
       );
       expect(dataAccess.AuditUrl.create).to.not.have.been.called;
     });
@@ -532,7 +913,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(dataAccess.AuditUrl.create).to.not.have.been.called;
       expect(result.auditResult.success).to.be.true;
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/0 created, 1 already existed, 0 failed/),
+        sinon.match(/created=0 existing=1 failed=0/),
       );
 
       const videosCall = mockSubmitScrapeJob.getCalls().find(
@@ -570,7 +951,7 @@ describe('Offsite Brand Presence Handler', () => {
         sinon.match(/Failed to add URL to store/),
       );
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/0 created, 0 already existed, 1 failed/),
+        sinon.match(/created=0 existing=0 failed=1/),
       );
     });
 
@@ -584,7 +965,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/2 created, 0 already existed, 1 failed/),
+        sinon.match(/created=2 existing=0 failed=1/),
       );
 
       const videosCall = mockSubmitScrapeJob.getCalls().find(
@@ -762,283 +1143,6 @@ describe('Offsite Brand Presence Handler', () => {
       const createCalls = dataAccess.AuditUrl.create.getCalls();
       const topCitedCalls = createCalls.filter((c) => c.args[0].audits[0] === 'cited-analysis');
       expect(topCitedCalls).to.have.lengthOf(DRS_URLS_LIMIT);
-    });
-  });
-
-  describe.skip('Guideline Store Integration', () => {
-    function stubWithTopicRows(rows) {
-      stubBrandPresenceData(rows);
-    }
-
-    it('should create SentimentTopic entities from brand presence data with topics', async () => {
-      const rows = [
-        {
-          Sources: 'https://youtube.com/watch?v=abc;https://example.com/page1',
-          Topic: 'BMW XM Latest',
-          Category: 'BMW',
-          Prompt: 'What is the BMW XM?',
-        },
-        {
-          Sources: 'https://youtube.com/watch?v=abc;https://example.com/page2',
-          Topic: 'BMW XM Latest',
-          Category: 'BMW',
-          Prompt: 'BMW XM review',
-        },
-      ];
-      stubWithTopicRows(rows);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(dataAccess.SentimentTopic.allBySiteId).to.have.been.calledOnceWith(SITE_ID);
-      expect(dataAccess.SentimentTopic.create).to.have.been.calledOnce;
-
-      const createArg = dataAccess.SentimentTopic.create.firstCall.args[0];
-      expect(createArg.siteId).to.equal(SITE_ID);
-      expect(createArg.name).to.equal('BMW XM Latest');
-      expect(createArg.description).to.equal('');
-      expect(createArg.enabled).to.equal(true);
-      expect(createArg.createdBy).to.equal('system');
-
-      const ytUrl = createArg.urls.find((u) => u.url === 'https://youtu.be/abc');
-      expect(ytUrl).to.exist;
-      expect(ytUrl.timesCited).to.equal(2);
-      expect(ytUrl.category).to.equal('BMW');
-      expect(ytUrl.subPrompts).to.have.members(['What is the BMW XM?', 'BMW XM review']);
-
-      const page1Url = createArg.urls.find((u) => u.url === 'https://example.com/page1');
-      expect(page1Url).to.exist;
-      expect(page1Url.timesCited).to.equal(1);
-      expect(page1Url.subPrompts).to.deep.equal(['What is the BMW XM?']);
-    });
-
-    it('should create multiple topics from different rows', async () => {
-      const rows = [
-        {
-          Sources: 'https://youtube.com/watch?v=abc', Topic: 'Topic A', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-        {
-          Sources: 'https://reddit.com/r/test/', Topic: 'Topic B', Category: 'Cat2', Prompt: 'Prompt 2',
-        },
-      ];
-      stubWithTopicRows(rows);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(dataAccess.SentimentTopic.create).to.have.been.calledTwice;
-      const names = dataAccess.SentimentTopic.create.getCalls().map((c) => c.args[0].name);
-      expect(names).to.include('Topic A');
-      expect(names).to.include('Topic B');
-    });
-
-    it('should update existing topics in place', async () => {
-      const mockExistingTopic = {
-        getName: () => 'Existing Topic',
-        setDescription: sandbox.stub(),
-        setUrls: sandbox.stub(),
-        setEnabled: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-      dataAccess.SentimentTopic.allBySiteId.resolves({ data: [mockExistingTopic] });
-
-      stubWithTopicRows([
-        {
-          Sources: 'https://example.com/page1', Topic: 'Existing Topic', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-      ]);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(mockExistingTopic.setDescription).to.have.been.calledOnceWith('');
-      expect(mockExistingTopic.setUrls).to.have.been.calledOnceWith([
-        {
-          url: 'https://example.com/page1',
-          timesCited: 1,
-          category: 'Cat1',
-          subPrompts: ['Prompt 1'],
-        },
-      ]);
-      expect(mockExistingTopic.setEnabled).to.have.been.calledOnceWith(true);
-      expect(mockExistingTopic.setUpdatedBy).to.have.been.calledOnceWith('system');
-      expect(mockExistingTopic.save).to.have.been.calledOnce;
-      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
-    });
-
-    it('should load existing topics across all pages when matching by name', async () => {
-      const pageOneTopic = {
-        getName: () => 'Other Topic',
-        setDescription: sandbox.stub(),
-        setUrls: sandbox.stub(),
-        setEnabled: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-      const pagedTopic = {
-        getName: () => 'Paged Topic',
-        setDescription: sandbox.stub(),
-        setUrls: sandbox.stub(),
-        setEnabled: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().resolves(),
-      };
-      dataAccess.SentimentTopic.allBySiteId
-        .onFirstCall()
-        .resolves({ data: [pageOneTopic], cursor: 'next-page' });
-      dataAccess.SentimentTopic.allBySiteId
-        .onSecondCall()
-        .resolves({ data: [pagedTopic], cursor: null });
-
-      stubWithTopicRows([
-        {
-          Sources: 'https://example.com/page1', Topic: 'Paged Topic', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-      ]);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(dataAccess.SentimentTopic.allBySiteId.firstCall).to.have.been.calledWithExactly(SITE_ID, {});
-      expect(dataAccess.SentimentTopic.allBySiteId.secondCall).to.have.been.calledWithExactly(SITE_ID, { cursor: 'next-page' });
-      expect(pageOneTopic.save).to.not.have.been.called;
-      expect(pagedTopic.setDescription).to.have.been.calledOnceWith('');
-      expect(pagedTopic.setEnabled).to.have.been.calledOnceWith(true);
-      expect(pagedTopic.setUpdatedBy).to.have.been.calledOnceWith('system');
-      expect(pagedTopic.save).to.have.been.calledOnce;
-      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
-    });
-
-    it('should deduplicate subPrompts across providers', async () => {
-      const sharedPrompt = 'What is the BMW XM?';
-      const rows = [
-        {
-          Sources: 'https://example.com/page1', Topic: 'BMW XM', Category: 'BMW', Prompt: sharedPrompt,
-        },
-        {
-          Sources: 'https://example.com/page1', Topic: 'BMW XM', Category: 'BMW', Prompt: sharedPrompt,
-        },
-      ];
-      stubWithTopicRows(rows);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      const createArg = dataAccess.SentimentTopic.create.firstCall.args[0];
-      expect(createArg.urls[0].subPrompts).to.deep.equal([sharedPrompt]);
-    });
-
-    it('should use global timesCited count from allUrls', async () => {
-      const rows = [
-        {
-          Sources: 'https://example.com/shared', Topic: 'Topic A', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-        {
-          Sources: 'https://example.com/shared', Topic: 'Topic B', Category: 'Cat2', Prompt: 'Prompt 2',
-        },
-        { Sources: 'https://example.com/shared' },
-      ];
-      stubWithTopicRows(rows);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      const createCalls = dataAccess.SentimentTopic.create.getCalls();
-      for (const call of createCalls) {
-        const urlEntry = call.args[0].urls.find((u) => u.url === 'https://example.com/shared');
-        expect(urlEntry.timesCited).to.equal(3);
-      }
-    });
-
-    it('should skip topic creation when no topics are present in data', async () => {
-      stubBrandPresenceData(['https://youtube.com/watch?v=abc']);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(dataAccess.SentimentTopic.allBySiteId).to.not.have.been.called;
-      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
-    });
-
-    it('should handle topic create failure gracefully', async () => {
-      dataAccess.SentimentTopic.create.rejects(new Error('DynamoDB error'));
-      stubWithTopicRows([
-        {
-          Sources: 'https://example.com/page1', Topic: 'Failing Topic', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-      ]);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to save topic Failing Topic/),
-      );
-    });
-
-    it('should handle topic save failure gracefully for existing topics', async () => {
-      const mockExistingTopic = {
-        getName: () => 'Existing Topic',
-        setDescription: sandbox.stub(),
-        setUrls: sandbox.stub(),
-        setEnabled: sandbox.stub(),
-        setUpdatedBy: sandbox.stub(),
-        save: sandbox.stub().rejects(new Error('DynamoDB error')),
-      };
-      dataAccess.SentimentTopic.allBySiteId.resolves({ data: [mockExistingTopic] });
-      stubWithTopicRows([
-        {
-          Sources: 'https://example.com/page1', Topic: 'Existing Topic', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-      ]);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(mockExistingTopic.save).to.have.been.calledOnce;
-      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/Failed to save topic Existing Topic/),
-      );
-    });
-
-    it('should handle allBySiteId returning result with no data property', async () => {
-      dataAccess.SentimentTopic.allBySiteId.resolves({});
-      stubWithTopicRows([
-        {
-          Sources: 'https://example.com/page1', Topic: 'New Topic', Category: 'Cat1', Prompt: 'Prompt 1',
-        },
-      ]);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(dataAccess.SentimentTopic.create).to.have.been.calledOnce;
-      expect(dataAccess.SentimentTopic.create.firstCall.args[0].name).to.equal('New Topic');
-    });
-
-    it('should skip topic when all its URLs are invalid', async () => {
-      stubWithTopicRows([
-        {
-          Sources: 'not-a-valid-url;also-not-valid', Topic: 'Empty Topic', Category: 'Cat', Prompt: 'Prompt',
-        },
-      ]);
-
-      const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(dataAccess.SentimentTopic.allBySiteId).to.not.have.been.called;
-      expect(dataAccess.SentimentTopic.create).to.not.have.been.called;
-    });
-
-    it('should skip rows without Topic field for topic tracking but still count URLs', async () => {
-      stubWithTopicRows([
-        {
-          Sources: 'https://youtube.com/watch?v=abc', Topic: 'My Topic', Category: 'Cat', Prompt: 'Prompt A',
-        },
-        { Sources: 'https://youtube.com/watch?v=abc' },
-      ]);
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site);
-
-      expect(dataAccess.SentimentTopic.create).to.have.been.calledOnce;
-      const createArg = dataAccess.SentimentTopic.create.firstCall.args[0];
-      expect(createArg.urls[0].timesCited).to.equal(2);
-      expect(createArg.urls[0].subPrompts).to.deep.equal(['Prompt A']);
     });
   });
 
@@ -1263,7 +1367,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.drsJobs[0].status).to.equal('error');
       expect(result.auditResult.drsJobs[0].error).to.include('503');
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/DRS job failed/),
+        sinon.match(/DRS job submission failed/),
       );
     });
 
@@ -1282,7 +1386,7 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.drsJobs[0].status).to.equal('success');
       expect(result.auditResult.drsJobs[0].response.job_id).to.equal('retry-ok');
       expect(log.warn).to.have.been.calledWith(
-        sinon.match(/failed \(attempt 1\), retrying in 500ms/),
+        sinon.match(/DRS job submission failed; retrying/).and(sinon.match(/delayMs=500/)),
       );
     });
 
@@ -1296,8 +1400,13 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
+      // Missing DRS credentials is a system/infra gap that only we can fix — nothing
+      // self-heals — so it is emitted at error level with outcome=failure.
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/DRS_API_URL or DRS_API_KEY not configured/),
+        sinon.match(/DRS scraping unavailable this run/)
+          .and(sinon.match(/event=data_acquisition_drs_scrape_job_request_dispatched/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=drs_not_configured/)),
       );
     });
 
@@ -1342,7 +1451,7 @@ describe('Offsite Brand Presence Handler', () => {
   });
 
   describe('DRS Scraping imsOrgId resolution', () => {
-    it('skips DRS scraping and logs an actionable warning when the organization has no imsOrgId', async () => {
+    it('skips DRS scraping and logs an error/failure when the organization has no imsOrgId', async () => {
       site.getOrganization = sandbox.stub().resolves({ getImsOrgId: () => null });
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);
 
@@ -1351,11 +1460,15 @@ describe('Offsite Brand Presence Handler', () => {
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.drsJobs).to.deep.equal([]);
       expect(mockSubmitScrapeJob).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWith(
-        sinon.match(/imsOrgId/),
-      );
-      expect(log.error).to.not.have.been.calledWith(
-        sinon.match(/imsOrgId/),
+      // A missing imsOrgId blocks scraping/deliverable entirely for this org this cycle —
+      // the same class as other zero-deliverable setup gaps — so it is logged at error
+      // level with outcome=failure, not a legitimate "nothing to report" finding.
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/imsOrgId/)
+          .and(sinon.match(/produces no scraped content for this org/))
+          .and(sinon.match(/event=data_acquisition_drs_scrape_job_request_dispatched/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=no_ims_org/)),
       );
     });
 
@@ -1384,7 +1497,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.drsJobs[0].status).to.equal('success');
       expect(result.auditResult.drsJobs[0].response.job_id).to.equal('retry-ok');
-      expect(log.warn).to.have.been.calledWith(sinon.match(/failed \(attempt 1\), retrying in 500ms/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/DRS job submission failed; retrying/).and(sinon.match(/delayMs=500/)));
     });
 
     it('should not retry on 400 and fail immediately', async () => {
@@ -1416,7 +1529,7 @@ describe('Offsite Brand Presence Handler', () => {
 
       expect(result.auditResult.drsJobs[0].status).to.equal('success');
       expect(result.auditResult.drsJobs[0].response.job_id).to.equal('net-retry-ok');
-      expect(log.warn).to.have.been.calledWith(sinon.match(/failed \(attempt 1\), retrying in 500ms/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/DRS job submission failed; retrying/).and(sinon.match(/delayMs=500/)));
     });
 
     it('should record error when both attempts fail with 503', async () => {
@@ -1430,7 +1543,7 @@ describe('Offsite Brand Presence Handler', () => {
         expect(job.status).to.equal('error');
         expect(job.error).to.include('503');
       }
-      expect(log.error).to.have.been.calledWith(sinon.match(/DRS job failed.*after retry/));
+      expect(log.error).to.have.been.calledWith(sinon.match(/DRS job submission failed after retry/));
     });
 
     it('should not retry on 422 and fail immediately', async () => {
@@ -1582,6 +1695,14 @@ describe('Offsite Brand Presence Handler', () => {
       await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
+      // P1-4: the previously-silent empty-jobs early return now logs a structured
+      // warn-level skip (deviation from the happy path deserves its own visibility).
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_drs_scrape_job_poll_request_dispatched/)
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/reason=no_jobs/))
+          .and(sinon.match(/firstSchedule=true/)),
+      );
     });
 
     it('does not fail the run when scheduling the poll throws', async () => {
@@ -1592,7 +1713,17 @@ describe('Offsite Brand Presence Handler', () => {
       const result = await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
 
       expect(result.auditResult.success).to.be.true;
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to schedule DRS status poll/);
+      // Best-effort follow-up: the schedule-poll failure is structured and counted
+      // (outcome=failure, error level) even though the run itself already succeeded —
+      // DRS job submission is non-idempotent, so the catch here does not rethrow and
+      // must not trigger the whole runner to re-execute and submit duplicate DRS jobs.
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/Failed to schedule DRS status poll/)
+          .and(sinon.match(/event=data_acquisition_drs_scrape_job_poll_request_dispatched/))
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=schedule_failed/))
+          .and(sinon.match(/firstSchedule=true/)),
+      );
     });
 
     it('forwards enableBrandProfile to the poll message auditContext when set on Slack', async () => {
@@ -1616,6 +1747,56 @@ describe('Offsite Brand Presence Handler', () => {
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
       expect(msg.auditContext.enableBrandProfile).to.be.undefined;
+    });
+
+    it('forwards urlLimit to the poll message auditContext when set on Slack', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = {
+        slackContext: { channelId: 'C123', threadTs: '111.222' },
+        messageData: { urlLimit: '20' },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.urlLimit).to.equal(20);
+    });
+
+    it('omits urlLimit from the poll message auditContext when absent on Slack', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.urlLimit).to.be.undefined;
+    });
+
+    it('forwards the Semrush override to the poll message auditContext when set on Slack', async () => {
+      // enableSemrush:true hard-stops on failure, so give Semrush a usable result
+      // to let the run proceed to DRS poll scheduling.
+      mockLoadCitedUrlsFromSemrush.resolves(new Map([
+        ['https://youtu.be/v1', { count: 5, domain: 'youtube.com' }],
+      ]));
+      const auditContext = {
+        slackContext: { channelId: 'C123', threadTs: '111.222' },
+        messageData: { enableSemrush: true },
+      };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.enableSemrush).to.equal(true);
+    });
+
+    it('omits enableSemrush from the poll message auditContext when absent on Slack', async () => {
+      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
+      const auditContext = { slackContext: { channelId: 'C123', threadTs: '111.222' } };
+
+      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.enableSemrush).to.be.undefined;
     });
   });
 

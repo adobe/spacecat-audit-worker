@@ -330,6 +330,12 @@ async function addSuggestions(
     opportunity,
     newData: enhancedSuggestions,
     buildKey: (suggestion) => `${suggestion.url}::${suggestion.topic}::${suggestion.item.question}`,
+    // buildKey embeds the question text, so an edit drifts the key — protect edited
+    // suggestions from being falsely swept to OUTDATED on key mismatch (LLMO-6537).
+    protectEditedFromOutdated: true,
+    // Scenario 1 (LLMO-6761): keep edited FAQs as-is on re-detection instead of a
+    // per-field merge.
+    skipEditedOnMatch: true,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
@@ -337,11 +343,15 @@ async function addSuggestions(
       data: suggestion,
     }),
     mergeDataFunction: (existingData, newData) => {
-      // Do not overwrite data (including shouldOptimize) for suggestions
-      // already deployed to the edge CDN
-      if (existingData.edgeDeployed) {
+      // Do not overwrite data (including shouldOptimize) for suggestions already
+      // deployed to the edge CDN, or mid-IVE geo-experiment (edgeOptimizeStatus is set
+      // before edgeDeployed) (LLMO-6537, LLMO-6168)
+      if (existingData.edgeDeployed || existingData.edgeOptimizeStatus) {
         return { ...existingData };
       }
+      // Customer-edited FAQs (isEdited) never reach mergeDataFunction on the
+      // matched-key path — syncSuggestions' centralized guard hard-skips them
+      // before merge is called (LLMO-6761).
       return { ...existingData, ...newData };
     },
   });

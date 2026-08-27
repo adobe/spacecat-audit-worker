@@ -19,7 +19,9 @@ import { AUDIT_TRIGGER_COOLDOWN_MS } from '../../src/offsite-brand-presence/cons
 
 use(sinonChai);
 
-describe('offsite-brand-presence DRS status handler', () => {
+describe('offsite-brand-presence DRS status handler', function () {
+  this.timeout(10000);
+
   let sandbox;
   let handler;
   let mockGetJob;
@@ -175,6 +177,36 @@ describe('offsite-brand-presence DRS status handler', () => {
     expect(delaySeconds).to.equal(300);
   });
 
+  it('re-throws and logs a structured failure when re-enqueueing the poll fails (P1-5)', async () => {
+    mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+    mockGetJob.withArgs('job-2').resolves({ status: 'RUNNING' });
+
+    // Fail only the poll re-enqueue send; the reddit analysis dispatch still succeeds.
+    context.sqs.sendMessage.callsFake((queueUrl, msg) => {
+      if (msg.type === 'offsite-brand-presence-drs-status') {
+        return Promise.reject(new Error('SQS reschedule down'));
+      }
+      return Promise.resolve();
+    });
+
+    let thrown;
+    try {
+      await handler.default(buildMessage(), context);
+    } catch (err) {
+      thrown = err;
+    }
+
+    // Re-thrown so SQS redelivers and the poll is retried (behavior preserved).
+    expect(thrown).to.be.an('error');
+    expect(thrown.message).to.equal('SQS reschedule down');
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/Failed to re-enqueue DRS status poll/)
+        .and(sinon.match(/event=data_acquisition_drs_scrape_job_poll_request_dispatched/))
+        .and(sinon.match(/firstSchedule=false/))
+        .and(sinon.match(/outcome=failure/)),
+    );
+  });
+
   it('caps the re-enqueue delay at the seconds remaining until the deadline', async () => {
     mockGetJob.resolves({ status: 'RUNNING' });
 
@@ -201,6 +233,14 @@ describe('offsite-brand-presence DRS status handler', () => {
     // Not all jobs terminal → header says "status update", not "complete".
     expect(text).to.include('status update');
     expect(text).to.not.include('jobs *complete*');
+    // P1-6: the youtube bucket (still running at the deadline) is dropped with a
+    // structured, alertable failure instead of only appearing in the Slack prose.
+    expect(log.error).to.have.been.calledWith(
+      sinon.match(/event=data_acquisition_drs_scrape_job_poll_checked/)
+        .and(sinon.match(/outcome=failure/))
+        .and(sinon.match(/reason=budget_exceeded/))
+        .and(sinon.match(/auditType=youtube-analysis/)),
+    );
   });
 
   it('treats a getJob error as non-terminal and keeps polling', async () => {
@@ -215,7 +255,7 @@ describe('offsite-brand-presence DRS status handler', () => {
     const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
     expect(sentTypes).to.include('reddit-analysis');
     expect(sentTypes).to.include('offsite-brand-presence-drs-status');
-    expect(log.warn).to.have.been.calledWithMatch(/getJob failed for job-2/);
+    expect(log.warn).to.have.been.calledWithMatch(/DRS getJob call failed.*drsJobId=job-2/);
   });
 
   it('reports a job as still running when getJob errors past the deadline', async () => {
@@ -336,6 +376,75 @@ describe('offsite-brand-presence DRS status handler', () => {
       expect(reddit.args[1].auditContext.messageData).to.deep.equal({ enableBrandProfile: false });
     });
 
+    it('forwards urlLimit as messageData on every triggered analysis audit when set', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({ urlLimit: 20 }), context);
+
+      const calls = context.sqs.sendMessage.getCalls();
+      const reddit = calls.find((c) => c.args[1].type === 'reddit-analysis');
+      const youtube = calls.find((c) => c.args[1].type === 'youtube-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({ urlLimit: 20 });
+      expect(youtube.args[1].auditContext.messageData).to.deep.equal({ urlLimit: 20 });
+    });
+
+    it('forwards both enableBrandProfile and urlLimit together as messageData', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({ enableBrandProfile: true, urlLimit: 20 }), context);
+
+      const reddit = context.sqs.sendMessage.getCalls()
+        .find((c) => c.args[1].type === 'reddit-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({
+        enableBrandProfile: true,
+        urlLimit: 20,
+      });
+    });
+
+    it('forwards enableSemrush as messageData on every triggered analysis audit when set', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({ enableSemrush: true }), context);
+
+      const calls = context.sqs.sendMessage.getCalls();
+      const reddit = calls.find((c) => c.args[1].type === 'reddit-analysis');
+      const youtube = calls.find((c) => c.args[1].type === 'youtube-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({ enableSemrush: true });
+      expect(youtube.args[1].auditContext.messageData).to.deep.equal({ enableSemrush: true });
+    });
+
+    it('forwards explicit enableSemrush:false as messageData (distinct from absent)', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(buildMessage({ enableSemrush: false }), context);
+
+      const reddit = context.sqs.sendMessage.getCalls()
+        .find((c) => c.args[1].type === 'reddit-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({ enableSemrush: false });
+    });
+
+    it('forwards enableBrandProfile, urlLimit, and enableSemrush together as messageData', async () => {
+      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
+      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
+
+      await handler.default(
+        buildMessage({ enableBrandProfile: true, urlLimit: 20, enableSemrush: true }),
+        context,
+      );
+
+      const reddit = context.sqs.sendMessage.getCalls()
+        .find((c) => c.args[1].type === 'reddit-analysis');
+      expect(reddit.args[1].auditContext.messageData).to.deep.equal({
+        enableBrandProfile: true,
+        urlLimit: 20,
+        enableSemrush: true,
+      });
+    });
+
     it('maps top-cited to cited-analysis and does not trigger wikipedia-analysis', async () => {
       mockGetJob.withArgs('job-c').resolves({ status: 'COMPLETED' });
       mockGetJob.withArgs('job-w').resolves({ status: 'COMPLETED' });
@@ -374,6 +483,24 @@ describe('offsite-brand-presence DRS status handler', () => {
       await handler.default(buildMessage(), context);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
+      // P1-6: both buckets failed their scrape (all terminal, no success) → dropped with
+      // reason=scrape_failed rather than budget_exceeded.
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_drs_scrape_job_poll_checked/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=scrape_failed/))
+          .and(sinon.match(/auditType=reddit-analysis/)),
+      );
+      expect(log.error).to.have.been.calledWith(
+        sinon.match(/reason=scrape_failed/).and(sinon.match(/auditType=youtube-analysis/)),
+      );
+      // The aggregate summary line uses a neutral reason regardless of the per-drop
+      // reasons above, since drops in the same run can be a mix of scrape_failed and
+      // budget_exceeded.
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_drs_scrape_job_poll_end/)
+          .and(sinon.match(/reason=partial_drop/)),
+      );
     });
 
     it('skips domains that do not map to an analysis audit', async () => {
@@ -395,7 +522,7 @@ describe('offsite-brand-presence DRS status handler', () => {
 
       expect(result.status).to.equal(200);
       expect(mockPostMessageOptional).to.have.been.calledOnce;
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger .* analysis audit for site/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to dispatch analysis audit/);
     });
 
     it('skips an audit type when a recent audit exists within the cooldown window', async () => {
@@ -411,7 +538,7 @@ describe('offsite-brand-presence DRS status handler', () => {
       const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
       expect(types).to.include('youtube-analysis');
       expect(types).to.not.include('reddit-analysis');
-      expect(log.info).to.have.been.calledWithMatch(/Skipping reddit-analysis.*recent audit exists/);
+      expect(log.warn).to.have.been.calledWithMatch(/Skipping analysis dispatch; recent audit exists.*outcome=skip.*auditType=reddit-analysis/);
     });
 
     it('triggers within the cooldown when the recent audit is a pending_scrape run', async () => {
@@ -520,7 +647,7 @@ describe('offsite-brand-presence DRS status handler', () => {
 
       expect(result.status).to.equal(200);
       expect(mockPostMessageOptional).to.have.been.calledOnce;
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger analysis audits for/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to dispatch analysis audits/);
     });
 
     it('dispatches with partial data at the deadline if a dataset is still running', async () => {

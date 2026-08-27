@@ -215,7 +215,9 @@ describe('YouTube Analysis Handler', function () {
     it('should have post processors configured', () => {
       expect(youtubeAnalysisHandler.default).to.have.property('postProcessors');
       expect(youtubeAnalysisHandler.default.postProcessors).to.be.an('array');
-      expect(youtubeAnalysisHandler.default.postProcessors).to.have.lengthOf(1);
+      expect(youtubeAnalysisHandler.default.postProcessors).to.have.lengthOf(2);
+      // second post-processor logs the (otherwise silent) audit persist
+      expect(youtubeAnalysisHandler.default.postProcessors[1].name).to.equal('logAuditPersisted');
     });
   });
 
@@ -244,7 +246,6 @@ describe('YouTube Analysis Handler', function () {
       );
 
       expect(result.auditResult.config.urlLimit).to.equal(7);
-      expect(context.log.info).to.have.been.calledWith('[YouTube] auditContext: {"messageData":{"urlLimit":"7"}}');
     });
 
     it('should set config.enableBrandProfile on auditResult from messageData.enableBrandProfile', async () => {
@@ -258,11 +259,12 @@ describe('YouTube Analysis Handler', function () {
       expect(result.auditResult.config.enableBrandProfile).to.equal(true);
     });
 
-    it('should log debug payload for brand-presence topics', async () => {
+    it('should log a checkpoint for computed brand-presence topics', async () => {
       await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
-      expect(context.log.debug).to.have.been.calledWith(
-        `[YouTube] Brand-presence topics payload: ${JSON.stringify(mockComputedTopics)}`,
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_bp_data_topics_resolved/)
+          .and(sinon.match(`count=${mockComputedTopics.length}`)),
       );
     });
 
@@ -279,7 +281,7 @@ describe('YouTube Analysis Handler', function () {
       const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.info).to.have.been.calledWith('[YouTube] Retrieved 0 guidelines');
+      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
     });
 
     it('requests a domain-scoped scrape when DRS has no available content yet', async () => {
@@ -309,6 +311,20 @@ describe('YouTube Analysis Handler', function () {
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
       expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com', enableBrandProfile: true });
+    });
+
+    it('forwards enableSemrush on the scoped scrape request when DRS has no available content yet', async () => {
+      mockFilterUrlsByDrsStatus.rejects(new DrsNoContentAvailableError('no content'));
+
+      await youtubeAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { enableSemrush: 'false' } },
+      );
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com', enableSemrush: false });
     });
 
     it('returns error without re-scraping when scrape was already requested', async () => {
@@ -374,7 +390,7 @@ describe('YouTube Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.true;
       expect(mockComputeTopicsFromBrandPresence).to.have.been.calledWith(siteId, context);
-      expect(context.log.info).to.have.been.calledWithMatch(/No guidelines configured for youtube-analysis/);
+      expect(result.auditResult.storeData.sentimentConfig.guidelines).to.deep.equal([]);
     });
 
     it('should succeed when brand presence returns no topics', async () => {
@@ -383,7 +399,10 @@ describe('YouTube Analysis Handler', function () {
       const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
 
       expect(result.auditResult.success).to.be.true;
-      expect(context.log.debug).to.have.been.calledWith('[YouTube] Brand-presence topics payload: []');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_bp_data_topics_resolved/)
+          .and(sinon.match('count=0')),
+      );
     });
 
     it('should rethrow non-StoreEmptyError from getGuidelines', async () => {
@@ -414,7 +433,6 @@ describe('YouTube Analysis Handler', function () {
         siteId,
         mockDrsClient,
         sinon.match.object,
-        '[YouTube]',
       );
     });
 
@@ -432,7 +450,7 @@ describe('YouTube Analysis Handler', function () {
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('No company name configured for this site');
-      expect(context.log.warn).to.have.been.called;
+      expect(context.log.error).to.have.been.called;
     });
 
     it('should use baseURL as companyName when company name is not configured', async () => {
@@ -448,8 +466,11 @@ describe('YouTube Analysis Handler', function () {
       const result = await youtubeAnalysisHandler.default.runner('https://bmw.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[YouTube] Config: companyName=https://bmw.com, website=https://bmw.com',
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
+          .and(sinon.match('companyName=https://bmw.com'))
+          .and(sinon.match('website=https://bmw.com')),
       );
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured/);
       expect(result.auditResult.success).to.be.true;
     });
 
@@ -460,9 +481,20 @@ describe('YouTube Analysis Handler', function () {
       const result = await youtubeAnalysisHandler.default.runner('https://test-company.com', context, mockSite);
 
       expect(context.log.info).to.have.been.calledWith(
-        '[YouTube] Config: companyName=https://test-company.com, website=https://test-company.com',
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
+          .and(sinon.match('companyName=https://test-company.com'))
+          .and(sinon.match('website=https://test-company.com')),
       );
+      expect(context.log.warn).to.have.been.calledWithMatch(/No competitors configured/);
       expect(result.auditResult.success).to.be.true;
+    });
+
+    it('should NOT warn when competitors are configured', async () => {
+      // mockSite default config has two competitors configured.
+      const result = await youtubeAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.warn).to.not.have.been.calledWithMatch(/No competitors configured/);
     });
 
     it('should handle general errors during execution', async () => {
@@ -578,10 +610,12 @@ describe('YouTube Analysis Handler', function () {
       expect(sentMessage.data.urls[0].url).to.equal(mockUrls[0].url);
       expect(sentMessage.data).to.not.have.property('enableBrandProfile');
       expect(context.log.info).to.have.been.calledWith(
-        `[YouTube] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT}`),
       );
       expect(context.log.info).to.have.been.calledWith(
-        '[YouTube] Queued YouTube analysis request to Mystique for Example Corp with 2 URLs',
+        sinon.match(/event=audit_analysis_start/)
+          .and(sinon.match('companyName="Example Corp"'))
+          .and(sinon.match('urls=2')),
       );
     });
 
@@ -625,7 +659,7 @@ describe('YouTube Analysis Handler', function () {
       const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       await postProcessor(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith('[YouTube] urlLimit=1 (URLs sent to Mystique)');
+      expect(context.log.info).to.have.been.calledWith(sinon.match('urlLimit=1'));
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(1);
     });
@@ -653,7 +687,9 @@ describe('YouTube Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[YouTube] Queued YouTube analysis request to Mystique for Test with ${MYSTIQUE_URLS_LIMIT} URLs`,
+        sinon.match(/event=audit_analysis_start/)
+          .and(sinon.match('companyName=Test'))
+          .and(sinon.match(`urls=${MYSTIQUE_URLS_LIMIT}`)),
       );
     });
 
@@ -680,7 +716,7 @@ describe('YouTube Analysis Handler', function () {
       const sentMessage = context.sqs.sendMessage.firstCall.args[1];
       expect(sentMessage.data.urls).to.have.lengthOf(MYSTIQUE_URLS_LIMIT);
       expect(context.log.info).to.have.been.calledWith(
-        `[YouTube] urlLimit=${MYSTIQUE_URLS_LIMIT} (URLs sent to Mystique)`,
+        sinon.match(`urlLimit=${MYSTIQUE_URLS_LIMIT}`),
       );
     });
 
@@ -698,7 +734,9 @@ describe('YouTube Analysis Handler', function () {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith('[YouTube] Audit failed, skipping Mystique message');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match('Audit failed, skipping Mystique message').and(sinon.match('outcome=skip')),
+      );
     });
 
     it('should skip sending message when SQS is not configured', async () => {
@@ -717,7 +755,7 @@ describe('YouTube Analysis Handler', function () {
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith('[YouTube] SQS or Mystique queue not configured, skipping message');
+      expect(context.log.error).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured; message dispatch unavailable this run'));
     });
 
     it('should skip sending message when queue env is not set', async () => {
@@ -755,7 +793,7 @@ describe('YouTube Analysis Handler', function () {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith('[YouTube] Site not found, skipping Mystique message');
+      expect(context.log.error).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
     });
 
     it('should throw error when SQS send fails', async () => {
@@ -772,7 +810,11 @@ describe('YouTube Analysis Handler', function () {
 
       const postProcessor = youtubeAnalysisHandler.default.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith('[YouTube] Failed to send Mystique message: SQS Error');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to send Mystique message/)
+          .and(sinon.match(/reason=unexpected_error/))
+          .and(sinon.match(/errorMessage="SQS Error"/)),
+      );
     });
 
     // Helper: fresh PostgREST chain mock — limit() is the terminal call (org, status, site_id, order, limit)
@@ -811,7 +853,7 @@ describe('YouTube Analysis Handler', function () {
       expect(sentMessage.brandId).to.equal('brand-2');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/brandId=brand-2/).and(sinon.match((v) => !/siteId=/.test(v))),
+        sinon.match(/event=audit_analysis_start/).and(sinon.match(/brandId=brand-2/)),
       );
     });
 
@@ -894,7 +936,8 @@ describe('YouTube Analysis Handler', function () {
       expect(sentMessage).to.not.have.property('brandId');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/Brand resolution failed unexpectedly/),
+        sinon.match(/Brand resolution failed unexpectedly/)
+          .and(sinon.match(/scopeKind=brand/)),
       );
     });
   });

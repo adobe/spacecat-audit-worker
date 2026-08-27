@@ -159,9 +159,12 @@ async function checkLinkStatus(href, pageUrl, context, options = {
 }) {
   const { log } = context;
   const {
-    pageAuthToken, isInternal, selectors = [],
+    pageAuthToken, isInternal, occurrences = [],
   } = options;
   const linkType = isInternal ? 'internal' : 'external';
+  const elementTargets = toElementTargets(
+    occurrences.map((o) => ({ selector: o.selector, textContent: o.text })),
+  );
 
   // Only probe http/https URLs. Non-web schemes (mailto:, tel:, javascript:,
   // sms:, etc.) are not web links — fetch() cannot probe them and they should
@@ -228,7 +231,7 @@ async function checkLinkStatus(href, pageUrl, context, options = {
         urlTo: href,
         href: pageUrl,
         status: res.status,
-        ...toElementTargets(selectors),
+        ...elementTargets,
       };
     }
 
@@ -242,7 +245,7 @@ async function checkLinkStatus(href, pageUrl, context, options = {
         urlTo: href,
         href: pageUrl,
         status: 0,
-        ...toElementTargets(selectors),
+        ...elementTargets,
       };
     }
 
@@ -302,10 +305,25 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
         const anchors = $('a[href]');
         const pageOrigin = new URL(pageUrl).origin;
+        // Map<url, Array<{selector, text}>>
         const internalLinks = new Map();
         const externalLinks = new Map();
 
         log.debug(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((i, a) => $(a).attr('href')).get());
+
+        const addOccurrence = (map, url, selector, text) => {
+          // Positive guard: a real a[href] element always yields a selector, so the falsy path is
+          // defensively unreachable.
+          if (selector) {
+            if (!map.has(url)) {
+              map.set(url, []);
+            }
+            const occurrences = map.get(url);
+            if (!occurrences.some((o) => o.selector === selector)) {
+              occurrences.push({ selector, text });
+            }
+          }
+        };
 
         anchors.each((i, a) => {
           const $a = $(a);
@@ -313,20 +331,11 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
             const href = $a.attr('href');
             const abs = new URL(href, pageUrl).toString();
             const selector = getDomElementSelector(a);
+            const text = $a.text().trim();
             if (new URL(abs).origin === pageOrigin) {
-              if (!internalLinks.has(abs)) {
-                internalLinks.set(abs, new Set());
-              }
-              if (selector) {
-                internalLinks.get(abs).add(selector);
-              }
+              addOccurrence(internalLinks, abs, selector, text);
             } else {
-              if (!externalLinks.has(abs)) {
-                externalLinks.set(abs, new Set());
-              }
-              if (selector) {
-                externalLinks.get(abs).add(selector);
-              }
+              addOccurrence(externalLinks, abs, selector, text);
             }
           } catch {
             // skip invalid hrefs
@@ -340,7 +349,10 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         // before the HTML is served, removing the anchor entirely. The broken URL is
         // preserved in the alt attribute as "invalid link: <url>". Extract these directly
         // without HTTP probing — AEM has already validated them as broken (404).
-        const seenCqUrls = new Set();
+        // Group cq-LinkChecker images by URL so each rewritten-image occurrence
+        // surfaces as its own element target (mirroring the anchor path), instead of
+        // dropping duplicate occurrences of the same URL. Map<url, {origin, selectors}>.
+        const cqLinks = new Map();
         $('img.cq-LinkChecker--prefix.cq-LinkChecker--invalid').each((i, img) => {
           const alt = $(img).attr('alt') || '';
           const match = alt.match(/^invalid link:\s*(.+)$/);
@@ -354,39 +366,48 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
             if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
               return;
             }
-            const abs = parsed.toString();
-            // Deduplicate: same URL may appear in multiple cq-LinkChecker images.
-            if (seenCqUrls.has(abs)) {
-              return;
-            }
-            seenCqUrls.add(abs);
             const selector = getDomElementSelector(img);
-            const result = {
-              urlTo: abs,
-              href: pageUrl,
-              status: 404,
-              ...toElementTargets([selector].filter(Boolean)),
-            };
-            if (parsed.origin === pageOrigin) {
-              brokenInternalLinks.push(result);
-            } else {
-              brokenExternalLinks.push(result);
+            const abs = parsed.toString();
+            if (!cqLinks.has(abs)) {
+              cqLinks.set(abs, { origin: parsed.origin, selectors: [] });
+            }
+            const entry = cqLinks.get(abs);
+            // Dedupe by selector so the same image isn't listed twice; toElementTargets
+            // drops any null selector, so an undetectable locator still reports the URL.
+            if (!entry.selectors.includes(selector)) {
+              entry.selectors.push(selector);
             }
           } catch {
             // skip unparseable URLs
           }
         });
 
+        cqLinks.forEach(({ origin, selectors: cqSelectors }, abs) => {
+          const result = {
+            urlTo: abs,
+            href: pageUrl,
+            status: 404,
+            // No textContent: the anchor was rewritten server-side to an <img>, so
+            // there is no visible link text left — only the element location(s).
+            ...toElementTargets(cqSelectors),
+          };
+          if (origin === pageOrigin) {
+            brokenInternalLinks.push(result);
+          } else {
+            brokenExternalLinks.push(result);
+          }
+        });
+
         // Check internal links
         const internalResults = await Promise.all(
           Array.from(internalLinks.entries()).map(
-            ([href, selectorSet]) => limit(() => checkLinkStatus(
+            ([href, occurrences]) => limit(() => checkLinkStatus(
               href,
               pageUrl,
               context,
               {
                 ...options,
-                selectors: [...selectorSet],
+                occurrences,
                 isInternal: true,
               },
             )),
@@ -396,13 +417,13 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         // Check external links
         const externalResults = await Promise.all(
           Array.from(externalLinks.entries()).map(
-            ([href, selectorSet]) => limit(() => checkLinkStatus(
+            ([href, occurrences]) => limit(() => checkLinkStatus(
               href,
               pageUrl,
               context,
               {
                 ...options,
-                selectors: [...selectorSet],
+                occurrences,
                 isInternal: false,
               },
             )),

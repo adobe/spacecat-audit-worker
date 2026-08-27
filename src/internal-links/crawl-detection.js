@@ -166,12 +166,64 @@ function extractMetaRefreshUrl(content = '') {
   return match?.[1]?.trim() || '';
 }
 
+/**
+ * Splits an HTML `srcset` attribute value into its candidate URLs following the
+ * WHATWG rules: a candidate URL is a run of non-whitespace characters (which MAY
+ * contain commas — e.g. Scene7's `qlt=85,0` quality parameter), optionally
+ * followed by whitespace and a descriptor, with candidates separated by commas.
+ * A naive `split(',')` wrongly breaks URLs whose query string contains a comma,
+ * orphaning fragments like `0&resMode=sharp` that then resolve against the page
+ * into phantom internal links. Collecting the URL as a non-whitespace run avoids
+ * that.
+ *
+ * @param {string} rawValue - The raw `srcset` attribute value.
+ * @returns {string[]} Candidate URL strings, descriptors stripped.
+ */
+export function splitSrcsetCandidates(rawValue) {
+  const input = String(rawValue);
+  const { length } = input;
+  const isWhitespace = (ch) => /\s/.test(ch);
+  const urls = [];
+  let pos = 0;
+
+  while (pos < length) {
+    // Skip whitespace and the commas that separate candidates.
+    while (pos < length && (isWhitespace(input[pos]) || input[pos] === ',')) {
+      pos += 1;
+    }
+    if (pos >= length) {
+      break;
+    }
+
+    // A candidate URL is a run of non-whitespace characters (commas included).
+    let url = '';
+    while (pos < length && !isWhitespace(input[pos])) {
+      url += input[pos];
+      pos += 1;
+    }
+
+    // Trailing commas on the URL are candidate separators, not part of the URL.
+    let hadTrailingComma = false;
+    while (url.endsWith(',')) {
+      url = url.slice(0, -1);
+      hadTrailingComma = true;
+    }
+    urls.push(url);
+
+    // With no trailing comma, an optional descriptor follows up to the next
+    // comma — skip it so it is not mistaken for another URL.
+    if (!hadTrailingComma) {
+      while (pos < length && input[pos] !== ',') {
+        pos += 1;
+      }
+    }
+  }
+
+  return urls;
+}
+
 function resolveUrlCandidates(rawValue, pageUrl) {
-  return String(rawValue)
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => entry.split(/\s+/)[0])
+  return splitSrcsetCandidates(rawValue)
     .map((entry) => normalizeDetectedUrlCandidate(entry))
     .filter((entry) => entry && !entry.startsWith('data:') && !entry.startsWith('#'))
     .map((entry) => stripAbsoluteUrlHash(new URL(entry, pageUrl).toString()));

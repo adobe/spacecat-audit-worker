@@ -35,23 +35,6 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
- * True when a suggestion was last touched by a non-system actor (typically a
- * customer email stamped by the PATCH API). Used to skip regenerating/overwriting
- * that suggestion's data on subsequent audits (LLMO-6483).
- *
- * This checks the entity-level `updatedBy` field — distinct from the alt-text
- * domain-specific `data.recommendations[].isManuallyEdited` flag used in
- * image-alt-text handlers.
- *
- * @param {Object} suggestion - Suggestion entity (or mock).
- * @returns {boolean}
- */
-export function isManuallyEditedSuggestion(suggestion) {
-  const updatedBy = suggestion?.getUpdatedBy?.();
-  return Boolean(updatedBy && updatedBy !== 'system');
-}
-
-/**
  * Validates suggestion data against the Joi schema for the given opportunity type.
  * Logs a warning if validation fails but does not block the operation.
  *
@@ -259,10 +242,21 @@ export async function getImsOrgId(site, dataAccess, log) {
  * @param {Set} params.newDataKeys - The set of new data keys to check for outdated suggestions.
  * @param {Function} params.buildKey - The function to build a unique key for each suggestion.
  * @param {Object} params.context - The context object containing the data access object.
- * @param {Set} [params.scrapedUrlsSet] - Optional set of URLs that were scraped in this audit
+ * @param {Set} [params.scrapedUrlsSet] - Optional set of URLs that were scraped in this audit.
+ *   Single-URL coverage guard: a suggestion is only eligible for OUTDATED if its data.url is
+ *   present in the set (i.e. the page was actually re-examined this run).
+ * @param {Function} [params.isWithinCoverage] - Optional coverage predicate over a suggestion's
+ *   data object, returning true when the suggestion was actually re-examined this run. Use this
+ *   instead of scrapedUrlsSet when coverage is keyed by something other than a single `url`
+ *   (e.g. broken-internal-links, whose items are urlFrom/urlTo pairs — SITES-49911). Takes
+ *   precedence over scrapedUrlsSet; when neither is provided the guard is a no-op.
  * @param {boolean} [params.outdateInProgress] - Defaults to false, preserving today's
  *   behavior of leaving IN_PROGRESS suggestions alone. Pass true to also outdate them
  *   when no longer detected.
+ * @param {boolean} [params.protectEditedFromOutdated] - When true, suggestions with
+ *   data.isEdited are excluded from the OUTDATED sweep. Use when buildKey includes
+ *   editable content (e.g. FAQs embed the question text) so an edit-driven key drift
+ *   doesn't falsely age out the suggestion (LLMO-6537).
  * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
  */
 export const handleOutdatedSuggestions = async ({
@@ -272,7 +266,9 @@ export const handleOutdatedSuggestions = async ({
   buildKey,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  isWithinCoverage = null,
   outdateInProgress = false,
+  protectEditedFromOutdated = false,
 }) => {
   const { Suggestion } = context.dataAccess;
   const { log } = context;
@@ -315,14 +311,28 @@ export const handleOutdatedSuggestions = async ({
       );
     })
     .filter((existing) => {
-      // mark suggestions as outdated only if their URL was actually scraped
+      // Scope-coverage guard: only outdate a suggestion if it was actually re-examined
+      // this run, so a suggestion missing from newDataKeys purely because its page/link
+      // fell outside this run's coverage is not mistaken for a genuine fix (SITES-49911).
+      const data = existing.getData?.();
+      // Caller-supplied predicate wins — used when coverage is not keyed by a single `url`
+      // (e.g. broken-internal-links pairs, keyed on the crawled source page urlFrom).
+      if (typeof isWithinCoverage === 'function') {
+        return isWithinCoverage(data);
+      }
+      // Legacy single-URL coverage set: mark outdated only if the URL was actually scraped.
       if (scrapedUrlsSet) {
-        const suggestionUrl = existing.getData()?.url;
+        const suggestionUrl = data?.url;
         return suggestionUrl && scrapedUrlsSet.has(suggestionUrl);
       }
       return true;
     })
-    .filter((existing) => !isManuallyEditedSuggestion(existing));
+    // By default, edited suggestions (data.isEdited) are NOT protected from OUTDATED —
+    // if the issue is no longer detected, the edited suggestion should be cleared.
+    // Handlers where buildKey includes editable content (e.g. FAQs embed the question)
+    // opt in to protection via protectEditedFromOutdated, because an edit would drift
+    // the key and falsely look like "issue disappeared" (LLMO-6537).
+    .filter((existing) => !(protectEditedFromOutdated && existing.getData?.()?.isEdited === true));
 
   // prevents JSON.stringify overflow
   log.info(`[SuggestionSync] Final count of suggestions to mark as ${statusToSetForOutdated}: ${existingOutdatedSuggestions.length}`);
@@ -437,11 +447,13 @@ export const isTBYBSite = checkIsTBYBSite;
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.
  * For REJECTED suggestions that appear again, preserves REJECTED status.
- * Suggestions with updatedBy set to a non-system actor (customer edits) are
- * protected from data overwrites when they are still present in the current
- * audit data (matched-key path). They are also excluded from the OUTDATED and
- * reconcile-disappeared paths. Note: this is distinct from the alt-text
- * domain-specific `isManuallyEdited` data flag (LLMO-6483).
+ * Customer-edited suggestions (`data.isEdited`, set by the UI edit-save action):
+ * Scenario 1 — same issue re-detected: edited suggestions are skipped entirely
+ * on the matched-key path (centralized guard, LLMO-6761). Scenario 2 — issue no
+ * longer detected: edited suggestions ARE cleared (OUTDATED / FIXED) like any
+ * other; handlers where buildKey includes editable content (e.g. FAQs) opt in to
+ * OUTDATED protection via `protectEditedFromOutdated`. Note: this is distinct from
+ * the alt-text domain-specific `isManuallyEdited` data flag (LLMO-6537).
  *
  * Prepares new suggestions from the new data and adds them to the opportunity.
  * Maps new data to suggestion objects using the provided mapping function.
@@ -460,6 +472,16 @@ export const isTBYBSite = checkIsTBYBSite;
  * @param {Array} [params.existingSuggestions] - Pre-fetched suggestions to avoid duplicate
  *   DB query. If not provided, will be fetched from opportunity.
  * @param {boolean} [params.outdateInProgress] - See {@link handleOutdatedSuggestions}.
+ * @param {boolean} [params.protectEditedFromOutdated] - See
+ *   {@link handleOutdatedSuggestions}.
+ * @param {boolean} [params.skipEditedOnMatch] - When true, a matched-key existing
+ *   suggestion with `data.isEdited === true` is hard-skipped entirely (Scenario 1,
+ *   LLMO-6761) — `mergeDataFunction` is never called for it, so nothing refreshes.
+ *   Defaults to false, preserving prior behavior: `mergeDataFunction` is always
+ *   called and decides per-field what to preserve vs. refresh (e.g. headings/toc,
+ *   which keep one edited field while refreshing the rest). Opt in only for
+ *   handlers designed around full-suggestion preserve-as-is semantics (FAQ,
+ *   Summarization, Readability).
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
@@ -476,6 +498,8 @@ export async function syncSuggestions({
   newSuggestionStatus = null,
   bypassValidationForPlg = false,
   outdateInProgress = false,
+  protectEditedFromOutdated = false,
+  skipEditedOnMatch = false,
 }) {
   if (!context) {
     return;
@@ -508,6 +532,7 @@ export async function syncSuggestions({
     statusToSetForOutdated,
     scrapedUrlsSet,
     outdateInProgress,
+    protectEditedFromOutdated,
   });
 
   log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
@@ -558,11 +583,13 @@ export async function syncSuggestions({
       return;
     }
 
-    // Do not regenerate a customer-edited suggestion on re-audit (LLMO-6483).
-    // Applies to NEW and deployed statuses alike. updatedBy may be a user email
-    // — never log it (PII).
-    if (isManuallyEditedSuggestion(existing)) {
-      log.debug(`Skipping manually-edited suggestion ${existingKey}`);
+    // Scenario 1: same issue re-detected after customer edit → keep as-is (LLMO-6761).
+    // Opt-in only: handlers that pass their own isEdited-aware mergeDataFunction for
+    // partial field-level preservation (e.g. headings/toc, which refresh everything
+    // except one specific field) do NOT set this, so their existing per-field merge
+    // behavior is unaffected by this centralized guard.
+    if (skipEditedOnMatch && existingData?.isEdited === true) {
+      log.debug(`Skipping edited suggestion ${existingKey} - preserving customer edit`);
       return;
     }
 
@@ -723,15 +750,23 @@ export async function reconcileDisappearedSuggestions({
     // Accept NEW suggestions, plus OUTDATED suggestions with `isEdited: true`
     // (customer explicitly picked a redirect target, so a live match is
     // high-confidence attribution — see function docstring).
+    //
+    // Out of the FAQ/Summarization/Readability scope of LLMO-6761 — this function
+    // is only called from src/backlinks/handler.js, where `isEdited` means the
+    // customer explicitly picked a redirect target, not a generic content edit.
+    // Keep the pre-existing exemption unchanged here (no regression review/tests
+    // for backlinks in this PR).
     const candidates = disappearedSuggestions.filter((s) => {
-      if (isManuallyEditedSuggestion(s)) {
-        return false;
-      }
       const status = s?.getStatus?.();
+      const isEdited = s?.getData?.()?.isEdited === true;
       if (newStatus && status === newStatus) {
-        return true;
+        // Never auto-reconcile a customer-edited NEW suggestion to FIXED — the durable
+        // data.isEdited flag protects it (the TOC pattern; updatedBy is not consulted).
+        // The OUTDATED+isEdited branch below is intentionally exempt (redirect-target
+        // attribution).
+        return !isEdited;
       }
-      if (outdatedStatus && status === outdatedStatus && s?.getData?.()?.isEdited === true) {
+      if (outdatedStatus && status === outdatedStatus && isEdited) {
         return true;
       }
       return false;
@@ -831,8 +866,8 @@ export async function publishDeployedFixEntities({
   }
   const { dataAccess, log } = context;
   try {
-    const { FixEntity, Suggestion } = dataAccess || {};
-    if (!FixEntity?.allByOpportunityIdAndStatus || !Suggestion?.getFixEntitiesBySuggestionId) {
+    const { FixEntity } = dataAccess || {};
+    if (!FixEntity?.allByOpportunityIdAndStatus) {
       log.debug('FixEntity APIs not available; skipping publish.');
       return;
     }
@@ -855,20 +890,14 @@ export async function publishDeployedFixEntities({
 
     // Helper to check a single fix entity with bounded HTTP calls
     const checkFixEntity = async (fixEntity) => {
-      const suggestionIds = fixEntity.getSuggestionIds?.() || [];
-      if (suggestionIds.length === 0) {
+      // A FixEntity exposes its linked suggestions via the async many-to-many accessor
+      // getSuggestions(), which resolves to an array of Suggestion models. (There is no
+      // getSuggestionIds() on FixEntity, and Suggestion.getFixEntitiesBySuggestionId()
+      // returns FixEntities — not suggestions — so neither can drive this check.)
+      const suggestionResults = (await fixEntity.getSuggestions?.()) || [];
+      if (suggestionResults.length === 0) {
         return { fixEntity, allResolved: false };
       }
-
-      // Fetch all suggestions first (DB calls)
-      const suggestionResults = await Promise.all(
-        suggestionIds.map(async (suggestionId) => {
-          const { data: suggestions = [] } = await Suggestion.getFixEntitiesBySuggestionId(
-            suggestionId,
-          );
-          return suggestions[0];
-        }),
-      );
 
       // Fast-path check using current audit data (no HTTP)
       for (const suggestion of suggestionResults) {

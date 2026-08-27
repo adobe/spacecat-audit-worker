@@ -13,8 +13,52 @@
 import { pickUrlsFromSerpResults } from '../support/bright-data-serp-urls.js';
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
-import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { warnOnInvalidSuggestionData, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
+import { loadScrapeResultPaths } from './batch-state.js';
+import { normalizeComparableUrl } from './link-key.js';
+import { isWithinAuditScope } from './subpath-filter.js';
+import { isBlackboardEngine } from '../common/delivery-engine.js';
+
+/**
+ * Builds the crawl-coverage set for this run: the normalized set of source pages
+ * (urlFrom) that were part of this audit's crawl scope, reconstructed from the
+ * scrape-result-paths manifest. A non-empty set means this was a crawl run, so the
+ * OUTDATED sweep can trust "absence == fix" only for pages in the set (SITES-49911).
+ * Returns null when no manifest exists (RUM/LinkChecker-only runs), so callers fall
+ * back to prior absence-only behavior.
+ *
+ * @param {string} auditId - The audit ID.
+ * @param {Object} loaderContext - Context carrying s3Client/env for the S3 read.
+ * @param {Object} log - Logger instance.
+ * @returns {Promise<Set<string>|null>}
+ */
+async function buildCrawledUrlFromSet(auditId, loaderContext, log) {
+  // No S3 client (e.g. some test contexts / degenerate runs) — do not attempt the
+  // manifest read. Returning null keeps the caller on prior absence-only behavior
+  // without emitting a spurious error log from the S3 layer.
+  if (!loaderContext?.s3Client) {
+    log.debug('Scope guard: no s3Client available; outdating falls back to absence-only');
+    return null;
+  }
+  try {
+    const scrapeResultPaths = await loadScrapeResultPaths(auditId, loaderContext);
+    if (scrapeResultPaths && scrapeResultPaths.size > 0) {
+      const set = new Set(
+        Array.from(scrapeResultPaths.keys())
+          .map((url) => normalizeComparableUrl(url))
+          .filter(Boolean),
+      );
+      log.info(`Scope guard: ${set.size} crawled pages available for outdating coverage`);
+      return set;
+    }
+    log.info('Scope guard: no crawl coverage manifest found; outdating falls back to absence-only');
+    return null;
+  } catch (error) {
+    log.warn(`Scope guard: failed to load crawl coverage (${error.message}); outdating falls back to absence-only`);
+    return null;
+  }
+}
 
 export function createOpportunityAndSuggestionsStep({
   auditType,
@@ -65,10 +109,30 @@ export function createOpportunityAndSuggestionsStep({
       ? filteredBrokenInternalLinks.slice(0, maxBrokenLinksReported)
       : filteredBrokenInternalLinks;
 
+    // Per-site V1 -> V2 cutover (Spec 009-04 / ADR-0022): when the BROKEN_INTERNAL_LINKS
+    // opportunity is owned by Mystique's blackboard producer cascade
+    // (deliveryConfig.brokenInternalLinksEngine=blackboard), bow out before creating the
+    // opportunity or dispatching to Mystique, and resolve any pre-existing legacy opportunity
+    // so the flip strands no active rows.
+    if (isBlackboardEngine(site, 'brokenInternalLinksEngine')) {
+      log.info('Bowing out — deliveryConfig.brokenInternalLinksEngine=blackboard (Mystique-owned); resolving any legacy opportunity, skipping create/dispatch');
+      await resolveOpportunityIfNoIssues(site.getId(), auditType, dataAccess, log);
+      return { status: 'complete', reportedBrokenLinks: reportedLinks };
+    }
+
     if (!success) {
       log.info('Audit failed, skipping suggestions generation');
       return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
+
+    // Crawl-coverage set for this run (SITES-49911). Non-empty => this was a crawl run
+    // and "absence == fix" is only trustworthy for pages actually in crawl scope.
+    // Null => RUM/LinkChecker-only run => preserve prior absence-only behavior.
+    const crawledUrlFromSet = await buildCrawledUrlFromSet(
+      audit.getId(),
+      { ...context, log },
+      log,
+    );
 
     if (filteredBrokenInternalLinks.length > maxBrokenLinksReported) {
       log.warn(`Capping reported broken links from ${filteredBrokenInternalLinks.length} to ${maxBrokenLinksReported} (priority order)`);
@@ -97,21 +161,51 @@ export function createOpportunityAndSuggestionsStep({
       if (!opportunity) {
         log.info('no broken internal links found, skipping opportunity creation');
       } else {
-        log.info('no broken internal links found, updating opportunity to RESOLVED');
-        await opportunity.setStatus(opptyStatuses.RESOLVED);
         const suggestions = await opportunity.getSuggestions();
         // Preserve operator decisions on SKIPPED / REJECTED — flipping those to
         // OUTDATED would destroy the decision and bump updatedAt, corrupting
         // the ASO "Moved to Rejected / Skipped" metrics (SITES-44646).
-        const suggestionsToOutdate = (suggestions || []).filter((s) => ![
+        const nonFrozen = (suggestions || []).filter((s) => ![
           suggestionStatuses.SKIPPED,
           suggestionStatuses.REJECTED,
         ].includes(s.getStatus()));
-        if (isNonEmptyArray(suggestionsToOutdate)) {
-          await Suggestion.bulkUpdateStatus(suggestionsToOutdate, suggestionStatuses.OUTDATED);
+
+        if (crawledUrlFromSet && crawledUrlFromSet.size > 0) {
+          // Crawl run: "zero broken links" is only trustworthy for pages actually
+          // crawled this run. Outdate a suggestion only if its source page was
+          // covered; hold the opportunity open (do NOT resolve) when any suggestion
+          // sits on a page we did not crawl, since those links are unconfirmed rather
+          // than fixed (SITES-49911).
+          const isCovered = (s) => {
+            const from = normalizeComparableUrl(s.getData()?.urlFrom);
+            return Boolean(from) && crawledUrlFromSet.has(from);
+          };
+          const covered = nonFrozen.filter(isCovered);
+          const uncoveredCount = nonFrozen.length - covered.length;
+
+          if (isNonEmptyArray(covered)) {
+            await Suggestion.bulkUpdateStatus(covered, suggestionStatuses.OUTDATED);
+          }
+
+          if (uncoveredCount === 0) {
+            log.info('no broken internal links found and all suggestions were crawled this run, updating opportunity to RESOLVED');
+            await opportunity.setStatus(opptyStatuses.RESOLVED);
+            opportunity.setUpdatedBy('system');
+            await opportunity.save();
+          } else {
+            log.info(`no broken internal links found, but ${uncoveredCount} suggestion(s) sit on pages not crawled this run; holding opportunity open and outdating only the ${covered.length} confirmed`);
+          }
+        } else {
+          // RUM/LinkChecker-only run (no crawl coverage manifest): preserve prior
+          // behavior — resolve the opportunity and outdate all non-frozen suggestions.
+          log.info('no broken internal links found (no crawl coverage), updating opportunity to RESOLVED');
+          await opportunity.setStatus(opptyStatuses.RESOLVED);
+          if (isNonEmptyArray(nonFrozen)) {
+            await Suggestion.bulkUpdateStatus(nonFrozen, suggestionStatuses.OUTDATED);
+          }
+          opportunity.setUpdatedBy('system');
+          await opportunity.save();
         }
-        opportunity.setUpdatedBy('system');
-        await opportunity.save();
       }
       return { status: 'complete', reportedBrokenLinks: reportedLinks };
     }
@@ -137,6 +231,7 @@ export function createOpportunityAndSuggestionsStep({
       context: contextualContext,
       opportunityId: opportunity.getId(),
       log,
+      crawledUrlFromSet,
     });
 
     const handlerEnabled = await dataAccess.Configuration?.findLatest?.()
@@ -240,6 +335,12 @@ export function createOpportunityAndSuggestionsStep({
         }
 
         let urlsSuggested = pickUrlsFromSerpResults(results, brokenLink.urlTo);
+        if (urlsSuggested.length === 0) {
+          return;
+        }
+        // Keep only suggestions within this audit's scope/subpath so a broken /uk/
+        // link is not "fixed" with an out-of-subpath (e.g. /us/) URL (SITES-49911).
+        urlsSuggested = urlsSuggested.filter((u) => isWithinAuditScope(u, site.getBaseURL()));
         if (urlsSuggested.length === 0) {
           return;
         }

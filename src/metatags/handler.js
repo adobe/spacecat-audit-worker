@@ -19,6 +19,7 @@ import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { convertToOpportunity } from '../common/opportunity.js';
+import { isBlackboardEngine } from '../common/delivery-engine.js';
 import { getIssueRanking, trimTagValue, normalizeTagValue } from '../utils/seo-utils.js';
 import { getBaseUrl } from '../utils/url-utils.js';
 import {
@@ -52,11 +53,14 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
   log.debug(`started to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
-  let useHostnameOnly = false;
+  // Default hostname-only: the endpoint is an absolute pathname appended to the origin.
+  // A base that already carries a path (sub-path site, e.g. example.com/foo) duplicated
+  // it (/foo/foo/...). No-op for root-domain sites.
+  let useHostnameOnly = true;
   try {
     const siteId = opportunity.getSiteId();
     const site = await context.dataAccess.Site.findById(siteId);
-    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? true;
   } catch (error) {
     log.error('Error in meta-tags configuration:', error);
   }
@@ -290,6 +294,18 @@ export async function runAuditAndGenerateSuggestions(context) {
   log.info(`[metatags] scrapeResultPaths for ${site.getId()}: ${JSON.stringify(scrapeResultPaths)}`);
   log.info(`[metatags] Start runAuditAndGenerateSuggestions step for: ${site.getId()}`);
 
+  // Per-site V1 -> V2 cutover (Spec 009-04 / ADR-0022): when the META_TAGS opportunity is
+  // owned by Mystique's blackboard producer cascade (deliveryConfig.metaTagsEngine=blackboard),
+  // bow out before detection / creation / Mystique dispatch and resolve any pre-existing legacy
+  // META_TAGS opportunity so the flip strands no active rows.
+  if (isBlackboardEngine(site, 'metaTagsEngine')) {
+    log.info(`[metatags] siteId: ${site.getId()} | bowing out — deliveryConfig.metaTagsEngine=blackboard (Mystique-owned); resolving any legacy meta-tags opportunity, skipping detection/creation/dispatch`);
+    await resolveOpportunityIfNoIssues(site.getId(), auditType, context.dataAccess, log);
+    return {
+      status: 'complete',
+    };
+  }
+
   const {
     seoChecks,
     detectedTags,
@@ -347,12 +363,14 @@ export async function runAuditAndGenerateSuggestions(context) {
     },
   );
 
-  // Get useHostnameOnly setting
-  let useHostnameOnly = false;
+  // Default hostname-only so an absolute endpoint is appended to the origin, not to a
+  // base URL that already carries a path (sub-path sites would otherwise get a duplicated
+  // /foo/foo/... URL). No-op for root-domain sites.
+  let useHostnameOnly = true;
   try {
     const siteId = opportunity.getSiteId();
     const siteObj = await context.dataAccess.Site.findById(siteId);
-    useHostnameOnly = siteObj?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+    useHostnameOnly = siteObj?.getDeliveryConfig?.()?.useHostnameOnly ?? true;
   } catch (error) {
     log.error('Error in meta-tags configuration:', error);
   }
@@ -438,8 +456,12 @@ export async function runAuditAndGenerateSuggestions(context) {
     };
   });
 
-  // Build unique pageUrls from all suggestions
-  const pageUrls = [...new Set(suggestionMap.map((s) => `${site.getBaseURL()}${s.endpoint}`))];
+  // Resolve each endpoint (an absolute path) against the base URL's origin. Concatenating
+  // onto a base that already carries a path (sub-path site, e.g. example.com/foo) produced
+  // a malformed /foo/foo/... URL. No-op for root-domain sites.
+  const pageUrls = [
+    ...new Set(suggestionMap.map((s) => new URL(s.endpoint, site.getBaseURL()).toString())),
+  ];
 
   log.info(`[metatags] Sending ${suggestionMap.length} suggestions to Mystique (${pageUrls.length} unique pages)`);
 
@@ -498,6 +520,7 @@ export async function submitForScraping(context) {
     dataAccess,
     auditType,
     getAgenticUrls: () => Promise.resolve([]),
+    scopeTopPagesToBasePath: true,
     log,
   });
   log.debug(`Final URLs to scrape after merging and deduplication: ${finalUrls.length}`);

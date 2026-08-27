@@ -1236,6 +1236,13 @@ Save it for your next mountain escape!
         );
         expect(result.success).to.equal(false); // No issues found (good readability)
         expect(result.message).to.equal('No readability issues found');
+        // scrapedUrls must surface BOTH the requested URL and the resolved finalUrl,
+        // even for a clean page, so the caller can scope OUTDATED eligibility to
+        // whichever form a suggestion's data.url was stored under (LLMO-6761).
+        expect(result.scrapedUrls).to.have.members([
+          'https://example.com/original',
+          'https://example.com/redirected',
+        ]);
       });
 
       it('should use original URL when finalUrl is not available', async () => {
@@ -1254,6 +1261,8 @@ Save it for your next mountain escape!
 
         expect(result).to.have.property('urlsProcessed');
         expect(result).to.have.property('readabilityIssues');
+        // With no finalUrl, scrapedUrls carries only the requested URL (no dup).
+        expect(result.scrapedUrls).to.deep.equal(['https://example.com/page']);
       });
 
       it('should process multiple pages in parallel', async () => {

@@ -19,8 +19,10 @@ import {
   NON_EARNED_EXCLUDED_DOMAINS,
   filterUrlsByDrsStatus,
   resolveMystiqueUrlLimit,
+  resolveForwardedUrlLimit,
   resolveDrsPollIntervalSeconds,
   resolveEnableBrandProfile,
+  resolveEnableSemrush,
   requestOffsiteScrape,
   computeBrandTokens,
   isExcludedCitedHost,
@@ -37,11 +39,23 @@ import {
   DRS_POLL_INTERVAL_SECONDS,
   DRS_POLL_INTERVAL_UNATTENDED_SECONDS,
 } from '../../src/offsite-brand-presence/constants.js';
+import { OUTCOME, PEER } from '../../src/utils/offsite-logging.js';
 
 use(sinonChai);
 
 describe('offsite-audit-utils', () => {
   let sandbox;
+
+  // Stub offsite logger (createOffsiteLogger shape): each method emits one taxonomy line.
+  // The util call sites take a bound `olog` now, so assert on these instead of raw log strings.
+  const makeOlog = () => ({
+    start: sandbox.stub(),
+    success: sandbox.stub(),
+    skip: sandbox.stub(),
+    failure: sandbox.stub(),
+    warn: sandbox.stub(),
+    debug: sandbox.stub(),
+  });
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -120,16 +134,20 @@ describe('offsite-audit-utils', () => {
     });
 
     it('returns original list when drsClient is not configured', async () => {
-      const log = { info: sandbox.stub() };
+      const olog = makeOlog();
       const drsClient = { isConfigured: sandbox.stub().returns(false) };
-      const result = await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, '[T]');
+      const result = await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, olog);
       expect(result.urls).to.deep.equal(urls);
       expect(result.counts.determined).to.equal(false);
-      expect(log.info).to.have.been.calledWith('[T] DRS client not configured, skipping availability filter');
+      expect(olog.warn).to.have.been.calledWith(
+        'data_acquisition_drs_scrape_content_checked',
+        'DRS client not configured, skipping availability filter',
+        sinon.match({ reason: 'drs_not_configured', outcome: OUTCOME.DEGRADED }),
+      );
     });
 
     it('filters to URLs available in at least one dataset', async () => {
-      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const olog = makeOlog();
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
         lookupScrapeResults: sandbox.stub(),
@@ -157,7 +175,7 @@ describe('offsite-audit-utils', () => {
         },
       });
 
-      const result = await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, '[T]');
+      const result = await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, olog);
 
       expect(result.urls).to.have.lengthOf(2);
       expect(result.urls.map((u) => u.url)).to.include.members([
@@ -167,11 +185,15 @@ describe('offsite-audit-utils', () => {
       expect(result.counts).to.deep.equal({
         total: 3, available: 2, scraping: 0, notFound: 1, determined: true,
       });
-      expect(log.info).to.have.been.calledWith('[T] DRS availability filter: removed 1 URL(s) not yet scraped (0 scraping, 1 not-found), 2 remaining');
+      expect(olog.success).to.have.been.calledWith(
+        'data_acquisition_drs_scrape_content_checked',
+        'DRS availability filter removed URLs not yet scraped',
+        sinon.match({ peer: PEER.DRS, removed: 1, remaining: 2 }),
+      );
     });
 
     it('logs summary per dataset', async () => {
-      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const olog = makeOlog();
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
         lookupScrapeResults: sandbox.stub().resolves({
@@ -182,13 +204,19 @@ describe('offsite-audit-utils', () => {
         }),
       };
 
-      await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
+      await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, olog);
 
-      expect(log.info).to.have.been.calledWith('[T] DRS lookup datasetId=ds1: 1/3 available, 0 scraping, 2 not-found');
+      expect(olog.success).to.have.been.calledWith(
+        'data_acquisition_drs_scrape_content_checked',
+        'DRS lookup dataset summary',
+        sinon.match({
+          peer: PEER.DRS, datasetId: 'ds1', available: 1, total: 3,
+        }),
+      );
     });
 
     it('counts still-scraping URLs separately from not-found ones', async () => {
-      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const olog = makeOlog();
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
         lookupScrapeResults: sandbox.stub().resolves({
@@ -203,17 +231,21 @@ describe('offsite-audit-utils', () => {
         }),
       };
 
-      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
+      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, olog);
 
       expect(result.urls.map((u) => u.url)).to.deep.equal(['https://example.com/a']);
       expect(result.counts).to.deep.equal({
         total: 3, available: 1, scraping: 1, notFound: 1, determined: true,
       });
-      expect(log.info).to.have.been.calledWith('[T] DRS availability filter: removed 2 URL(s) not yet scraped (1 scraping, 1 not-found), 1 remaining');
+      expect(olog.success).to.have.been.calledWith(
+        'data_acquisition_drs_scrape_content_checked',
+        'DRS availability filter removed URLs not yet scraped',
+        sinon.match({ peer: PEER.DRS, removed: 2, remaining: 1 }),
+      );
     });
 
     it('throws DrsNoContentAvailableError when DRS responded but no URLs are available', async () => {
-      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const olog = makeOlog();
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
         lookupScrapeResults: sandbox.stub().resolves({
@@ -226,7 +258,7 @@ describe('offsite-audit-utils', () => {
 
       let thrown;
       try {
-        await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, log, '[T]');
+        await filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, olog);
       } catch (error) {
         thrown = error;
       }
@@ -238,37 +270,39 @@ describe('offsite-audit-utils', () => {
     });
 
     it('falls back to full list when all lookups return null', async () => {
-      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const olog = makeOlog();
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
         lookupScrapeResults: sandbox.stub().resolves(null),
       };
 
-      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
+      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, olog);
 
       expect(result.urls).to.deep.equal(urls);
       expect(result.counts.determined).to.equal(false);
-      expect(log.warn).to.have.been.calledWithMatch(/DRS lookup returned null/);
-      expect(log.warn).to.have.been.calledWithMatch(/All DRS lookups failed or returned null/);
+      expect(olog.warn).to.have.been.calledWith('data_acquisition_drs_scrape_content_checked', sinon.match(/DRS lookup returned null/), sinon.match({ peer: PEER.DRS, datasetId: 'ds1', reason: 'null_response' }));
+      expect(olog.warn).to.have.been.calledWith('data_acquisition_drs_scrape_content_checked', sinon.match(/All DRS lookups failed or returned null/), sinon.match({ peer: PEER.DRS, reason: 'all_failed' }));
     });
 
     it('falls back to full list when all lookups throw', async () => {
-      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const olog = makeOlog();
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
         lookupScrapeResults: sandbox.stub().rejects(new Error('network error')),
       };
 
-      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
+      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, olog);
 
       expect(result.urls).to.deep.equal(urls);
       expect(result.counts.determined).to.equal(false);
-      expect(log.warn).to.have.been.calledWithMatch(/DRS lookup failed for datasetId=ds1/);
-      expect(log.warn).to.have.been.calledWithMatch(/All DRS lookups failed or returned null/);
+      expect(olog.warn).to.have.been.calledWith('data_acquisition_drs_scrape_content_checked', sinon.match(/DRS lookup failed; skipping dataset/), sinon.match({
+        peer: PEER.DRS, datasetId: 'ds1', errorName: 'Error', errorMessage: 'network error',
+      }));
+      expect(olog.warn).to.have.been.calledWith('data_acquisition_drs_scrape_content_checked', sinon.match(/All DRS lookups failed or returned null/), sinon.match({ peer: PEER.DRS, reason: 'all_failed' }));
     });
 
     it('does not log removed count when all URLs pass the filter', async () => {
-      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const olog = makeOlog();
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
         lookupScrapeResults: sandbox.stub().resolves({
@@ -279,13 +313,13 @@ describe('offsite-audit-utils', () => {
         }),
       };
 
-      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log);
+      const result = await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, olog);
 
       expect(result.urls).to.deep.equal(urls);
       expect(result.counts).to.deep.equal({
         total: 3, available: 3, scraping: 0, notFound: 0, determined: true,
       });
-      expect(log.info).to.not.have.been.calledWithMatch(/DRS availability filter: removed/);
+      expect(olog.debug).to.not.have.been.calledWith('data_acquisition_drs_scrape_content_checked', sinon.match(/DRS availability filter: removed/));
     });
 
     it('works without log or logPrefix', async () => {
@@ -306,7 +340,7 @@ describe('offsite-audit-utils', () => {
     });
 
     it('falls back to rawUrls.length in summary log when response.summary is absent', async () => {
-      const log = { info: sandbox.stub(), warn: sandbox.stub() };
+      const olog = makeOlog();
       const drsClient = {
         isConfigured: sandbox.stub().returns(true),
         lookupScrapeResults: sandbox.stub().resolves({
@@ -314,10 +348,14 @@ describe('offsite-audit-utils', () => {
         }),
       };
 
-      await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, log, '[T]');
+      await filterUrlsByDrsStatus(urls, ['ds1'], siteId, drsClient, olog);
 
-      expect(log.info).to.have.been.calledWith(
-        `[T] DRS lookup datasetId=ds1: 0/${urls.length} available, 0 scraping, 0 not-found`,
+      expect(olog.success).to.have.been.calledWith(
+        'data_acquisition_drs_scrape_content_checked',
+        'DRS lookup dataset summary',
+        sinon.match({
+          peer: PEER.DRS, datasetId: 'ds1', available: 0, total: urls.length,
+        }),
       );
     });
   });
@@ -452,20 +490,59 @@ describe('offsite-audit-utils', () => {
     });
 
     it('returns cap when urlLimit exceeds MYSTIQUE_URLS_LIMIT', () => {
-      const log = { info: sandbox.stub() };
+      const olog = makeOlog();
       expect(resolveMystiqueUrlLimit(
         { messageData: { urlLimit: MYSTIQUE_URLS_LIMIT + 10 } },
-        log,
-        '[T]',
+        olog,
       )).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(log.info).to.have.been.calledOnce;
+      expect(olog.warn).to.have.been.calledOnceWith(
+        'audit_analysis_scope_resolved',
+        sinon.match(/exceeds cap/),
+        sinon.match({
+          scopeKind: 'url_limit',
+          requested: MYSTIQUE_URLS_LIMIT + 10,
+          cap: MYSTIQUE_URLS_LIMIT,
+          urlLimit: MYSTIQUE_URLS_LIMIT,
+          outcome: OUTCOME.DEGRADED,
+        }),
+      );
     });
 
     it('returns default and warns when urlLimit is invalid', () => {
+      const olog = makeOlog();
+      const nonInt = resolveMystiqueUrlLimit({ messageData: { urlLimit: 'x' } }, olog);
+      const fractional = resolveMystiqueUrlLimit({ messageData: { urlLimit: 1.5 } }, olog);
+      expect(nonInt).to.equal(MYSTIQUE_URLS_LIMIT);
+      expect(fractional).to.equal(MYSTIQUE_URLS_LIMIT);
+      expect(olog.warn).to.have.been.calledTwice;
+      expect(olog.warn).to.have.been.calledWith(
+        'audit_analysis_scope_resolved',
+        sinon.match(/Invalid urlLimit/),
+        sinon.match({ scopeKind: 'url_limit', reason: 'invalid' }),
+      );
+    });
+  });
+
+  describe('resolveForwardedUrlLimit', () => {
+    it('returns undefined when urlLimit is absent, so the default is not forced onto every run', () => {
+      expect(resolveForwardedUrlLimit({})).to.be.undefined;
+      expect(resolveForwardedUrlLimit(undefined)).to.be.undefined;
+      expect(resolveForwardedUrlLimit(null)).to.be.undefined;
+      expect(resolveForwardedUrlLimit({ messageData: { urlLimit: '' } })).to.be.undefined;
+    });
+
+    it('resolves and caps an explicit urlLimit, like resolveMystiqueUrlLimit', () => {
+      expect(resolveForwardedUrlLimit({ messageData: { urlLimit: 5 } })).to.equal(5);
+      expect(resolveForwardedUrlLimit(
+        { messageData: { urlLimit: MYSTIQUE_URLS_LIMIT + 10 } },
+      )).to.equal(MYSTIQUE_URLS_LIMIT);
+    });
+
+    it('falls back to the default and warns when an explicit urlLimit is invalid', () => {
       const log = { warn: sandbox.stub() };
-      expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: 'x' } }, log, '[T]')).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(resolveMystiqueUrlLimit({ messageData: { urlLimit: 1.5 } }, log, '[T]')).to.equal(MYSTIQUE_URLS_LIMIT);
-      expect(log.warn).to.have.been.calledTwice;
+      expect(resolveForwardedUrlLimit({ messageData: { urlLimit: 'x' } }, log, '[T]'))
+        .to.equal(MYSTIQUE_URLS_LIMIT);
+      expect(log.warn).to.have.been.calledOnce;
     });
   });
 
@@ -495,22 +572,87 @@ describe('offsite-audit-utils', () => {
       )).to.equal(false);
     });
 
-    it('returns undefined and warns when enableBrandProfile is invalid', () => {
-      const log = { warn: sandbox.stub() };
-      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 'yes' } }, log, '[T]')).to.be.undefined;
-      expect(log.warn).to.have.been.calledOnce;
+    it('returns undefined and warns via the bound olog under audit_orchestration_brand_profile_resolved when enableBrandProfile is invalid', () => {
+      const olog = makeOlog();
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 'yes' } }, olog)).to.be.undefined;
+      expect(olog.warn).to.have.been.calledOnce;
+      const [event, message, extra] = olog.warn.firstCall.args;
+      expect(event).to.equal('audit_orchestration_brand_profile_resolved');
+      expect(message).to.equal('Invalid override value in auditContext, omitting');
+      expect(extra).to.include({
+        reason: 'invalid_override',
+        field: 'enableBrandProfile',
+      });
     });
 
     it('returns undefined and warns for numeric values (e.g. 0), same as any other invalid input', () => {
-      const log = { warn: sandbox.stub() };
-      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 0 } }, log, '[T]')).to.be.undefined;
-      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 1 } }, log, '[T]')).to.be.undefined;
-      expect(log.warn).to.have.been.calledTwice;
+      const olog = makeOlog();
+      const ctxZero = { messageData: { enableBrandProfile: 0 } };
+      const ctxOne = { messageData: { enableBrandProfile: 1 } };
+      expect(resolveEnableBrandProfile(ctxZero, olog)).to.be.undefined;
+      expect(resolveEnableBrandProfile(ctxOne, olog)).to.be.undefined;
+      expect(olog.warn).to.have.been.calledTwice;
+    });
+
+    it('does not throw when no olog is supplied for an invalid value', () => {
+      expect(resolveEnableBrandProfile({ messageData: { enableBrandProfile: 'yes' } })).to.be.undefined;
+    });
+  });
+
+  describe('resolveEnableSemrush', () => {
+    it('returns undefined when auditContext or messageData is absent, so the env var applies', () => {
+      expect(resolveEnableSemrush({})).to.be.undefined;
+      expect(resolveEnableSemrush(undefined)).to.be.undefined;
+      expect(resolveEnableSemrush(null)).to.be.undefined;
+      expect(resolveEnableSemrush({ messageData: { enableSemrush: '' } })).to.be.undefined;
+    });
+
+    it('returns true for boolean true or the string "true"', () => {
+      expect(resolveEnableSemrush(
+        { messageData: { enableSemrush: true } },
+      )).to.equal(true);
+      expect(resolveEnableSemrush(
+        { messageData: { enableSemrush: 'true' } },
+      )).to.equal(true);
+    });
+
+    it('returns false for boolean false or the string "false"', () => {
+      expect(resolveEnableSemrush(
+        { messageData: { enableSemrush: false } },
+      )).to.equal(false);
+      expect(resolveEnableSemrush(
+        { messageData: { enableSemrush: 'false' } },
+      )).to.equal(false);
+    });
+
+    it('returns undefined and warns via the bound olog under data_acquisition_bp_data_semrush_read when enableSemrush is invalid', () => {
+      const olog = makeOlog();
+      expect(resolveEnableSemrush({ messageData: { enableSemrush: 'yes' } }, olog)).to.be.undefined;
+      expect(olog.warn).to.have.been.calledOnce;
+      const [event, message, extra] = olog.warn.firstCall.args;
+      expect(event).to.equal('data_acquisition_bp_data_semrush_read');
+      expect(message).to.equal('Invalid override value in auditContext, omitting');
+      expect(extra).to.include({
+        reason: 'invalid_override',
+        field: 'enableSemrush',
+      });
+    });
+
+    it('returns undefined and warns for numeric values (e.g. 0), same as any other invalid input', () => {
+      const olog = makeOlog();
+      expect(resolveEnableSemrush({ messageData: { enableSemrush: 0 } }, olog)).to.be.undefined;
+      expect(resolveEnableSemrush({ messageData: { enableSemrush: 1 } }, olog)).to.be.undefined;
+      expect(olog.warn).to.have.been.calledTwice;
+    });
+
+    it('does not throw when no olog is supplied for an invalid value', () => {
+      expect(resolveEnableSemrush({ messageData: { enableSemrush: 'yes' } })).to.be.undefined;
     });
   });
 
   describe('requestOffsiteScrape', () => {
     let context;
+    let olog;
 
     beforeEach(() => {
       context = {
@@ -524,10 +666,11 @@ describe('offsite-audit-utils', () => {
         },
         log: { info: sandbox.stub(), warn: sandbox.stub() },
       };
+      olog = makeOlog();
     });
 
     it('sends a scoped offsite-brand-presence message without enableBrandProfile by default', async () => {
-      await requestOffsiteScrape(context, 'site-1', 'top-cited', { channelId: 'C1', threadTs: 'T1' });
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', { channelId: 'C1', threadTs: 'T1' }, undefined, undefined, undefined, olog);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [queueUrl, msg] = context.sqs.sendMessage.firstCall.args;
@@ -540,10 +683,15 @@ describe('offsite-audit-utils', () => {
           messageData: { domainScope: 'top-cited' },
         },
       });
+      expect(olog.success).to.have.been.calledWith(
+        'data_acquisition_drs_scrape_job_request_dispatched',
+        sinon.match(/Requested DRS scrape/),
+        sinon.match({ reason: 'self_heal', domainScope: 'top-cited' }),
+      );
     });
 
     it('forwards enableBrandProfile in messageData when true', async () => {
-      await requestOffsiteScrape(context, 'site-1', 'reddit.com', undefined, true);
+      await requestOffsiteScrape(context, 'site-1', 'reddit.com', undefined, true, undefined, undefined, olog);
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
       expect(msg.auditContext.slackContext).to.be.undefined;
@@ -551,18 +699,60 @@ describe('offsite-audit-utils', () => {
     });
 
     it('forwards explicit enableBrandProfile:false in messageData (distinct from absent)', async () => {
-      await requestOffsiteScrape(context, 'site-1', 'youtube.com', undefined, false);
+      await requestOffsiteScrape(context, 'site-1', 'youtube.com', undefined, false, undefined, undefined, olog);
 
       const msg = context.sqs.sendMessage.firstCall.args[1];
       expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'youtube.com', enableBrandProfile: false });
     });
 
-    it('swallows and logs a warning when the send fails', async () => {
+    it('forwards urlLimit in messageData alongside enableBrandProfile', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'reddit.com', undefined, true, 20);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({
+        domainScope: 'reddit.com',
+        enableBrandProfile: true,
+        urlLimit: 20,
+      });
+    });
+
+    it('forwards urlLimit without enableBrandProfile when only urlLimit is given', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, undefined, 15);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'top-cited', urlLimit: 15 });
+    });
+
+    it('forwards enableSemrush in messageData alongside enableBrandProfile and urlLimit', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'reddit.com', undefined, true, 20, true);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({
+        domainScope: 'reddit.com',
+        enableBrandProfile: true,
+        urlLimit: 20,
+        enableSemrush: true,
+      });
+    });
+
+    it('forwards explicit enableSemrush:false (distinct from absent)', async () => {
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, undefined, undefined, false);
+
+      const msg = context.sqs.sendMessage.firstCall.args[1];
+      expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'top-cited', enableSemrush: false });
+    });
+
+    it('swallows and logs a failure when the send fails', async () => {
       context.dataAccess.Configuration.findLatest.rejects(new Error('boom'));
 
-      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, true);
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, true, undefined, undefined, olog);
 
-      expect(context.log.warn).to.have.been.calledWithMatch(/Failed to request DRS scrape/);
+      expect(olog.failure).to.have.been.calledWith(
+        'data_acquisition_drs_scrape_job_request_dispatched',
+        sinon.match(/Failed to request DRS scrape/),
+        sinon.match({ reason: 'self_heal_failed' }),
+      );
+      expect(olog.warn).to.not.have.been.called;
     });
   });
 
@@ -731,29 +921,29 @@ describe('offsite-audit-utils', () => {
     });
 
     it('logs calls, tokens, and 4-decimal cost when llmUsage is present', () => {
-      logOffsiteLlmUsage(log, '[Cited]', 'site-123', {
+      logOffsiteLlmUsage(log, '[offsite:cited]', 'site-123', {
         totalLlmCalls: 10,
         totalTokens: 326070,
         totalCostUsd: 1.468751,
       });
       expect(log.info).to.have.been.calledOnce;
       expect(log.info.firstCall.args[0]).to.equal(
-        '[Cited] LLM usage for siteId: site-123: 10 calls, 326070 tokens, est. cost $1.4688',
+        '[offsite:cited] LLM usage for siteId: site-123: 10 calls, 326070 tokens, est. cost $1.4688',
       );
     });
 
     it('logs nothing when llmUsage is undefined', () => {
-      logOffsiteLlmUsage(log, '[Cited]', 'site-123', undefined);
+      logOffsiteLlmUsage(log, '[offsite:cited]', 'site-123', undefined);
       expect(log.info).to.not.have.been.called;
     });
 
     it('logs nothing when llmUsage is null', () => {
-      logOffsiteLlmUsage(log, '[Cited]', 'site-123', null);
+      logOffsiteLlmUsage(log, '[offsite:cited]', 'site-123', null);
       expect(log.info).to.not.have.been.called;
     });
 
     it('logs nothing when llmUsage is not an object', () => {
-      logOffsiteLlmUsage(log, '[Cited]', 'site-123', 'oops');
+      logOffsiteLlmUsage(log, '[offsite:cited]', 'site-123', 'oops');
       expect(log.info).to.not.have.been.called;
     });
 

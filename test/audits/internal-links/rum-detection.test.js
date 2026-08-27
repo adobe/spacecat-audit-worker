@@ -146,6 +146,26 @@ describe('internal-links rum-detection', () => {
     expect(log.info).to.have.been.calledWith('No 404 internal links found in RUM data');
   });
 
+  it('queries RUM by the bare hostname (not the sub-path) so the domainkey resolves', async () => {
+    const query = sinon.stub().resolves([]);
+    const rumApiClient = { query };
+    const log = createLog();
+    const { internalLinksAuditRunner } = createSteps();
+
+    await internalLinksAuditRunner('https://audit.example', {
+      log,
+      site: {
+        getId: () => 'site-1',
+        getBaseURL: () => 'https://example.com/foo',
+      },
+      rumApiClient,
+      finalUrl: 'https://example.com/foo',
+    });
+
+    // The RUM `domain` must be the hostname, not the sub-path finalUrl.
+    expect(query.firstCall.args[1].domain).to.equal('example.com');
+  });
+
   it('runs the top-pages step on successful rum detection', async () => {
     const rumApiClient = {
       query: sinon.stub().resolves([

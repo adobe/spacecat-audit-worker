@@ -30,6 +30,9 @@
  */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import {
+  AUDIT, createOffsiteLogger, errorField, OUTCOME, PEER,
+} from './offsite-logging.js';
 
 // Page size for cursor-based pagination over the url-store and sentiment collections.
 const STORE_PAGE_SIZE = 500;
@@ -68,6 +71,31 @@ export const GUIDELINE_TYPES = {
   YOUTUBE_ANALYSIS: Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS,
   CITED_ANALYSIS: Audit.AUDIT_TYPES.CITED_ANALYSIS,
 };
+
+/**
+ * Maps an `Audit.AUDIT_TYPES` string (e.g. 'wikipedia-analysis') to the matching
+ * {@link AUDIT} taxonomy enum member (e.g. `AUDIT.WIKIPEDIA`) used as the `audit` field in
+ * offsite log lines, so Splunk queries filtering on `audit=<value>` match this file's logs.
+ * Falls back to the raw `auditType` (including `undefined`) when it does not map to a known
+ * audit type, e.g. the `getGuidelines` no-`auditType`-given path.
+ *
+ * @param {string} [auditType] one of `Audit.AUDIT_TYPES`
+ * @returns {string|undefined} the matching {@link AUDIT} member, or the raw `auditType`
+ */
+function toLogAudit(auditType) {
+  switch (auditType) {
+    case Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS:
+      return AUDIT.WIKIPEDIA;
+    case Audit.AUDIT_TYPES.REDDIT_ANALYSIS:
+      return AUDIT.REDDIT;
+    case Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS:
+      return AUDIT.YOUTUBE;
+    case Audit.AUDIT_TYPES.CITED_ANALYSIS:
+      return AUDIT.CITED;
+    default:
+      return auditType;
+  }
+}
 
 /**
  * Maps an AuditUrl model instance to a plain object, matching the shape the
@@ -202,26 +230,46 @@ export default class StoreClient {
     this.#ensureConfigured(['AuditUrl']);
     const { sortBy = 'createdAt', sortOrder = 'desc' } = queryParams;
     const { AuditUrl } = this.dataAccess;
+    const olog = createOffsiteLogger(this.log, { audit: toLogAudit(auditType), siteId });
 
-    this.log.info(`[StoreClient] Fetching ${auditType} URLs for siteId: ${siteId}`);
+    olog.start('data_acquisition_url_store_read', 'Fetching URLs from URL Store', {
+      peer: PEER.URL_STORE, direction: 'inbound', auditType,
+    });
 
-    const items = await this.#fetchAllPages((cursor) => AuditUrl.allBySiteIdAndAuditType(
-      siteId,
-      auditType,
-      {
-        limit: STORE_PAGE_SIZE,
-        cursor,
-        sortBy,
-        sortOrder,
-      },
-    ));
+    // Wraps the DB read so a genuine read error is a distinct, alertable
+    // `data_acquisition_url_store_read outcome=failure` rather than surfacing only as
+    // the generic "Audit failed". The empty-store case below stays a StoreEmptyError (a
+    // normal "no URLs yet" signal the callers self-heal on), not a read failure.
+    let items;
+    try {
+      items = await this.#fetchAllPages((cursor) => AuditUrl.allBySiteIdAndAuditType(
+        siteId,
+        auditType,
+        {
+          limit: STORE_PAGE_SIZE,
+          cursor,
+          sortBy,
+          sortOrder,
+        },
+      ));
+    } catch (error) {
+      olog.failure('data_acquisition_url_store_read', 'Failed to read URLs from URL Store', {
+        peer: PEER.URL_STORE, direction: 'inbound', auditType, ...errorField(error),
+      });
+      throw error;
+    }
 
     if (items.length === 0) {
+      olog.warn('data_acquisition_url_store_read', 'No URLs found in URL Store', {
+        peer: PEER.URL_STORE, direction: 'inbound', auditType, reason: 'no_urls', outcome: OUTCOME.SKIP,
+      });
       throw new StoreEmptyError('urlStore', siteId, `No ${auditType} URLs found`);
     }
 
     const urls = items.map(toAuditUrlJson);
-    this.log.info(`[StoreClient] Found ${urls.length} ${auditType} URLs for siteId: ${siteId}`);
+    olog.success('data_acquisition_url_store_read', 'Found URLs in URL Store', {
+      peer: PEER.URL_STORE, direction: 'inbound', auditType, count: urls.length,
+    });
     return urls;
   }
 
@@ -238,8 +286,11 @@ export default class StoreClient {
   async getGuidelines(siteId, auditType) {
     this.#ensureConfigured(['SentimentTopic', 'SentimentGuideline']);
     const { SentimentTopic, SentimentGuideline } = this.dataAccess;
+    const olog = createOffsiteLogger(this.log, { audit: toLogAudit(auditType), siteId });
 
-    this.log.info(`[StoreClient] Fetching sentiment config for siteId: ${siteId}, audit: ${auditType}`);
+    olog.start('data_acquisition_guideline_store_read', 'Fetching sentiment config', {
+      peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType,
+    });
 
     const topicItems = await this.#fetchAllPages(
       (cursor) => SentimentTopic.allBySiteIdEnabled(siteId, { limit: STORE_PAGE_SIZE, cursor }),
@@ -256,10 +307,15 @@ export default class StoreClient {
     const guidelines = guidelineItems.map(toSentimentGuidelineJson);
 
     if (guidelines.length === 0) {
+      olog.warn('data_acquisition_guideline_store_read', 'No guidelines or topics found in Guideline Store', {
+        peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType, reason: 'no_guidelines_or_topics', outcome: OUTCOME.SKIP,
+      });
       throw new StoreEmptyError('guidelinesStore', siteId, `No guidelines found for audit type: ${auditType}`);
     }
 
-    this.log.info(`[StoreClient] Found ${topics.length} topics and ${guidelines.length} guidelines for siteId: ${siteId}`);
+    olog.success('data_acquisition_guideline_store_read', 'Found topics and guidelines', {
+      peer: PEER.GUIDELINE_STORE, direction: 'inbound', auditType, topics: topics.length, guidelines: guidelines.length,
+    });
     return { topics, guidelines };
   }
 }

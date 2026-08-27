@@ -127,6 +127,7 @@ import offsiteBrandPresence from './offsite-brand-presence/handler.js';
 import offsiteBrandPresenceDrsStatus from './offsite-brand-presence/drs-status-handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import { refreshGeoBrandPresenceDailyHandler } from './geo-brand-presence-daily/geo-brand-presence-refresh-handler.js';
+import brandClaims from './brand-claims/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -239,6 +240,7 @@ const HANDLERS = {
   'offsite-brand-presence-drs-status': offsiteBrandPresenceDrsStatus,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
+  'brand-claims': brandClaims,
   'rum-config-refresh': rumConfigRefresh,
   dummy: (message) => ok(message),
 };

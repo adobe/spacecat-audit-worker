@@ -104,6 +104,11 @@ describe('summarization guidance handler', () => {
       getSuggestions: sinon.stub().resolves([]),
       getData: sinon.stub().returns({ subType: 'summarization' }),
       setAuditId: sinon.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sinon.stub(),
+      setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setData: sinon.stub(),
       setGuidance: sinon.stub(),
       setUpdatedBy: sinon.stub(),
@@ -485,6 +490,11 @@ describe('summarization guidance handler', () => {
       getData: () => ({ subType: 'summarization' }),
       getSuggestions: () => Promise.resolve([]),
       setAuditId: sinon.stub(),
+      // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+      setScopeType: sinon.stub(),
+      setScopeId: sinon.stub(),
+      getScopeType: () => null,
+      getScopeId: () => null,
       setData: sinon.stub(),
       setGuidance: sinon.stub(),
       setUpdatedBy: sinon.stub(),
@@ -793,6 +803,28 @@ describe('summarization guidance handler', () => {
 
     expect(result.shouldOptimize).to.equal(false);
     expect(result.transformRules.selector).to.equal('h2');
+  });
+
+  it('should not opt in to protectEditedFromOutdated (buildKey has no editable content)', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(dummyOpportunity);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        presignedUrl: 'https://s3.amazonaws.com/bucket/summaries.json',
+      },
+    };
+    await handler(message, context);
+
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    // Unlike FAQ, summarization's buildKey doesn't embed summarizationText, so an
+    // edit doesn't drift the key — no opt-in needed; edited suggestions clear
+    // normally to OUTDATED/FIXED when the issue disappears (LLMO-6761).
+    expect(syncArgs.protectEditedFromOutdated).to.be.undefined;
+    // Scenario 1 (LLMO-6761): summarization opts in to the full-suggestion hard-skip.
+    expect(syncArgs.skipEditedOnMatch).to.equal(true);
   });
 
 });

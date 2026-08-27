@@ -56,6 +56,16 @@ describe('subpath-filter', () => {
       expect(isWithinAuditScope('/products', 'bulk.com/uk')).to.equal(false);
     });
 
+    it('should handle a baseURL with a trailing slash', () => {
+      // `bulk.com/uk/` must behave exactly like `bulk.com/uk` (not build `/uk//`).
+      expect(isWithinAuditScope('https://bulk.com/uk/page1', 'bulk.com/uk/')).to.equal(true);
+      expect(isWithinAuditScope('https://bulk.com/uk', 'bulk.com/uk/')).to.equal(true);
+      expect(isWithinAuditScope('https://bulk.com/uk.html', 'bulk.com/uk/')).to.equal(true);
+      expect(isWithinAuditScope('https://bulk.com/fr/page1', 'bulk.com/uk/')).to.equal(false);
+      // A bare host with a trailing slash is still root scope (everything included).
+      expect(isWithinAuditScope('https://bulk.com/anything', 'bulk.com/')).to.equal(true);
+    });
+
     it('should avoid false positives with trailing slash matching', () => {
       // /fr/ should not match /french/
       expect(isWithinAuditScope('https://bulk.com/french/page', 'bulk.com/fr')).to.equal(false);
@@ -76,6 +86,17 @@ describe('subpath-filter', () => {
       expect(isWithinAuditScope('https://bulk.com/uk/page1', 'bulk.com/uk')).to.equal(true);
       expect(isWithinAuditScope('https://bulk.com/uk/page2', 'bulk.com/uk')).to.equal(true);
       expect(isWithinAuditScope('https://bulk.com/fr/page1', 'bulk.com/uk')).to.equal(false);
+    });
+
+    it('should keep the section landing page (basePath.html) but not siblings', () => {
+      // The `${basePath}.html` landing page is in scope.
+      expect(isWithinAuditScope('https://example.com/foo.html', 'https://example.com/foo')).to.equal(true);
+      expect(isWithinAuditScope('/foo.html', 'https://example.com/foo')).to.equal(true);
+      // Boundary safety: siblings sharing the prefix must still be dropped.
+      expect(isWithinAuditScope('https://example.com/foobar', 'https://example.com/foo')).to.equal(false);
+      expect(isWithinAuditScope('https://example.com/foo-x', 'https://example.com/foo')).to.equal(false);
+      expect(isWithinAuditScope('/foobar', 'https://example.com/foo')).to.equal(false);
+      expect(isWithinAuditScope('/foo-x', 'https://example.com/foo')).to.equal(false);
     });
 
     it('should return false for invalid URLs', () => {

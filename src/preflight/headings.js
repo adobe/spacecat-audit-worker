@@ -18,7 +18,7 @@ import {
   HEADINGS_CHECKS,
 } from '../headings/handler.js';
 import { getBrandGuidelines } from '../headings/shared-utils.js';
-import { saveIntermediateResults } from './utils.js';
+import { saveIntermediateResults, formatStructuredAuditLog } from './utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
 import { getDomElementSelector, toElementTargets } from './utils/dom-selector.js';
 
@@ -56,22 +56,18 @@ function getElementsFromCheck(scrapeJsonObject, check, log) {
 
   // Use string comparison for check types to avoid dependency on HEADINGS_CHECKS constants
   switch (checkType) {
-    case 'heading-missing-h1': {
-      // Target the main content area where H1 should be added
-      const mainElement = $('body > main').get(0) || $('body').get(0);
-      const selector = getDomElementSelector(mainElement);
-      if (selector) {
-        selectors.push(selector);
-      }
+    case 'heading-missing-h1':
+      // No element to point at since H1 is absent. Attaching a fallback <main>/<body> selector
+      // would be misleading (it isn't the offending element), instead let the recommendation
+      // guide the author.
       break;
-    }
 
     case 'heading-multiple-h1': {
-      // Target all H1 elements
+      // Target all H1 elements, pairing each with its own text
       const h1Elements = $('h1').toArray();
       selectors = h1Elements
-        .map((h1) => getDomElementSelector(h1))
-        .filter(Boolean);
+        .map((h1) => ({ selector: getDomElementSelector(h1), textContent: $(h1).text().trim() }))
+        .filter((pair) => pair.selector);
       break;
     }
 
@@ -81,7 +77,7 @@ function getElementsFromCheck(scrapeJsonObject, check, log) {
       if (h1Element) {
         const selector = getDomElementSelector(h1Element);
         if (selector) {
-          selectors.push(selector);
+          selectors.push({ selector, textContent: $(h1Element).text().trim() });
         }
       }
       break;
@@ -121,7 +117,7 @@ function getElementsFromCheck(scrapeJsonObject, check, log) {
         if (element) {
           const selector = getDomElementSelector(element);
           if (selector) {
-            selectors.push(selector);
+            selectors.push({ selector, textContent: $(element).text().trim() });
           }
         }
       }
@@ -199,6 +195,8 @@ export default async function headings(context, auditContext) {
 
   const headingsStartTime = Date.now();
   const headingsStartTimestamp = new Date().toISOString();
+  let status = 'ok';
+  let errorMessage;
 
   // Create headings audit entries for all pages
   previewUrls.forEach((url) => {
@@ -284,7 +282,9 @@ export default async function headings(context, auditContext) {
             opportunity.suggestion = check.suggestion;
           }
 
-          // Generate selectors from the scraped HTML
+          // Generate selectors from the scraped HTML. The offending heading's text is
+          // paired into each element's `textContent` by getElementsFromCheck, so there
+          // is no separate top-level `content` field — element text has a single home.
           if (scrapeJsonObject) {
             const elementData = getElementsFromCheck(scrapeJsonObject, check, log);
             if (elementData?.elements?.length > 0) {
@@ -292,23 +292,28 @@ export default async function headings(context, auditContext) {
             }
           }
 
-          const headingContent = check.transformRules?.currValue?.trim();
-          if (headingContent) {
-            opportunity.content = headingContent;
-          }
-
           audit.opportunities.push(opportunity);
         }
       });
     });
   } catch (error) {
+    status = 'fail';
+    errorMessage = error.message;
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Headings audit failed: ${error.message}`);
   }
 
   const headingsEndTime = Date.now();
   const headingsEndTimestamp = new Date().toISOString();
   const headingsElapsed = ((headingsEndTime - headingsStartTime) / 1000).toFixed(2);
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Headings audit completed in ${headingsElapsed} seconds`);
+  const headingsStructured = formatStructuredAuditLog({
+    audit: PREFLIGHT_HEADINGS,
+    status,
+    durationMs: headingsEndTime - headingsStartTime,
+    error: errorMessage,
+  });
+  // info (not debug): prod runs at LOG_LEVEL=info, so a debug line never reaches Splunk and
+  // the per-audit dashboard would have no headings data. Matches the DOM-based block's level.
+  log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Headings audit completed in ${headingsElapsed} seconds.${headingsStructured}`);
 
   timeExecutionBreakdown.push({
     name: 'headings',

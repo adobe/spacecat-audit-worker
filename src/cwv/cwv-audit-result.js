@@ -14,6 +14,8 @@ import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit, Entitlement } from '@adobe/spacecat-shared-data-access';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { removeTrailingSlash } from '../utils/url-utils.js';
+import { isWithinAuditScope } from '../internal-links/subpath-filter.js';
+import { getRUMDomain } from '../support/utils.js';
 
 const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
@@ -25,13 +27,30 @@ const TOP_PAGES_COUNT_PLG = 3;
 const HEAD_REQUEST_TIMEOUT_MS = 10000;
 
 /**
- * Performs a HEAD request to the URL and returns true if the response is 4xx
- * or if the request fails (timeout/network). Used to skip such URLs from CWV opportunities.
+ * Performs a HEAD request and returns true ONLY if the URL is genuinely gone
+ * (HTTP 404 or 410).
+ *
+ * CWV candidates come from RUM field data — i.e. real users successfully loaded
+ * these pages — so a request that we cannot complete from our infrastructure does
+ * NOT mean the page is gone. In particular a 403/401/429 (bot-block / rate-limit),
+ * a 5xx, or a timeout/bot-block failure must NOT drop the URL, otherwise a site that
+ * bot-blocks our crawler loses ALL of its valid CWV opportunities (see SITES-47218).
+ *
+ * Two signals are treated as definitively "gone":
+ *   1. an HTTP 404/410 status, and
+ *   2. a hard network failure where the host cannot be reached at all —
+ *      DNS non-resolution (ENOTFOUND) or connection refused (ECONNREFUSED).
+ * A hard network failure is distinguished from an ambiguous one (timeout /
+ * AbortError / other transient errors), which is kept: this stops a stale RUM
+ * entry whose host no longer resolves from re-appearing as a CWV opportunity
+ * (the SITES-40803 symptom leaking back through the exception path) while still
+ * honouring the SITES-47218 fix for blocked-but-live sites.
+ *
  * @param {string} url - The URL to check
  * @param {Object} log - Logger instance
- * @returns {Promise<boolean>} True if URL should be skipped (4xx or request failed)
+ * @returns {Promise<boolean>} True only if the URL responds 404 or 410 (gone)
  */
-export async function isUrl4xxOrFailed(url, log) {
+export async function isUrlGone(url, log) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), HEAD_REQUEST_TIMEOUT_MS);
   try {
@@ -45,15 +64,25 @@ export async function isUrl4xxOrFailed(url, log) {
     });
     clearTimeout(timeoutId);
     const { status } = response;
-    if (status >= 400 && status < 500) {
-      log.debug(`[audit-worker-cwv] Skipping URL (4xx): ${url} status=${status}`);
+    if (status === 404 || status === 410) {
+      log.debug(`[audit-worker-cwv] Skipping URL (gone): ${url} status=${status}`);
       return true;
     }
     return false;
   } catch (err) {
     clearTimeout(timeoutId);
-    log.debug(`[audit-worker-cwv] Skipping URL (HEAD failed): ${url} error=${err.message}`);
-    return true;
+    // A hard network failure — the host does not resolve (ENOTFOUND) or refuses
+    // connections (ECONNREFUSED) — is a strong "gone" signal, so skip the URL.
+    // (undici wraps the underlying error under `err.cause`, so check both.)
+    const code = err.code || err.cause?.code;
+    if (code === 'ENOTFOUND' || code === 'ECONNREFUSED') {
+      log.debug(`[audit-worker-cwv] Skipping URL (unreachable ${code}): ${url}`);
+      return true;
+    }
+    // Ambiguous failure (timeout / AbortError / bot-block). NOT "gone" — keep the
+    // URL, because RUM already proves real users load it.
+    log.debug(`[audit-worker-cwv] HEAD check inconclusive, keeping URL: ${url} error=${err.message}`);
+    return false;
   }
 }
 
@@ -108,17 +137,26 @@ export async function buildCWVAuditResult(context) {
   const rumApiClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
   const options = {
-    domain: auditUrl,
+    // RUM is keyed per hostname; a sub-path auditUrl (e.g. example.com/foo) has no
+    // domainkey. Query by hostname; per-URL results are scoped to the base path below.
+    domain: getRUMDomain(auditUrl),
     interval: INTERVAL,
     granularity: 'hourly',
     groupedURLs,
   };
   const cwvData = await rumApiClient.query(Audit.AUDIT_TYPES.CWV, options);
 
+  // SITES-49656: sub-path sites (e.g. example.com/foo) share the domain-keyed RUM
+  // query, so scope per-URL entries to the base path before top-N/threshold selection.
+  // Root-domain sites and operator-configured `group` entries are unaffected.
+  const scopedCwvData = cwvData.filter(
+    (item) => item.type !== 'url' || isWithinAuditScope(item.url, baseURL),
+  );
+
   const stats = { homepage: false, topNCount: 0, thresholdCount: 0 };
 
   // Always include: homepage + top N pages + pages meeting threshold
-  const filteredCwvData = [...cwvData]
+  const filteredCwvData = [...scopedCwvData]
     .sort((a, b) => b.pageviews - a.pageviews)
     .reduce((list, item) => {
       // 1) Homepage
@@ -145,32 +183,35 @@ export async function buildCWVAuditResult(context) {
     }, []);
 
   log.info(
-    `[audit-worker-cwv] siteId: ${siteId} | baseURL: ${baseURL} | Total=${cwvData.length}, Reported=${filteredCwvData.length} | `
+    `[audit-worker-cwv] siteId: ${siteId} | baseURL: ${baseURL} | Total=${cwvData.length}, Scoped=${scopedCwvData.length}, Reported=${filteredCwvData.length} | `
     + `Homepage: ${stats.homepage ? 'included' : 'not included'} | `
     + `Top${topPagesCount} pages: ${stats.topNCount} | `
     + `Pages above threshold: ${stats.thresholdCount}`,
   );
 
-  // Exclude URL entries that return 4xx or HEAD failed from becoming opportunities
+  // Exclude only URL entries that are genuinely gone (404/410). A bot-block (403)
+  // or transient failure must NOT drop a URL — CWV is RUM field data, so the page
+  // is live for real users (SITES-47218). Group entries are never HEAD-checked.
   const urlEntries = filteredCwvData.filter((entry) => entry.type === 'url');
-  const skipFlags = await Promise.all(
-    urlEntries.map((entry) => isUrl4xxOrFailed(entry.url, log)),
+  const goneFlags = await Promise.all(
+    urlEntries.map((entry) => isUrlGone(entry.url, log)),
   );
   const urlsToSkip = new Set(
-    urlEntries.filter((_, i) => skipFlags[i]).map((e) => e.url),
+    urlEntries.filter((_, i) => goneFlags[i]).map((e) => e.url),
   );
-  const after4xxFilter = filteredCwvData.filter(
+
+  const afterGoneFilter = filteredCwvData.filter(
     (entry) => entry.type !== 'url' || !urlsToSkip.has(entry.url),
   );
   if (urlsToSkip.size > 0) {
     log.info(
-      `[audit-worker-cwv] siteId: ${siteId} | Excluded ${urlsToSkip.size} URL(s) (4xx or HEAD failed): ${[...urlsToSkip].join(', ')}`,
+      `[audit-worker-cwv] siteId: ${siteId} | Excluded ${urlsToSkip.size} URL(s) (404/410 gone): ${[...urlsToSkip].join(', ')}`,
     );
   }
 
   return {
     auditResult: {
-      cwv: after4xxFilter,
+      cwv: afterGoneFilter,
       auditContext: {
         interval: INTERVAL,
       },

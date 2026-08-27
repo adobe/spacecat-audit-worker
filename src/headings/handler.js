@@ -388,6 +388,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
       auditType,
       getAgenticUrls: () => getTopAgenticUrlsFromAthena(site, context),
       topOrganicLimit: 200,
+      scopeTopPagesToBasePath: true,
       log,
     });
     const topPages = mergedInput.urls.map((url) => ({ url }));
@@ -602,6 +603,10 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     newData: headingsSuggestions,
     context,
     buildKey,
+    // Preserve prior behavior: headings edited suggestions stay protected from the
+    // OUTDATED sweep. Only FAQ/Summarization/Readability changed in LLMO-6761;
+    // headings is out of scope, so keep its edited suggestions exempt (LLMO-6761).
+    protectEditedFromOutdated: true,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: suggestion.type,

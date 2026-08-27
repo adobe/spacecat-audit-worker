@@ -10,9 +10,21 @@
  * governing permissions and limitations under the License.
  */
 
-import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
+import { Opportunity as Oppty, Audit } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES, OFFSITE_AUDIT_TYPES } from './constants.js';
 import { checkGoogleConnection } from './opportunity-utils.js';
+import {
+  createOffsiteLogger, errorField, AUDIT, PEER, OUTCOME,
+} from '../utils/offsite-logging.js';
+
+// This module is shared by all three offsite guidance handlers, so it does not know the audit
+// slug at module scope. Derive it from the audit type passed by the caller so the emitted lines
+// carry the correct `audit=` token.
+const AUDIT_SLUG_BY_TYPE = {
+  [Audit.AUDIT_TYPES.CITED_ANALYSIS]: AUDIT.CITED,
+  [Audit.AUDIT_TYPES.REDDIT_ANALYSIS]: AUDIT.REDDIT,
+  [Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS]: AUDIT.YOUTUBE,
+};
 
 /**
  * Validates the payload shape and rejects a declared opportunity type that differs from
@@ -47,7 +59,7 @@ export function isValidOffsiteAnalysis(analysisData, expectedType) {
  * @param {string} auditType - Handler-owned offsite audit type.
  * @param {Object} options - Mapper input plus the pre-resolved target.
  * @param {Object} options.opportunityData - Incoming Mystique opportunity data.
- * @param {Object|null} options.existingOpportunity - Evergreen target, or null to create.
+ * @param {Object|null} options.opportunityToUpdate - Persistence target, or null to create.
  * @returns {Promise<Object>} The created or refreshed opportunity.
  */
 export async function persistOffsiteOpportunity(
@@ -61,18 +73,23 @@ export async function persistOffsiteOpportunity(
   if (!OFFSITE_AUDIT_TYPES.has(auditType)) {
     throw new Error(`Unsupported offsite audit type: ${auditType}`);
   }
-  if (!options || !Object.prototype.hasOwnProperty.call(options, 'existingOpportunity')) {
-    throw new Error('existingOpportunity must be explicitly provided');
+  if (!options || !Object.prototype.hasOwnProperty.call(options, 'opportunityToUpdate')) {
+    throw new Error('opportunityToUpdate must be explicitly provided');
   }
-  const { existingOpportunity: evergreenOpportunity } = options;
-  if (evergreenOpportunity !== null
-      && (typeof evergreenOpportunity !== 'object' || Array.isArray(evergreenOpportunity))) {
-    throw new Error('existingOpportunity must be an opportunity or null');
+  const { opportunityToUpdate } = options;
+  if (opportunityToUpdate !== null
+      && (typeof opportunityToUpdate !== 'object' || Array.isArray(opportunityToUpdate))) {
+    throw new Error('opportunityToUpdate must be an opportunity or null');
   }
 
   const mappedOpportunity = createOpportunityData(options);
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
+  // auditType is guaranteed to be in OFFSITE_AUDIT_TYPES (and therefore mapped) by the
+  // guard above, so the slug is always defined here — no fallback needed.
+  const olog = createOffsiteLogger(log, {
+    audit: AUDIT_SLUG_BY_TYPE[auditType], siteId: auditData.siteId, auditId: auditData.id,
+  });
 
   const hasGoogleConnection = await checkGoogleConnection(auditUrl, context);
   if (!hasGoogleConnection && mappedOpportunity.data?.dataSources) {
@@ -81,8 +98,8 @@ export async function persistOffsiteOpportunity(
   }
 
   try {
-    if (evergreenOpportunity === null) {
-      return await Opportunity.create({
+    if (opportunityToUpdate === null) {
+      const created = await Opportunity.create({
         siteId: auditData.siteId,
         auditId: auditData.id,
         runbook: mappedOpportunity.runbook,
@@ -95,16 +112,41 @@ export async function persistOffsiteOpportunity(
         data: mappedOpportunity.data,
         ...(mappedOpportunity.status ? { status: mappedOpportunity.status } : {}),
       });
+      olog.success('audit_persistence_evergreen_opportunity_write', 'Created opportunity', {
+        peer: PEER.POSTGRES,
+        direction: 'outbound',
+        opportunityId: created.getId(),
+        auditType,
+        status: mappedOpportunity.status,
+        writeAction: 'created',
+      });
+      return created;
     }
 
-    evergreenOpportunity.setAuditId(auditData.id);
-    evergreenOpportunity.setData({ ...mappedOpportunity.data });
-    evergreenOpportunity.setUpdatedBy('system');
-    await evergreenOpportunity.save();
+    opportunityToUpdate.setAuditId(auditData.id);
+    opportunityToUpdate.setData({ ...mappedOpportunity.data });
+    opportunityToUpdate.setUpdatedBy('system');
+    await opportunityToUpdate.save();
 
-    return evergreenOpportunity;
+    olog.success('audit_persistence_evergreen_opportunity_write', 'Refreshed evergreen opportunity', {
+      peer: PEER.POSTGRES,
+      direction: 'outbound',
+      opportunityId: opportunityToUpdate.getId(),
+      auditType,
+      status: mappedOpportunity.status,
+      writeAction: 'refreshed',
+    });
+    return opportunityToUpdate;
   } catch (error) {
-    log.error(`[OffsiteRefresh] Failed to persist opportunity for siteId ${auditData.siteId}, auditId ${auditData.id}: ${error.message}`);
+    // The sharpest edge: a silent DB write failure here strands the run. Log loudly and
+    // structured, THEN rethrow unchanged so the caller's error handling is preserved.
+    olog.failure('audit_persistence_evergreen_opportunity_write', 'Failed to persist opportunity', {
+      peer: PEER.POSTGRES,
+      direction: 'outbound',
+      reason: 'opportunity_write_failed',
+      writeAction: 'write_failed',
+      ...errorField(error),
+    });
     throw error;
   }
 }
@@ -126,11 +168,14 @@ export async function resolveEvergreenOffsiteOpportunity({
   dataAccess, siteId, auditType, log,
 }) {
   const { Opportunity } = dataAccess;
+  const olog = createOffsiteLogger(log, { audit: AUDIT_SLUG_BY_TYPE[auditType] ?? 'unknown', siteId });
   let opportunities;
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.NEW);
   } catch (e) {
-    log.error(`[OffsiteRefresh] Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
+    olog.failure('audit_persistence_evergreen_opportunity_read', 'Failed to fetch opportunities', {
+      peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', ...errorField(e),
+    });
     throw e;
   }
 
@@ -147,7 +192,9 @@ export async function resolveEvergreenOffsiteOpportunity({
     (a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()),
   );
 
-  log.info(`[OffsiteRefresh] Found ${matchingOpportunities.length} NEW ${auditType} opportunities for siteId ${siteId}; retiring ${duplicates.length} duplicate(s), keeping ${evergreenOpportunity.getId()} as the evergreen opportunity`);
+  olog.warn('audit_persistence_opportunity_retired', 'Duplicate opportunities found; retiring extras', {
+    peer: PEER.POSTGRES, direction: 'outbound', found: matchingOpportunities.length, retired: duplicates.length, kept: evergreenOpportunity.getId(), outcome: OUTCOME.DEGRADED,
+  });
 
   duplicates.forEach((duplicate) => {
     duplicate.setStatus(Oppty.STATUSES.IGNORED);
@@ -161,7 +208,7 @@ export async function resolveEvergreenOffsiteOpportunity({
 
 /**
  * Returns true when a suppressed run must be stored separately from the evergreen opportunity.
- * Replaying the same suppressed run creates another record; replay idempotency is handled later.
+ * Snapshot lookup makes suppressed-run redelivery idempotent when auditId is available.
  *
  * @param {string} incomingStatus - The status carried by the incoming run
  *   ('NEW' when surfaced, 'IGNORED' when suppressed).

@@ -122,6 +122,9 @@ describe('Permissions Handler Tests', () => {
               save: sandbox.stub().resolves(),
               addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
               setAuditId: sandbox.stub().resolves(),
+              // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+              setScopeType: sandbox.stub().resolves(),
+              setScopeId: sandbox.stub().resolves(),
               setData: sandbox.stub().resolves(),
               getData: sandbox.stub().returns({}),
             }),

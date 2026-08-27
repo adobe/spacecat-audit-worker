@@ -388,6 +388,10 @@ const testData = {
       projectedTrafficLost: 100,
       projectedTrafficValue: 50,
     },
+    // SITES-49175 — convertToOpportunity now stamps site scope on every
+    // new opportunity write.
+    scopeType: 'site',
+    scopeId: 'site-id',
   },
 };
 

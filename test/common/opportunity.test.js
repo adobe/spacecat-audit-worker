@@ -19,6 +19,203 @@ import chaiAsPromised from 'chai-as-promised';
 use(sinonChai);
 use(chaiAsPromised);
 
+describe('convertToOpportunity — RESOLVED fallback', () => {
+  let sandbox;
+  let convertToOpportunity;
+  let checkGoogleConnectionStub;
+
+  const siteId = 'site-id';
+  const auditId = 'audit-id';
+  const auditType = 'broken-backlinks';
+
+  const makeOpp = (type, updatedAt = '2024-01-01T00:00:00Z', scopeType = null, scopeId = null) => ({
+    getType: () => type,
+    getUpdatedAt: () => updatedAt,
+    getScopeType: () => scopeType,
+    getScopeId: () => scopeId,
+    setStatus: sandbox.stub().resolves(),
+    setAuditId: sandbox.stub(),
+    getData: sandbox.stub().returns({}),
+    setData: sandbox.stub(),
+    setUpdatedBy: sandbox.stub(),
+    setScopeType: sandbox.stub(),
+    setScopeId: sandbox.stub(),
+    save: sandbox.stub().resolves(),
+    getId: () => `opp-${updatedAt}-${scopeType ?? 'null'}`,
+  });
+
+  const makeContext = ({ newOpps = [], resolvedOpps = [], createStub } = {}) => {
+    const create = createStub ?? sandbox.stub().resolves(makeOpp(auditType));
+    return {
+      dataAccess: {
+        Opportunity: {
+          allBySiteIdAndStatus: sandbox.stub()
+            .onFirstCall().resolves(newOpps)
+            .onSecondCall()
+            .resolves(resolvedOpps),
+          create,
+        },
+      },
+      log: { error: sandbox.stub(), info: sandbox.stub(), debug: sandbox.stub() },
+    };
+  };
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    checkGoogleConnectionStub = sandbox.stub().resolves(true);
+    ({ convertToOpportunity } = await esmock('../../src/common/opportunity.js', {
+      '../../src/common/opportunity-utils.js': {
+        checkGoogleConnection: checkGoogleConnectionStub,
+      },
+    }));
+  });
+
+  afterEach(() => sandbox.restore());
+
+  it('reopens the matching RESOLVED opportunity and saves it without creating a new one', async () => {
+    const resolved = makeOpp(auditType);
+    const createStub = sandbox.stub();
+    const context = makeContext({ resolvedOpps: [resolved], createStub });
+
+    const result = await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(resolved.setStatus).to.have.been.calledOnce;
+    expect(resolved.save).to.have.been.calledOnce;
+    expect(createStub).to.not.have.been.called;
+    expect(result.getId()).to.equal(resolved.getId());
+  });
+
+  it('picks the most recently updated RESOLVED opportunity when multiple match', async () => {
+    const older = makeOpp(auditType, '2023-01-01T00:00:00Z');
+    const newer = makeOpp(auditType, '2024-06-01T00:00:00Z');
+    const context = makeContext({ resolvedOpps: [older, newer] });
+
+    await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(newer.setStatus).to.have.been.calledOnce;
+    expect(older.setStatus).to.not.have.been.called;
+  });
+
+  it('reopens a RESOLVED opportunity when comparisonFn returns true', async () => {
+    const resolved = makeOpp(auditType);
+    const createStub = sandbox.stub();
+    const context = makeContext({ resolvedOpps: [resolved], createStub });
+    const comparisonFn = sandbox.stub().returns(true);
+
+    await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+      {},
+      comparisonFn,
+    );
+
+    expect(comparisonFn).to.have.been.called;
+    expect(resolved.setStatus).to.have.been.calledOnce;
+    expect(createStub).to.not.have.been.called;
+  });
+
+  it('does not reopen a RESOLVED opportunity when comparisonFn returns false', async () => {
+    const resolved = makeOpp(auditType);
+    const createStub = sandbox.stub().resolves(makeOpp(auditType));
+    const context = makeContext({ resolvedOpps: [resolved], createStub });
+    const comparisonFn = sandbox.stub().returns(false);
+
+    await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+      {},
+      comparisonFn,
+    );
+
+    expect(resolved.setStatus).to.not.have.been.called;
+    expect(createStub).to.have.been.calledOnce;
+  });
+
+  it('creates a new opportunity when RESOLVED opportunities exist but none match the type', async () => {
+    const wrongType = makeOpp('other-audit-type');
+    const createStub = sandbox.stub().resolves(makeOpp(auditType));
+    const context = makeContext({ resolvedOpps: [wrongType], createStub });
+
+    await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(wrongType.setStatus).to.not.have.been.called;
+    expect(createStub).to.have.been.calledOnce;
+  });
+
+  it('creates a new opportunity when no NEW or RESOLVED opportunities exist', async () => {
+    const createStub = sandbox.stub().resolves(makeOpp(auditType));
+    const context = makeContext({ createStub });
+
+    await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(createStub).to.have.been.calledOnce;
+  });
+
+  it('prefers a scoped NEW opportunity over a null-scope one to avoid unique constraint collision', async () => {
+    const nullScope = makeOpp(auditType, '2024-01-01T00:00:00Z');
+    const scoped = makeOpp(auditType, '2024-02-01T00:00:00Z', 'site', siteId);
+    const context = makeContext({ newOpps: [nullScope, scoped] });
+
+    const result = await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(result.getId()).to.equal(scoped.getId());
+    expect(scoped.setScopeType).to.have.been.called;
+    expect(nullScope.setScopeType).to.not.have.been.called;
+  });
+
+  it('uses the first null-scope NEW opportunity when no scoped row exists', async () => {
+    const nullScope = makeOpp(auditType, '2024-01-01T00:00:00Z');
+    const context = makeContext({ newOpps: [nullScope] });
+
+    const result = await convertToOpportunity(
+      'https://example.com',
+      { siteId, id: auditId },
+      context,
+      () => ({ data: {} }),
+      auditType,
+    );
+
+    expect(result.getId()).to.equal(nullScope.getId());
+    expect(nullScope.setScopeType).to.have.been.called;
+  });
+});
+
 describe('persistOffsiteOpportunity', () => {
   let sandbox;
   let persistOffsiteOpportunity;
@@ -41,10 +238,13 @@ describe('persistOffsiteOpportunity', () => {
     sandbox.restore();
   });
 
-  const buildExistingOpportunity = (existingData) => ({
+  const buildOpportunityToUpdate = (existingData) => ({
     getType: () => 'cited-analysis',
     getData: sandbox.stub().returns(existingData),
     setAuditId: sandbox.stub(),
+    // SITES-49175 — self-heal legacy NULL-scope rows on every audit touch
+    setScopeType: sandbox.stub(),
+    setScopeId: sandbox.stub(),
     setData: sandbox.stub(),
     setUpdatedBy: sandbox.stub(),
     save: sandbox.stub().resolves(),
@@ -57,12 +257,12 @@ describe('persistOffsiteOpportunity', () => {
       dashboard: { sentiment: 'negative', sov: 0.1 },
       fullAnalysis: { suggestions: ['old'] },
     };
-    const existingOpportunity = buildExistingOpportunity(existingData);
+    const opportunityToUpdate = buildOpportunityToUpdate(existingData);
 
     const context = {
       dataAccess: {
         Opportunity: {
-          allBySiteIdAndStatus: sandbox.stub().resolves([existingOpportunity]),
+          allBySiteIdAndStatus: sandbox.stub().resolves([opportunityToUpdate]),
         },
       },
       log: { info: sandbox.spy(), error: sandbox.spy(), debug: sandbox.spy() },
@@ -84,31 +284,31 @@ describe('persistOffsiteOpportunity', () => {
       context,
       createOpportunityData,
       'cited-analysis',
-      { opportunityData: {}, existingOpportunity },
+      { opportunityData: {}, opportunityToUpdate },
     );
 
     expect(result.getId()).to.equal('existing-opp-id');
     // fullAnalysis is absent from the latest mapped data, so it must disappear — not
     // linger merged in from the prior run. setData is called with exactly the new data.
-    expect(existingOpportunity.setData).to.have.been.calledWith({
+    expect(opportunityToUpdate.setData).to.have.been.calledWith({
       dataSources: ['ai-search'],
       dashboard: { sentiment: 'positive', sov: 0.42 },
     });
-    expect(existingOpportunity.setData.firstCall.args[0]).to.not.have.property('fullAnalysis');
+    expect(opportunityToUpdate.setData.firstCall.args[0]).to.not.have.property('fullAnalysis');
   });
 
   it('applies the same wholesale-replace behavior for reddit-analysis and youtube-analysis', async () => {
     for (const auditType of ['reddit-analysis', 'youtube-analysis']) {
-      const existingOpportunity = buildExistingOpportunity({
+      const opportunityToUpdate = buildOpportunityToUpdate({
         dashboard: { sov: 0.1 },
         staleTopic: { id: 'old-only-field' },
       });
-      existingOpportunity.getType = () => auditType;
+      opportunityToUpdate.getType = () => auditType;
 
       const context = {
         dataAccess: {
           Opportunity: {
-            allBySiteIdAndStatus: sandbox.stub().resolves([existingOpportunity]),
+            allBySiteIdAndStatus: sandbox.stub().resolves([opportunityToUpdate]),
           },
         },
         log: { info: sandbox.spy(), error: sandbox.spy(), debug: sandbox.spy() },
@@ -123,18 +323,18 @@ describe('persistOffsiteOpportunity', () => {
         context,
         createOpportunityData,
         auditType,
-        { existingOpportunity },
+        { opportunityToUpdate },
       );
 
-      expect(existingOpportunity.setData).to.have.been.calledWith({
+      expect(opportunityToUpdate.setData).to.have.been.calledWith({
         dashboard: { sov: 0.77 },
       });
-      expect(existingOpportunity.setData.firstCall.args[0]).to.not.have.property('staleTopic');
+      expect(opportunityToUpdate.setData.firstCall.args[0]).to.not.have.property('staleTopic');
     }
   });
 
   it('rejects non-offsite audit types before mutating an opportunity', async () => {
-    const existingOpportunity = buildExistingOpportunity({ staleField: 'must-survive' });
+    const opportunityToUpdate = buildOpportunityToUpdate({ staleField: 'must-survive' });
     const context = {
       dataAccess: { Opportunity: { create: sandbox.stub() } },
       log: { info: sandbox.spy(), error: sandbox.spy(), debug: sandbox.spy() },
@@ -146,12 +346,12 @@ describe('persistOffsiteOpportunity', () => {
       context,
       () => ({ data: { newField: 'new' } }),
       'prerender',
-      { existingOpportunity },
+      { opportunityToUpdate },
     )).to.be.rejectedWith('Unsupported offsite audit type: prerender');
 
-    expect(existingOpportunity.setAuditId).to.not.have.been.called;
-    expect(existingOpportunity.setData).to.not.have.been.called;
-    expect(existingOpportunity.save).to.not.have.been.called;
+    expect(opportunityToUpdate.setAuditId).to.not.have.been.called;
+    expect(opportunityToUpdate.setData).to.not.have.been.called;
+    expect(opportunityToUpdate.save).to.not.have.been.called;
   });
 
   it('requires callers to provide the pre-resolved target explicitly', async () => {
@@ -168,7 +368,7 @@ describe('persistOffsiteOpportunity', () => {
       createOpportunityData,
       'cited-analysis',
       { opportunityData: {} },
-    )).to.be.rejectedWith('existingOpportunity must be explicitly provided');
+    )).to.be.rejectedWith('opportunityToUpdate must be explicitly provided');
 
     expect(createOpportunityData).to.not.have.been.called;
     expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -188,8 +388,8 @@ describe('persistOffsiteOpportunity', () => {
         context,
         createOpportunityData,
         'cited-analysis',
-        { opportunityData: {}, existingOpportunity: invalidTarget },
-      )).to.be.rejectedWith('existingOpportunity must be an opportunity or null');
+        { opportunityData: {}, opportunityToUpdate: invalidTarget },
+      )).to.be.rejectedWith('opportunityToUpdate must be an opportunity or null');
 
       expect(createOpportunityData).to.not.have.been.called;
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -198,7 +398,7 @@ describe('persistOffsiteOpportunity', () => {
 
   it('removes GSC from mapped data when the site has no Google connection', async () => {
     checkGoogleConnectionStub.resolves(false);
-    const existingOpportunity = buildExistingOpportunity({ staleField: 'old' });
+    const opportunityToUpdate = buildOpportunityToUpdate({ staleField: 'old' });
     const context = {
       dataAccess: { Opportunity: { create: sandbox.stub() } },
       log: { info: sandbox.spy(), error: sandbox.spy(), debug: sandbox.spy() },
@@ -210,17 +410,17 @@ describe('persistOffsiteOpportunity', () => {
       context,
       () => ({ data: { dataSources: ['GSC', 'Site'] } }),
       'cited-analysis',
-      { existingOpportunity },
+      { opportunityToUpdate },
     );
 
-    expect(existingOpportunity.setData).to.have.been.calledWith({
+    expect(opportunityToUpdate.setData).to.have.been.calledWith({
       dataSources: ['Site'],
     });
   });
 
-  describe('pre-resolved existingOpportunity (bypasses the internal query)', () => {
-    it('uses a provided existingOpportunity directly without querying allBySiteIdAndStatus', async () => {
-      const existingOpportunity = buildExistingOpportunity({ dashboard: { sov: 0.1 } });
+  describe('pre-resolved opportunityToUpdate (bypasses the internal query)', () => {
+    it('uses a provided opportunityToUpdate directly without querying allBySiteIdAndStatus', async () => {
+      const opportunityToUpdate = buildOpportunityToUpdate({ dashboard: { sov: 0.1 } });
       const allBySiteIdAndStatusStub = sandbox.stub().resolves([]);
       const context = {
         dataAccess: { Opportunity: { allBySiteIdAndStatus: allBySiteIdAndStatusStub } },
@@ -234,15 +434,15 @@ describe('persistOffsiteOpportunity', () => {
         context,
         createOpportunityData,
         'cited-analysis',
-        { existingOpportunity },
+        { opportunityToUpdate },
       );
 
       expect(result.getId()).to.equal('existing-opp-id');
       expect(allBySiteIdAndStatusStub).to.not.have.been.called;
-      expect(existingOpportunity.setData).to.have.been.calledWith({ dashboard: { sov: 0.77 } });
+      expect(opportunityToUpdate.setData).to.have.been.calledWith({ dashboard: { sov: 0.77 } });
     });
 
-    it('forces creation when existingOpportunity is explicitly null, without querying', async () => {
+    it('forces creation when opportunityToUpdate is explicitly null, without querying', async () => {
       const allBySiteIdAndStatusStub = sandbox.stub().resolves([]);
       const createStub = sandbox.stub().resolves({ getId: () => 'new-opp-id' });
       const context = {
@@ -259,7 +459,7 @@ describe('persistOffsiteOpportunity', () => {
         context,
         createOpportunityData,
         'cited-analysis',
-        { existingOpportunity: null },
+        { opportunityToUpdate: null },
       );
 
       expect(result.getId()).to.equal('new-opp-id');
@@ -282,7 +482,7 @@ describe('persistOffsiteOpportunity', () => {
         context,
         () => ({ data: {}, status: 'IGNORED' }),
         'cited-analysis',
-        { existingOpportunity: null },
+        { opportunityToUpdate: null },
       )).to.be.rejectedWith('create failed');
 
       expect(context.log.error).to.have.been.calledWith(
@@ -311,7 +511,7 @@ describe('persistOffsiteOpportunity', () => {
         context,
         createOpportunityData,
         'cited-analysis',
-        { existingOpportunity: null },
+        { opportunityToUpdate: null },
       );
 
       expect(createStub.firstCall.args[0]).to.have.property('status', 'IGNORED');
@@ -336,7 +536,7 @@ describe('persistOffsiteOpportunity', () => {
         context,
         createOpportunityData,
         'cited-analysis',
-        { existingOpportunity: null },
+        { opportunityToUpdate: null },
       );
 
       expect(createStub.firstCall.args[0]).to.not.have.property('status');

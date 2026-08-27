@@ -24,10 +24,24 @@ export const PROVIDERS = Object.freeze([
 ]);
 
 export const PROVIDERS_SET = new Set(PROVIDERS);
-export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?$/;
 
-// Region codes whose brand-presence rows are processed. Limited to English-speaking markets.
-export const ACCEPTED_REGIONS = Object.freeze(new Set(['US', 'GB', 'CA', 'AU', 'IE', 'NZ']));
+// Serenity/Semrush `platform` (model) value per offsite audit provider. Values
+// are the SerenityModel enum (see project-elmo-ui `src/api/serenityApi.ts`).
+// 'all' (chatgpt-paid) has no distinct serenity model — 'search-gpt' covers it —
+// so it is intentionally omitted. Currently unused: the Semrush URL-Inspector loader
+// (offsite-brand-presence-semrush.js) queries `platform=all`, which aggregates across
+// every engine server-side, instead of walking this map per engine. Kept for LLMO-6710
+// (region + platform mapping) — completing/validating it is that follow-up's job.
+export const SEMRUSH_PLATFORM_BY_PROVIDER = Object.freeze({
+  'ai-mode': 'google-ai-mode',
+  chatgpt: 'search-gpt',
+  copilot: 'microsoft-copilot',
+  gemini: 'gemini-2.5-flash',
+  'google-ai-overviews': 'google-ai-overview',
+  perplexity: 'perplexity',
+});
+
+export const BRAND_PRESENCE_REGEX = /brandpresence-(.+?)-w(\d{1,2})-(\d{4})(?:-.*)?$/;
 
 export const URL_STORE_STATUS = Object.freeze({
   CREATED: 'created',

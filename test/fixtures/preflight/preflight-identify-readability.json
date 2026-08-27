@@ -21,12 +21,7 @@
             "check": "missing-h1",
             "issue": "No H1 tag found on the page",
             "seoImpact": "High",
-            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure",
-            "elements": [
-              {
-                "selector": "body"
-              }
-            ]
+            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
           }
         ]
       },
@@ -90,10 +85,10 @@
             "seoImpact": "Moderate",
             "fleschReadingEase": -10.12,
             "language": "english",
-            "textContent": "The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination.",
             "elements": [
               {
-                "selector": "body > p"
+                "selector": "body > p",
+                "textContent": "The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination."
               }
             ]
           }

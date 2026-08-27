@@ -222,6 +222,9 @@ describe('StoreClient', () => {
       expect(dataAccess.AuditUrl.allBySiteIdAndAuditType).to.have.been.calledOnce;
       expect(dataAccess.AuditUrl.allBySiteIdAndAuditType.firstCall.args[0]).to.equal(siteId);
       expect(dataAccess.AuditUrl.allBySiteIdAndAuditType.firstCall.args[1]).to.equal('wikipedia-analysis');
+      // The `audit` taxonomy field must map to the AUDIT enum value ('wikipedia'), not the
+      // raw auditType string or a hardcoded literal, so Splunk `audit=` filters match.
+      expect(mockLog.info).to.have.been.calledWith(sinon.match(/audit=wikipedia\b/));
     });
 
     it('should default to createdAt/desc and forward optional sort params', async () => {
@@ -234,6 +237,7 @@ describe('StoreClient', () => {
         sortBy: 'createdAt',
         sortOrder: 'desc',
       });
+      expect(mockLog.info).to.have.been.calledWith(sinon.match(/audit=reddit\b/));
 
       dataAccess.AuditUrl.allBySiteIdAndAuditType.resetHistory();
       await storeClient.getUrls(siteId, URL_TYPES.REDDIT, { sortBy: 'url', sortOrder: 'asc' });
@@ -262,6 +266,31 @@ describe('StoreClient', () => {
         .to.include({ cursor: 'next-cursor' });
     });
 
+    it('should map every URL_TYPES value to its AUDIT taxonomy enum member', async () => {
+      const expectedAudit = {
+        [URL_TYPES.WIKIPEDIA]: 'wikipedia',
+        [URL_TYPES.REDDIT]: 'reddit',
+        [URL_TYPES.YOUTUBE]: 'youtube',
+        [URL_TYPES.CITED]: 'cited',
+      };
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const auditType of Object.values(URL_TYPES)) {
+        dataAccess.AuditUrl.allBySiteIdAndAuditType.resetHistory();
+        mockLog.info.resetHistory();
+        dataAccess.AuditUrl.allBySiteIdAndAuditType.resolves({
+          data: [makeAuditUrl()], cursor: null,
+        });
+
+        // eslint-disable-next-line no-await-in-loop
+        await storeClient.getUrls(siteId, auditType);
+
+        expect(mockLog.info).to.have.been.calledWith(
+          sinon.match(new RegExp(`\\baudit=${expectedAudit[auditType]}\\b`)),
+        );
+      }
+    });
+
     it('should throw when the AuditUrl collection is not configured', async () => {
       const clientNoData = new StoreClient({ dataAccess: {} }, mockLog);
 
@@ -285,6 +314,14 @@ describe('StoreClient', () => {
       await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
         .to.be.rejectedWith('dynamo exploded');
       expect(dataAccess.AuditUrl.allBySiteIdAndAuditType).to.have.been.calledTwice;
+      // A genuine read error is logged as a distinct, alertable
+      // data_acquisition_url_store_read failure before it is re-thrown (rather than
+      // surfacing only as the generic "Audit failed").
+      expect(mockLog.error).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_url_store_read/)
+          .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/dynamo exploded/)),
+      );
     });
 
     it('should throw StoreEmptyError when no URLs returned', async () => {
@@ -292,6 +329,16 @@ describe('StoreClient', () => {
 
       await expect(storeClient.getUrls(siteId, URL_TYPES.WIKIPEDIA))
         .to.be.rejectedWith(StoreEmptyError);
+
+      // The empty-result path is now observable: a warn-level skip log line precedes the
+      // throw, so an operator can tell "ran, found nothing" from "never ran".
+      expect(mockLog.warn).to.have.been.calledWith(
+        sinon.match(/No URLs found in URL Store/)
+          .and(sinon.match(/event=data_acquisition_url_store_read/))
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/peer=url_store/))
+          .and(sinon.match(/reason=no_urls/)),
+      );
     });
 
     it('should throw StoreEmptyError when data is undefined', async () => {
@@ -338,6 +385,15 @@ describe('StoreClient', () => {
       expect(dataAccess.SentimentGuideline.allBySiteIdAndAuditType)
         .to.have.been.calledWith(siteId, 'wikipedia-analysis');
       expect(dataAccess.SentimentGuideline.allBySiteIdEnabled).to.not.have.been.called;
+      // The guideline/sentiment store has its own dedicated peer, distinct from url_store.
+      // The `audit` taxonomy field must map to the AUDIT enum value ('wikipedia'), not the
+      // raw auditType string or a hardcoded literal, so Splunk `audit=` filters match.
+      expect(mockLog.info).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_guideline_store_read/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/peer=guideline_store/))
+          .and(sinon.match(/audit=wikipedia\b/)),
+      );
     });
 
     it('should throw when sentiment collections are not configured', async () => {
@@ -383,6 +439,11 @@ describe('StoreClient', () => {
       expect(result.guidelines).to.have.length(1);
       expect(dataAccess.SentimentGuideline.allBySiteIdEnabled).to.have.been.calledOnce;
       expect(dataAccess.SentimentGuideline.allBySiteIdAndAuditType).to.not.have.been.called;
+      // No auditType was given, so there is no real audit type to map to the AUDIT enum;
+      // the raw (undefined) auditType is passed through as `audit`, which the field-omission
+      // convention drops entirely from the rendered log line rather than inventing a
+      // placeholder string.
+      expect(mockLog.info).to.have.been.calledWith(sinon.match(/^(?!.*\baudit=).*$/));
     });
 
     it('should throw StoreEmptyError when no guidelines returned', async () => {
@@ -391,6 +452,16 @@ describe('StoreClient', () => {
 
       await expect(storeClient.getGuidelines(siteId, GUIDELINE_TYPES.WIKIPEDIA_ANALYSIS))
         .to.be.rejectedWith(StoreEmptyError);
+
+      // The empty-result path is now observable: a warn-level skip log line precedes the
+      // throw, so an operator can tell "ran, found nothing" from "never ran".
+      expect(mockLog.warn).to.have.been.calledWith(
+        sinon.match(/No guidelines or topics found in Guideline Store/)
+          .and(sinon.match(/event=data_acquisition_guideline_store_read/))
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/peer=guideline_store/))
+          .and(sinon.match(/reason=no_guidelines_or_topics/)),
+      );
     });
 
     it('should tolerate missing data fields and still throw when empty', async () => {
@@ -412,7 +483,7 @@ describe('StoreClient', () => {
       await storeClient.getGuidelines(siteId, 'test');
 
       expect(mockLog.info).to.have.been.calledWith(
-        sinon.match(/2 topics and 1 guidelines/),
+        sinon.match(/topics=2/).and(sinon.match(/guidelines=1/)),
       );
     });
   });

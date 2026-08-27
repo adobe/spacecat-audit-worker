@@ -127,6 +127,11 @@ describe('Preflight Form Accessibility Audit', () => {
 
         expect(message.data.url).to.equal('https://example.com/page1');
 
+        // opportunityId must be the per-step jobId, NOT the siteId — otherwise the
+        // concurrent identify + suggest steps collide on the same shared Mystique
+        // opportunity.json and one stalls (SITES-49003 race #2).
+        expect(message.data.opportunityId).to.equal('job-123');
+
         expect(message.data.a11y).to.deep.equal([
           { form: 'https://example.com/page1', formSource: 'form' },
           { form: 'https://example.com/page2', formSource: 'form' },
@@ -584,6 +589,47 @@ describe('Preflight Form Accessibility Audit', () => {
         expect(log.warn).to.have.been.calledWith(
           '[preflight-audit] site-123 No form accessibility data found for https://example.com/page1 at key: form-accessibility-preflight/site-123/example_com_page1.json',
         );
+      });
+
+      it('skips a stale result file (freshness gate) instead of serving previous-run data (SITES-49003)', async () => {
+        const { processFormAccessibilityOpportunities } = await import('../../src/preflight/form-accessibility.js');
+
+        // A result file left on the shared key by an earlier run (we no longer delete),
+        // written before THIS run started. With a freshnessThreshold set, it must be
+        // rejected and never read — otherwise a poll timeout would serve stale results.
+        const runStartThreshold = Date.now();
+        const staleModified = new Date(runStartThreshold - 10 * 60 * 1000); // 10 min ago
+        let getObjectCalled = false;
+
+        s3Client.send.callsFake((command) => {
+          if (command.constructor.name === 'ListObjectsV2Command') {
+            return Promise.resolve({
+              Contents: [
+                { Key: 'form-accessibility-preflight/site-123/example_com_page1.json', LastModified: staleModified },
+                { Key: 'form-accessibility-preflight/site-123/example_com_page2.json', LastModified: staleModified },
+              ],
+            });
+          }
+          if (command.constructor.name === 'GetObjectCommand') {
+            getObjectCalled = true;
+            return Promise.resolve({
+              Body: { transformToString: sinon.stub().resolves(JSON.stringify({ a11yIssues: [] })) },
+            });
+          }
+          return Promise.resolve({});
+        });
+
+        await processFormAccessibilityOpportunities(context, auditContext, undefined, runStartThreshold);
+
+        expect(log.warn).to.have.been.calledWith(
+          '[preflight-audit] site-123 Skipping stale/missing form accessibility file for https://example.com/page1 at key: form-accessibility-preflight/site-123/example_com_page1.json (not written by this run)',
+        );
+        // The stale file is never read, and no opportunities are produced from it.
+        expect(getObjectCalled).to.be.false;
+        const page1 = auditContext.audits
+          .get('https://example.com/page1').audits
+          .find((a) => a.name === 'form-accessibility');
+        expect(page1.opportunities).to.have.lengthOf(0);
       });
 
       it('should add timing information to execution breakdown', async () => {
@@ -1168,21 +1214,21 @@ describe('Preflight Form Accessibility Audit', () => {
             sleep: sandbox.stub().resolves(),
           },
           '../../src/utils/s3-utils.js': {
-            getObjectKeysUsingPrefix: sinon.stub().callsFake(() => {
+            getObjectMetadataUsingPrefix: sinon.stub().callsFake(() => {
               pollCount += 1;
               if (pollCount === 1) {
                 // First call: Return files that don't match expected patterns
                 return Promise.resolve([
-                  'form-accessibility-preflight/site-123/wrong_file1.json',
-                  'form-accessibility-preflight/site-123/wrong_file2.json',
-                  'form-accessibility-preflight/site-123/other_file.json',
-                  'form-accessibility-preflight/site-123/', // Directory-like key
+                  { Key: 'form-accessibility-preflight/site-123/wrong_file1.json', LastModified: new Date() },
+                  { Key: 'form-accessibility-preflight/site-123/wrong_file2.json', LastModified: new Date() },
+                  { Key: 'form-accessibility-preflight/site-123/other_file.json', LastModified: new Date() },
+                  { Key: 'form-accessibility-preflight/site-123/', LastModified: new Date() }, // Directory-like key
                 ]);
               } else {
                 // Second call: Return proper files to exit the polling loop
                 return Promise.resolve([
-                  'form-accessibility-preflight/site-123/example_com_page1.json',
-                  'form-accessibility-preflight/site-123/example_com_page2.json',
+                  { Key: 'form-accessibility-preflight/site-123/example_com_page1.json', LastModified: new Date() },
+                  { Key: 'form-accessibility-preflight/site-123/example_com_page2.json', LastModified: new Date() },
                 ]);
               }
             }),
@@ -1223,7 +1269,7 @@ describe('Preflight Form Accessibility Audit', () => {
             sleep: sandbox.stub().resolves(),
           },
           '../../src/utils/s3-utils.js': {
-            getObjectKeysUsingPrefix: sinon.stub().resolves([]), // Always return empty array
+            getObjectMetadataUsingPrefix: sinon.stub().resolves([]), // Always return empty array
             getObjectFromKey: sinon.stub().resolves(null),
           },
         });
@@ -1237,6 +1283,49 @@ describe('Preflight Form Accessibility Audit', () => {
 
         // Restore the stub
         dateNowStub.restore();
+      });
+
+      it('does not accept a stale result file, then completes once a fresh one appears (freshness gate)', async () => {
+        let pollCount = 0;
+        const staleModified = new Date(Date.now() - 10 * 60 * 1000); // 10 min ago → before run start
+        const freshModified = new Date(); // now → after run start
+        const module = await esmock('../../src/preflight/form-accessibility.js', {
+          '../../src/support/utils.js': { sleep: sandbox.stub().resolves() },
+          '../../src/utils/s3-utils.js': {
+            getObjectMetadataUsingPrefix: sinon.stub().callsFake(() => {
+              pollCount += 1;
+              const LastModified = pollCount === 1 ? staleModified : freshModified;
+              return Promise.resolve([
+                { Key: 'form-accessibility-preflight/site-123/example_com_page1.json', LastModified },
+                { Key: 'form-accessibility-preflight/site-123/example_com_page2.json', LastModified },
+              ]);
+            }),
+            getObjectFromKey: sinon.stub().resolves({ a11yIssues: [] }),
+          },
+        });
+
+        await module.default(pollingContext, pollingAuditContext);
+
+        // Stale poll is rejected (0 fresh matches), so it keeps waiting; the fresh poll completes.
+        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected form accessibility files, continuing to wait...');
+        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, form accessibility processing complete');
+      });
+
+      it('accepts a result file with missing LastModified (fail-open)', async () => {
+        const module = await esmock('../../src/preflight/form-accessibility.js', {
+          '../../src/support/utils.js': { sleep: sandbox.stub().resolves() },
+          '../../src/utils/s3-utils.js': {
+            getObjectMetadataUsingPrefix: sinon.stub().resolves([
+              { Key: 'form-accessibility-preflight/site-123/example_com_page1.json', LastModified: undefined },
+              { Key: 'form-accessibility-preflight/site-123/example_com_page2.json', LastModified: undefined },
+            ]),
+            getObjectFromKey: sinon.stub().resolves({ a11yIssues: [] }),
+          },
+        });
+
+        await module.default(pollingContext, pollingAuditContext);
+
+        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, form accessibility processing complete');
       });
     });
 
@@ -1436,32 +1525,6 @@ describe('Preflight Form Accessibility Audit', () => {
       // The getObjectFromKey function returns null when S3 throws an error
       expect(log.warn).to.have.been.calledWith('[preflight-audit] site-123 No form accessibility data found for https://example.com/page1 at key: form-accessibility-preflight/site-123/example_com_page1.json');
       expect(log.warn).to.have.been.calledWith('[preflight-audit] site-123 No form accessibility data found for https://example.com/page2 at key: form-accessibility-preflight/site-123/example_com_page2.json');
-    });
-
-    it('should handle cleanup error in processFormAccessibilityOpportunities', async () => {
-      const { processFormAccessibilityOpportunities } = await import('../../src/preflight/form-accessibility.js');
-
-      // Mock S3 to succeed for GetObjectCommand but fail for DeleteObjectsCommand
-      s3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'GetObjectCommand') {
-          return Promise.resolve({
-            Body: {
-              transformToString: sinon.stub().resolves(JSON.stringify({
-                a11yIssues: [],
-              })),
-            },
-          });
-        }
-        if (command.constructor.name === 'DeleteObjectsCommand') {
-          return Promise.reject(new Error('Cleanup failed'));
-        }
-        return Promise.resolve({});
-      });
-
-      await processFormAccessibilityOpportunities(context, auditContext);
-
-      // The cleanup error should be logged
-      expect(log.warn).to.have.been.calledWith('[preflight-audit] site-123 Failed to clean up form accessibility files: Cleanup failed');
     });
 
     it('should handle missing form accessibility audit in error handling', async () => {
@@ -1919,8 +1982,9 @@ describe('Preflight Form Accessibility Audit', () => {
       // Verify that polling continued and eventually succeeded
       expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, form accessibility processing complete');
       expect(log.info).to.have.been.calledWith('[preflight-audit] site-123 Polling completed, proceeding to process form accessibility data');
-      // Verify that both polling attempts were made
-      expect(pollCallCount).to.equal(2);
+      // Two polling attempts (error then success) + one processor-side freshness re-check
+      // (getObjectMetadataUsingPrefix) before reading the result files — SITES-49003.
+      expect(pollCallCount).to.equal(3);
     });
 
     it('should handle foundFiles', async () => {
@@ -1966,8 +2030,9 @@ describe('Preflight Form Accessibility Audit', () => {
       // Verify that polling continued and eventually succeeded
       expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, form accessibility processing complete');
       expect(log.info).to.have.been.calledWith('[preflight-audit] site-123 Polling completed, proceeding to process form accessibility data');
-      // Verify that both polling attempts were made
-      expect(pollCallCount).to.equal(2);
+      // Two polling attempts (empty then success) + one processor-side freshness re-check
+      // (getObjectMetadataUsingPrefix) before reading the result files — SITES-49003.
+      expect(pollCallCount).to.equal(3);
     });
   });
 
@@ -2212,6 +2277,120 @@ describe('Preflight Form Accessibility Audit', () => {
       expect(a).to.not.equal(b);
       expect(a).to.equal(aAgain);
       expect(a).to.match(/^example_com_page1_[0-9a-f]{12}\.json$/);
+    });
+  });
+
+  describe('identify/suggest concurrency (SITES-49003 race #1)', () => {
+    let sandbox;
+    let raceModule;
+
+    beforeEach(async () => {
+      sandbox = sinon.createSandbox();
+      // Real s3-utils; only stub sleep so polling resolves fast.
+      raceModule = await esmock('../../src/preflight/form-accessibility.js', {
+        '../../src/support/utils.js': { sleep: sandbox.stub().resolves() },
+      });
+    });
+
+    afterEach(() => sandbox.restore());
+
+    // In-memory S3 backing store shared by both concurrent runs, so we exercise the real
+    // ListObjectsV2/GetObject path and can prove the destructive delete is gone.
+    const makeS3Fake = (store, tracker) => ({
+      send: async (command) => {
+        const name = command.constructor.name;
+        const input = command.input || {};
+        if (name === 'ListObjectsV2Command') {
+          return {
+            Contents: [...store.entries()]
+              .filter(([key]) => key.startsWith(input.Prefix))
+              .map(([Key, v]) => ({ Key, LastModified: v.lastModified })),
+          };
+        }
+        if (name === 'GetObjectCommand') {
+          const v = store.get(input.Key);
+          if (!v) {
+            const err = new Error('NoSuchKey');
+            err.name = 'NoSuchKey';
+            throw err;
+          }
+          return { Body: { transformToString: async () => v.body }, ContentType: 'application/json' };
+        }
+        if (name === 'DeleteObjectsCommand') {
+          tracker.deleteCalls += 1;
+          (input.Delete?.Objects || []).forEach(({ Key }) => store.delete(Key));
+          return {};
+        }
+        return {};
+      },
+    });
+
+    const makeContext = (store, tracker, step) => ({
+      site: {
+        getId: () => 'site-123',
+        getBaseURL: () => 'https://example.com',
+        getDeliveryType: () => 'aem_cs',
+      },
+      job: { getId: () => `job-${step}`, getMetadata: () => ({ payload: { enableAuthentication: true } }) },
+      env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket', QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
+      s3Client: makeS3Fake(store, tracker),
+      // Simulate Mystique: when a step dispatches, write its result to the shared (non-run-scoped) key.
+      sqs: {
+        sendMessage: sinon.stub().callsFake(async (_q, msg) => {
+          (msg.data.a11y || []).forEach(({ form, formSource }) => {
+            const filename = raceModule.generateFormAccessibilityFilename(form, formSource);
+            store.set(`form-accessibility-preflight/site-123/${filename}`, {
+              body: JSON.stringify({
+                a11yIssues: [{
+                  wcagLevel: 'A',
+                  severity: 'critical',
+                  htmlWithIssues: ['<input name="x">'],
+                  failureSummary: 'needs a label',
+                  description: 'form control missing label',
+                  type: 'visible_label_missing',
+                }],
+              }),
+              lastModified: new Date(),
+            });
+          });
+        }),
+      },
+      log: {
+        info: sinon.stub(), warn: sinon.stub(), error: sinon.stub(), debug: sinon.stub(),
+      },
+    });
+
+    const makeAuditContext = (step) => ({
+      previewUrls: ['https://example.com/page1'],
+      step,
+      checks: ['form-accessibility'],
+      audits: new Map([
+        ['https://example.com/page1', { audits: [{ name: 'form-accessibility', type: 'form-a11y', opportunities: [] }] }],
+      ]),
+      auditsResult: [{ pageUrl: 'https://example.com/page1', audits: [] }],
+      timeExecutionBreakdown: [],
+    });
+
+    it('runs identify and suggest concurrently without one deleting the other\'s result (no starvation, no delete)', async () => {
+      const store = new Map();
+      const tracker = { deleteCalls: 0 };
+      const identifyAudit = makeAuditContext('identify');
+      const suggestAudit = makeAuditContext('suggest');
+
+      await Promise.all([
+        raceModule.default(makeContext(store, tracker, 'identify'), identifyAudit),
+        raceModule.default(makeContext(store, tracker, 'suggest'), suggestAudit),
+      ]);
+
+      // Both steps produced real form-accessibility opportunities (neither was starved).
+      const opps = (a) => a.audits.get('https://example.com/page1').audits
+        .find((x) => x.name === 'form-accessibility').opportunities;
+      expect(opps(identifyAudit)).to.have.lengthOf(1);
+      expect(opps(suggestAudit)).to.have.lengthOf(1);
+
+      // The destructive delete is gone: the shared result file was never deleted and survives.
+      expect(tracker.deleteCalls).to.equal(0);
+      expect(store.size).to.be.greaterThan(0);
     });
   });
 });

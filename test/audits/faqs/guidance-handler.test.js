@@ -1729,6 +1729,78 @@ describe('FAQs guidance handler', () => {
     expect(result.selector).to.equal('body');
   });
 
+  it('should preserve edge data mid-IVE geo-experiment (edgeOptimizeStatus)', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json' },
+    };
+
+    await handler(message, context);
+
+    const mergeDataFn = syncSuggestionsStub.getCall(0).args[0].mergeDataFunction;
+
+    const existingData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: true,
+      edgeOptimizeStatus: 'in_progress',
+      selector: 'main',
+    };
+    const newData = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      shouldOptimize: false,
+      selector: 'body',
+    };
+
+    const result = mergeDataFn(existingData, newData);
+
+    expect(result.edgeOptimizeStatus).to.equal('in_progress');
+    expect(result.shouldOptimize).to.equal(true);
+    expect(result.selector).to.equal('main');
+  });
+
+  it('should pass protectEditedFromOutdated so a drifted key does not falsely age out an edit (LLMO-6537)', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: { presignedUrl: 'https://s3.amazonaws.com/bucket/faqs.json' },
+    };
+
+    await handler(message, context);
+
+    const syncArgs = syncSuggestionsStub.getCall(0).args[0];
+    expect(syncArgs.protectEditedFromOutdated).to.equal(true);
+    // Scenario 1 (LLMO-6761): FAQ opts in to the full-suggestion hard-skip.
+    expect(syncArgs.skipEditedOnMatch).to.equal(true);
+
+    // Customer edited the question from "How to use Photoshop?" to "Best way to learn Photoshop?"
+    const editedSuggestion = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      item: { question: 'Best way to learn Photoshop?', answer: 'Customer edited answer.' },
+      originalItem: { question: 'How to use Photoshop?', answer: 'System answer.' },
+      isEdited: true,
+    };
+
+    // Re-audit regenerates the original prompt-bank question
+    const regeneratedSuggestion = {
+      url: 'https://www.adobe.com/products/photoshop',
+      topic: 'photoshop',
+      item: { question: 'How to use Photoshop?', answer: 'Fresh system answer.' },
+    };
+
+    // buildKey embeds the question, so the edited and regenerated suggestions produce
+    // different keys — they coexist as separate rows instead of matching on the
+    // matched-key path. Without protectEditedFromOutdated, the drifted key would make
+    // the edited row look like a disappeared issue and get swept to OUTDATED; the flag
+    // (asserted above) keeps it alive.
+    const editedKey = syncArgs.buildKey(editedSuggestion);
+    const regeneratedKey = syncArgs.buildKey(regeneratedSuggestion);
+    expect(editedKey).to.not.equal(regeneratedKey);
+  });
+
   describe('Related URLs week fallback (LLMO-5035)', () => {
     const HEADER_ROW_VALUES = [
       undefined, 'Category', 'Topics', 'Prompt', 'Origin', 'Region',

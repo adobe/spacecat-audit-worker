@@ -275,10 +275,72 @@ describe('Preflight Headings - Selector Coverage Tests', function () {
 
       // Verify getDomElementSelector was called for each H1
       expect(mockDomSelector.getDomElementSelector).to.have.been.called;
-      // Verify toElementTargets was called with generated selectors
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(
-        ['body > h1:nth-of-type(1)', 'body > h1:nth-of-type(2)'],
-      );
+      // Verify toElementTargets was called with each H1's selector paired with its own text
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([
+        { selector: 'body > h1:nth-of-type(1)', textContent: 'First H1' },
+        { selector: 'body > h1:nth-of-type(2)', textContent: 'Second H1' },
+      ]);
+    });
+
+    it('attaches no element for heading-missing-h1 — the H1 is absent, nothing to point at', async () => {
+      // missing-H1 findings no longer fall back to a <main>/<body> selector.
+      // getDomElementSelector must not be called, and the opportunity must carry no `elements`.
+      const missingH1Check = {
+        success: false,
+        check: 'heading-missing-h1',
+        checkTitle: 'Missing H1',
+        description: 'No H1 found',
+        explanation: 'Add an H1',
+      };
+
+      mockHeadingsHandler.validatePageHeadingFromScrapeJson.resolves({
+        url: 'https://main--example--page.aem.page/page1',
+        checks: [missingH1Check],
+      });
+      mockDomSelector.toElementTargets.returns({});
+
+      const headingsModule = await esmock('../../src/preflight/headings.js', {
+        '../../src/preflight/utils/dom-selector.js': mockDomSelector,
+        '../../src/headings/handler.js': mockHeadingsHandler,
+        '../../src/headings/shared-utils.js': mockSharedUtils,
+        '../../src/metatags/seo-checks.js': {
+          default: class {
+            // eslint-disable-next-line class-methods-use-this
+            getFewHealthyTags() {
+              return { title: [], description: [], h1: [] };
+            }
+          },
+        },
+      });
+
+      const auditContext = {
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'identify',
+        audits: new Map([
+          ['https://main--example--page.aem.page/page1', { audits: [] }],
+        ]),
+        auditsResult: [{
+          pageUrl: 'https://main--example--page.aem.page/page1',
+          audits: [],
+        }],
+        scrapedObjects: [{
+          data: {
+            scrapeResult: {
+              rawBody: '<body><main><p>No heading here</p></main></body>',
+            },
+            finalUrl: 'https://main--example--page.aem.page/page1',
+          },
+        }],
+        timeExecutionBreakdown: [],
+      };
+
+      await headingsModule.default(context, auditContext);
+
+      expect(mockDomSelector.getDomElementSelector).to.not.have.been.called;
+      const headingsAudit = auditContext.audits
+        .get('https://main--example--page.aem.page/page1')
+        .audits.find((a) => a.name === 'headings');
+      expect(headingsAudit.opportunities[0]).to.not.have.property('elements');
     });
 
     it('should generate selector for heading-empty check using transformRules.selector', async () => {
@@ -626,7 +688,9 @@ describe('Preflight Headings - Selector Coverage Tests', function () {
       await headingsModule.default(context, auditContext);
 
       expect(mockDomSelector.getDomElementSelector).to.have.been.called;
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h1']);
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([
+        { selector: 'body > h1', textContent: 'This is a very long H1 heading that exceeds the recommended length' },
+      ]);
     });
 
     it('should use getDomElementSelector for heading-order-invalid check', async () => {
@@ -693,7 +757,9 @@ describe('Preflight Headings - Selector Coverage Tests', function () {
       await headingsModule.default(context, auditContext);
 
       expect(mockDomSelector.getDomElementSelector).to.have.been.called;
-      expect(mockDomSelector.toElementTargets).to.have.been.calledWith(['body > h3.skipped-level']);
+      expect(mockDomSelector.toElementTargets).to.have.been.calledWith([
+        { selector: 'body > h3.skipped-level', textContent: 'Skipped H2' },
+      ]);
     });
 
     it('should disambiguate by text when structural selector matches the wrong element first', async () => {
