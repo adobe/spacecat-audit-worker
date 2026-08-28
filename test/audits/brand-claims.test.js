@@ -16,7 +16,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
-import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import brandClaimsHandler, { sanitizePathComponent } from '../../src/brand-claims/handler.js';
 
 use(sinonChai);
@@ -418,6 +417,9 @@ describe('Brand Claims audit handler', function () {
     };
 
     it('emits a semrush_feed event (no sheet lookup, domain set) when entitled', async () => {
+      // Freeze the clock so week/year are asserted as literals, not recomputed (MF2).
+      // 2026-08-24T12:00:00Z is ISO week 35 of 2026.
+      sandbox.useFakeTimers(new Date('2026-08-24T12:00:00Z'));
       const { handler, entitlementStub } = await loadHandler({
         entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
       });
@@ -433,7 +435,6 @@ describe('Brand Claims audit handler', function () {
       );
       expect(sqs.sendMessage).to.have.been.calledOnce;
 
-      const { week, year } = isoCalendarWeek(new Date());
       const [queueUrl, event] = sqs.sendMessage.firstCall.args;
       expect(queueUrl).to.equal('https://sqs.test/bp-sheet-ready');
       expect(event).to.deep.equal({
@@ -443,8 +444,8 @@ describe('Brand Claims audit handler', function () {
         brand_id: BRAND_ID,
         brand: 'acmecorp',
         site_id: SITE_ID,
-        week,
-        year,
+        week: 35,
+        year: 2026,
         cadence: 'weekly',
         sheet_date: null,
         platform: 'chatgpt_free',
@@ -457,7 +458,46 @@ describe('Brand Claims audit handler', function () {
       });
     });
 
-    it('honors a per-brand cadence from the brand config on the semrush event', async () => {
+    it('uses an explicit run window (week/year) from the message over the wall clock (replay-stable)', async () => {
+      // Clock says week 35/2026; the explicit override must win so a DLQ redrive re-emits
+      // the same bucket regardless of when it runs.
+      sandbox.useFakeTimers(new Date('2026-08-24T12:00:00Z'));
+      const { handler } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+      const overrideMessage = {
+        ...message,
+        auditContext: { messageData: { week: '31', year: '2026' } },
+      };
+
+      await handler(overrideMessage, semrushContext());
+
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.week).to.equal(31);
+      expect(event.year).to.equal(2026);
+    });
+
+    it('ignores a partial/invalid run window and defaults to the current ISO week', async () => {
+      sandbox.useFakeTimers(new Date('2026-08-24T12:00:00Z'));
+      const { handler } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+      // week present but year missing, and an out-of-range week — both rejected → default.
+      const overrideMessage = {
+        ...message,
+        auditContext: { messageData: { week: 99 } },
+      };
+
+      await handler(overrideMessage, semrushContext());
+
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.week).to.equal(35);
+      expect(event.year).to.equal(2026);
+    });
+
+    it('stamps the default weekly cadence (brands has no cadence column) even if a stray cadence field is present', async () => {
+      // Guards MF1: the brands projection selects no cadence column, so any cadence value on
+      // the row is not real and must never leak into the event.
       selectResult = {
         data: [{
           id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: true, cadence: 'daily',
@@ -471,7 +511,77 @@ describe('Brand Claims audit handler', function () {
       await handler(message, semrushContext());
 
       const [, event] = sqs.sendMessage.firstCall.args;
-      expect(event.cadence).to.equal('daily');
+      expect(event.cadence).to.equal('weekly');
+    });
+
+    it('preserves a non-www subdomain in the semrush domain', async () => {
+      const { handler } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+      const ctx = semrushContext({
+        site: {
+          getId: () => SITE_ID,
+          getOrganizationId: () => ORG_ID,
+          getBaseURL: () => 'https://blog.acme.com',
+        },
+      });
+
+      await handler(message, ctx);
+
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.domain).to.equal('blog.acme.com');
+    });
+
+    it('runs the Semrush feed path even when the brand name sanitizes to an empty slug', async () => {
+      // The feed is keyed by domain, not the S3 brand-slug path component, so an empty slug
+      // must NOT block the Semrush branch (NB2 — decision runs before the brandSlug guard).
+      selectResult = {
+        data: [{ id: BRAND_ID, name: '   ', brand_claims_enabled: true }],
+        error: null,
+      };
+      const { handler } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+
+      const res = await handler(message, semrushContext());
+
+      expect(res.status).to.equal(200);
+      expect(s3Client.send).to.not.have.been.called;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.ingest_source).to.equal('semrush_feed');
+      expect(event.brand).to.equal('');
+      expect(event.domain).to.equal('acme.com');
+    });
+
+    it('falls through to the env flag (DRS path) on an invalid enableSemrush override', async () => {
+      const { handler, entitlementStub } = await loadHandler({
+        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
+      });
+      s3Client.send.resolves({
+        Contents: [{ Key: DRS_SHEET_KEY, LastModified: new Date('2026-01-01T00:00:00Z') }],
+        IsTruncated: false,
+      });
+      // env flag absent + an invalid (non-boolean) override → tri-state resolves undefined,
+      // so semrush stays off and DRS serves. Also exercises the invalid-override warning.
+      const ctx = semrushContext({
+        env: {
+          SQS_BP_SHEET_READY_QUEUE_URL: 'https://sqs.test/bp-sheet-ready',
+          DRS_BP_BUCKET: 'drs-bp-bucket',
+        },
+      });
+      const overrideMessage = {
+        ...message,
+        auditContext: { messageData: { enableSemrush: 'maybe' } },
+      };
+
+      const res = await handler(overrideMessage, ctx);
+
+      expect(res.status).to.equal(200);
+      expect(entitlementStub).to.not.have.been.called;
+      expect(s3Client.send).to.have.been.called;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.ingest_source).to.equal('brand_presence_s3');
+      expect(log.warn).to.have.been.calledWithMatch('Invalid override value');
     });
 
     it('honors a per-run Slack override (enableSemrush) over the env flag', async () => {

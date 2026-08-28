@@ -37,6 +37,7 @@ export const AUDIT = {
   YOUTUBE: 'youtube',
   WIKIPEDIA: 'wikipedia',
   BRAND_PRESENCE: 'brand-presence',
+  BRAND_CLAIMS: 'brand-claims',
 };
 
 // `DEGRADED` covers a condition that did not go perfectly but that the system handled and moved
