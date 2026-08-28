@@ -1,3 +1,10 @@
+## [1.529.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.529.1...v1.529.2) (2026-08-28)
+
+
+### Bug Fixes
+
+* **commerce-product-enrichments:** use domcontentloaded to avoid navigation timeout on heavy pages ([#2923](https://github.com/adobe/spacecat-audit-worker/issues/2923)) ([5b5f1d3](https://github.com/adobe/spacecat-audit-worker/commit/5b5f1d3bde8d0853bb73352887ae1fadb883f8ce))
+
 ## [1.529.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.529.0...v1.529.1) (2026-08-27)
 
 
