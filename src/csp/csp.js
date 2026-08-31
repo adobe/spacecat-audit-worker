@@ -17,7 +17,7 @@ import {
 } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { RESOLVE_PROTECTED_STATUSES, syncSuggestions } from '../utils/data-access.js';
 import { cspAutoSuggest } from './csp-auto-suggest.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_CSP;
@@ -121,12 +121,7 @@ export async function resolveOpportunity(auditData, context, auditType) {
 
     const existingSuggestions = await opportunity.getSuggestions();
     const existingOutdatedSuggestions = existingSuggestions
-      .filter((existing) => ![
-        SuggestionDataAccess.STATUSES.OUTDATED,
-        SuggestionDataAccess.STATUSES.FIXED,
-        SuggestionDataAccess.STATUSES.ERROR,
-        SuggestionDataAccess.STATUSES.SKIPPED,
-      ].includes(existing.getStatus()));
+      .filter((existing) => !RESOLVE_PROTECTED_STATUSES.includes(existing.getStatus()));
     if (isNonEmptyArray(existingOutdatedSuggestions)) {
       await Suggestion.bulkUpdateStatus(
         existingOutdatedSuggestions,

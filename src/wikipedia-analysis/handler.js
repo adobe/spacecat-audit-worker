@@ -16,7 +16,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import {
-  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, PEER,
+  createOffsiteLogger, withAuditPersistLog, errorField, resolveTriggerFields, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 
 // Long, unambiguous market suffixes. These are safe to strip even when fused
@@ -101,26 +101,26 @@ function unwrapSlackMrkdwnLink(raw) {
 function resolveWikipediaUrlOverride(auditContext, olog) {
   const md = auditContext?.messageData;
   if (!md) {
-    olog?.debug('url_override', 'No messageData on audit context', { reason: 'no_message_data' });
+    olog?.skip('audit_orchestration_url_override_resolved', 'No messageData on audit context', { reason: 'no_message_data' });
     return undefined;
   }
 
   const wikiVal = md.wikiUrl;
   const wikipediaVal = md.wikipediaUrl;
 
-  olog?.debug('url_override', 'Resolving Wikipedia URL override from messageData', {
+  olog?.debug('audit_orchestration_url_override_resolved', 'Resolving Wikipedia URL override from messageData', {
     wikiUrl: wikiVal, wikipediaUrl: wikipediaVal,
   });
 
   const rawOverride = wikiVal || wikipediaVal;
 
   if (rawOverride === undefined || rawOverride === null || rawOverride === '') {
-    olog?.debug('url_override', 'No usable wikiUrl/wikipediaUrl override', { reason: 'no_override_value' });
+    olog?.skip('audit_orchestration_url_override_resolved', 'No usable wikiUrl/wikipediaUrl override', { reason: 'no_override_value' });
     return undefined;
   }
 
   if (typeof rawOverride !== 'string') {
-    olog?.debug('url_override', 'Override rejected: expected a string value', {
+    olog?.skip('audit_orchestration_url_override_resolved', 'Override rejected: expected a string value', {
       reason: 'non_string', valueType: typeof rawOverride,
     });
     return undefined;
@@ -128,20 +128,20 @@ function resolveWikipediaUrlOverride(auditContext, olog) {
 
   const normalized = unwrapSlackMrkdwnLink(rawOverride);
   if (!normalized) {
-    olog?.debug('url_override', 'Override rejected: empty after Slack/mrkdwn normalization', {
+    olog?.skip('audit_orchestration_url_override_resolved', 'Override rejected: empty after Slack/mrkdwn normalization', {
       reason: 'empty_after_normalize',
     });
     return undefined;
   }
 
   if (!isValidUrl(normalized)) {
-    olog?.debug('url_override', 'Override rejected: not a valid URL', {
+    olog?.skip('audit_orchestration_url_override_resolved', 'Override rejected: not a valid URL', {
       reason: 'invalid_url', value: normalized,
     });
     return { invalid: true, value: normalized };
   }
 
-  olog?.debug('url_override', 'Override accepted', { url: normalized });
+  olog?.success('audit_orchestration_url_override_resolved', 'Override accepted', { url: normalized });
 
   return { url: normalized };
 }
@@ -235,26 +235,26 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
   const siteId = site.getId();
   const olog = createOffsiteLogger(log, { audit: AUDIT.WIKIPEDIA, siteId });
 
-  olog.start('audit_start', `Starting Wikipedia analysis audit for site: ${siteId}`);
+  olog.start('audit_orchestration_spacecat_request_received', 'Audit started', resolveTriggerFields(auditContext));
 
   try {
     const wikipediaConfig = getWikipediaConfig(site);
 
     const wikipediaUrlOverride = resolveWikipediaUrlOverride(auditContext, olog);
     if (wikipediaUrlOverride?.invalid) {
-      olog.warn('config_resolve', 'Ignoring invalid wikipedia URL override', {
-        reason: 'invalid_url_override', value: wikipediaUrlOverride.value,
+      olog.warn('audit_orchestration_brand_profile_resolved', 'Ignoring invalid wikipedia URL override', {
+        outcome: OUTCOME.SKIP, reason: 'invalid_url_override', value: wikipediaUrlOverride.value,
       });
     } else if (wikipediaUrlOverride?.url) {
       wikipediaConfig.wikipediaUrl = wikipediaUrlOverride.url;
-      olog.debug('config_resolve', 'Using Wikipedia URL override from audit message', {
+      olog.success('audit_orchestration_brand_profile_resolved', 'Using Wikipedia URL override from audit message', {
         url: wikipediaUrlOverride.url,
       });
     }
 
     // Validate that we have a company name
     if (!wikipediaConfig.companyName) {
-      olog.warn('config_resolve', 'No company name configured for site, skipping audit', { reason: 'no_company_name' });
+      olog.failure('audit_orchestration_brand_profile_resolved', 'No company name configured for site; producing no result this run', { outcome: OUTCOME.FAILURE, reason: 'no_company_name' });
       return {
         auditResult: {
           success: false,
@@ -264,13 +264,15 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
       };
     }
 
-    olog.success('config_resolve', 'Resolved Wikipedia config', {
+    olog.success('audit_orchestration_brand_profile_resolved', 'Brand profile resolved', {
       companyName: wikipediaConfig.companyName,
       website: wikipediaConfig.companyWebsite,
       wikipediaUrl: wikipediaConfig.wikipediaUrl,
     });
 
     const slackContext = auditContext?.slackContext;
+
+    olog.success('audit_orchestration_end', 'Audit complete', { status: 'pending_analysis' });
 
     return {
       auditResult: {
@@ -282,7 +284,7 @@ async function runWikipediaAnalysisAudit(url, context, site, auditContext = {}) 
       fullAuditRef: url,
     };
   } catch (error) {
-    olog.failure('audit_start', 'Audit failed', { ...errorField(error) });
+    olog.failure('audit_orchestration_end', 'Audit failed', { reason: 'unexpected_error', ...errorField(error) });
     return {
       auditResult: {
         success: false,
@@ -312,12 +314,16 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
   // Skip if audit failed
   if (!auditResult.success) {
-    olog.skip('mystique_dispatch', 'Audit failed, skipping Mystique message', { reason: 'audit_failed' });
+    olog.warn('audit_analysis_mystique_request_dispatched', 'Audit failed, skipping Mystique message', {
+      outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed',
+    });
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    olog.warn('mystique_dispatch', 'SQS or Mystique queue not configured, skipping message', { reason: 'not_configured' });
+    olog.failure('audit_analysis_mystique_request_dispatched', 'SQS or Mystique queue not configured; message dispatch unavailable this run', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'mystique_not_configured',
+    });
     return auditData;
   }
 
@@ -326,7 +332,9 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      olog.warn('mystique_dispatch', 'Site not found, skipping Mystique message', { reason: 'site_not_found' });
+      olog.failure('audit_analysis_mystique_request_dispatched', 'Site not found, skipping Mystique message', {
+        outcome: OUTCOME.FAILURE, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found_at_dispatch',
+      });
       return auditData;
     }
 
@@ -352,7 +360,9 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     try {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
-      olog.warn('mystique_dispatch', 'Brand resolution failed unexpectedly; proceeding without scope', { ...errorField(brandError) });
+      olog.warn('audit_analysis_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
+        scopeKind: 'brand', outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
+      });
     }
     const message = applyBrandScope(baseMessage, brand);
 
@@ -362,8 +372,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       : '(empty → auto-detect)';
 
     olog.success(
-      'mystique_dispatch',
-      'Queued Wikipedia analysis request to Mystique',
+      'audit_analysis_mystique_request_dispatched',
+      'Queued analysis request to Mystique',
       {
         peer: PEER.MYSTIQUE,
         direction: 'outbound',
@@ -373,7 +383,9 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       },
     );
   } catch (error) {
-    olog.failure('mystique_dispatch', 'Failed to send Mystique message', { peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error) }, error);
+    olog.failure('audit_analysis_mystique_request_dispatched', 'Failed to send Mystique message', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'unexpected_error', ...errorField(error),
+    }, error);
     // Re-throw to fail the audit if we can't send to Mystique
     throw error;
   }

@@ -148,7 +148,7 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('No company name configured for this site');
-      expect(context.log.warn).to.have.been.called;
+      expect(context.log.error).to.have.been.called;
     });
 
     it('should extract brand from URL when company name is not configured', async () => {
@@ -212,8 +212,10 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.config.wikipediaUrl).to.equal(override);
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/event=config_resolve/).and(sinon.match(`url=${override}`)),
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(`url=${override}`)),
       );
     });
 
@@ -286,8 +288,10 @@ describe('Wikipedia Analysis Handler', () => {
       );
 
       expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
-      expect(context.log.debug).to.have.been.calledWith(
-        sinon.match(/event=url_override/).and(sinon.match(/after Slack\/mrkdwn normalization/)),
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_url_override_resolved/)
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/after Slack\/mrkdwn normalization/)),
       );
     });
 
@@ -340,8 +344,15 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(result.auditResult.config.wikipediaUrl).to.equal('https://en.wikipedia.org/wiki/Example_Corp');
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/event=config_resolve/)
+        sinon.match(/event=audit_orchestration_brand_profile_resolved/)
           .and(sinon.match(/reason=invalid_url_override/))
+          .and(sinon.match('value=not-a-valid-url')),
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_orchestration_url_override_resolved/)
+          .and(sinon.match('Override rejected: not a valid URL'))
+          .and(sinon.match('outcome=skip'))
+          .and(sinon.match('reason=invalid_url'))
           .and(sinon.match('value=not-a-valid-url')),
       );
     });
@@ -412,7 +423,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(context.log.debug).to.have.been.calledWith(
         sinon.match(
           (msg) => typeof msg === 'string'
-            && msg.includes('event=url_override')
+            && msg.includes('event=audit_orchestration_url_override_resolved')
             && msg.includes(`wikiUrl=${path}`),
         ),
       );
@@ -475,7 +486,7 @@ describe('Wikipedia Analysis Handler', () => {
         }),
       );
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=mystique_dispatch/)
+        sinon.match(/event=audit_analysis_mystique_request_dispatched/)
           .and(sinon.match('companyName="Example Corp"'))
           .and(sinon.match('wikipediaUrl=https://en.wikipedia.org/wiki/Example_Corp')),
       );
@@ -501,7 +512,7 @@ describe('Wikipedia Analysis Handler', () => {
       await postProcessor(baseURL, auditData, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=mystique_dispatch/)
+        sinon.match(/event=audit_analysis_mystique_request_dispatched/)
           .and(sinon.match('wikipediaUrl="(empty → auto-detect)"')),
       );
     });
@@ -520,7 +531,12 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith(sinon.match('Audit failed, skipping Mystique message'));
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match('Audit failed, skipping Mystique message')
+          .and(sinon.match('outcome=skip'))
+          .and(sinon.match('peer=mystique'))
+          .and(sinon.match('direction=outbound')),
+      );
     });
 
     it('should skip sending message when SQS is not configured', async () => {
@@ -538,7 +554,7 @@ describe('Wikipedia Analysis Handler', () => {
       const result = await postProcessor(baseURL, auditData, context);
 
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured, skipping message'));
+      expect(context.log.error).to.have.been.calledWith(sinon.match('SQS or Mystique queue not configured; message dispatch unavailable this run'));
     });
 
     it('should skip sending message when queue env is not set', async () => {
@@ -574,7 +590,7 @@ describe('Wikipedia Analysis Handler', () => {
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(result).to.deep.equal(auditData);
-      expect(context.log.warn).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
+      expect(context.log.error).to.have.been.calledWith(sinon.match('Site not found, skipping Mystique message'));
     });
 
     it('should throw error when SQS send fails', async () => {
@@ -590,7 +606,11 @@ describe('Wikipedia Analysis Handler', () => {
 
       const postProcessor = wikipediaAnalysisHandler.postProcessors[0];
       await expect(postProcessor(baseURL, auditData, context)).to.be.rejectedWith('SQS Error');
-      expect(context.log.error).to.have.been.calledWith(sinon.match('Failed to send Mystique message'));
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match('Failed to send Mystique message')
+          .and(sinon.match(/reason=unexpected_error/))
+          .and(sinon.match(/errorMessage="SQS Error"/)),
+      );
     });
 
     // Helper: fresh PostgREST chain mock — limit() is the terminal call (org, status, site_id, order, limit)
@@ -634,7 +654,7 @@ describe('Wikipedia Analysis Handler', () => {
       expect(sentMessage.brandId).to.equal('brand-1');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/brandId=brand-1/).and(sinon.match(/event=mystique_dispatch/)),
+        sinon.match(/brandId=brand-1/).and(sinon.match(/event=audit_analysis_mystique_request_dispatched/)),
       );
     });
 
@@ -705,7 +725,8 @@ describe('Wikipedia Analysis Handler', () => {
       expect(sentMessage).to.not.have.property('brandId');
       expect(sentMessage.siteId).to.equal(siteId);
       expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/Brand resolution failed unexpectedly/),
+        sinon.match(/Brand resolution failed unexpectedly/)
+          .and(sinon.match(/scopeKind=brand/)),
       );
     });
   });

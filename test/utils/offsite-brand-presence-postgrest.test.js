@@ -212,6 +212,30 @@ describe('offsite-brand-presence-postgrest', () => {
         Category: '',
       }]);
     });
+
+    it('passes non-US region codes through unmodified', () => {
+      const result = mapExecutionsToLegacyBrandPresenceRows([
+        makeExecution({
+          id: 'exec-gb',
+          region_code: 'GB',
+          brand_presence_sources: [embeddedSource('https://gb.example.com')],
+        }),
+        makeExecution({
+          id: 'exec-ca',
+          region_code: 'CA',
+          brand_presence_sources: [embeddedSource('https://ca.example.com')],
+        }),
+      ]);
+
+      expect(result).to.deep.equal([
+        {
+          Sources: 'https://gb.example.com', Region: 'GB', Topics: '', Prompt: '', Category: '',
+        },
+        {
+          Sources: 'https://ca.example.com', Region: 'CA', Topics: '', Prompt: '', Category: '',
+        },
+      ]);
+    });
   });
 
   describe('loadBrandPresenceDataFromPostgrest', () => {
@@ -252,8 +276,10 @@ describe('offsite-brand-presence-postgrest', () => {
       });
 
       expect(result).to.equal(null);
-      expect(capture.eq).to.deep.include(['region_code', 'US']);
-      expect(capture.in[0][0]).to.equal('model');
+      const regionCall = capture.in.find(([col]) => col === 'region_code');
+      expect(regionCall).to.equal(undefined);
+      const modelCall = capture.in.find(([col]) => col === 'model');
+      expect(modelCall).to.not.equal(undefined);
     });
 
     it('treats null execution data as an empty result set', async () => {
@@ -261,10 +287,11 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No execution rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No execution rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
-    it('queries executions with embedded sources, mapped models, and region_code = US', async () => {
+    it('queries executions with embedded sources and mapped models, without a region filter', async () => {
       const capture = createCapture();
       const chain = createQueryChain(capture, [{
         data: [makeExecution({
@@ -296,16 +323,45 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(capture.eq).to.deep.include.members([
         ['organization_id', ORG_ID],
         ['site_id', SITE_ID],
-        ['region_code', 'US'],
       ]);
-      expect(capture.in[0]).to.deep.equal(
+      expect(capture.in).to.deep.include.members([
         ['model', getBrandPresenceDbModels()],
-      );
+      ]);
+      expect(capture.in.find(([col]) => col === 'region_code')).to.equal(undefined);
       expect(capture.order).to.deep.equal([
         ['execution_date', { ascending: false }],
         ['id', { ascending: false }],
       ]);
       expect(capture.limit).to.deep.equal([EXECUTION_FETCH_BATCH_SIZE]);
+    });
+
+    it('applies the model filter on every paginated page, not just the first', async () => {
+      const capture = createCapture();
+      const firstBatch = Array.from(
+        { length: EXECUTION_FETCH_BATCH_SIZE },
+        (_, i) => makeExecution({
+          id: `exec-${i + 1}`,
+          execution_date: '2026-03-12',
+          brand_presence_sources: [embeddedSource(`https://example.com/${i + 1}`)],
+        }),
+      );
+      const secondBatch = [makeExecution({
+        id: `exec-${EXECUTION_FETCH_BATCH_SIZE + 1}`,
+        execution_date: '2026-03-11',
+        brand_presence_sources: [embeddedSource('https://example.com/last')],
+      })];
+      const chain = createQueryChain(capture, [
+        { data: firstBatch, error: null },
+        { data: secondBatch, error: null },
+      ]);
+      const postgrestClient = { from: sandbox.stub().returns(chain) };
+
+      await loadWith({ previousWeeks: DEFAULT_PREVIOUS_WEEKS, postgrestClient });
+
+      const modelCalls = capture.in.filter(([col]) => col === 'model');
+      expect(modelCalls).to.have.lengthOf(2);
+      modelCalls.forEach(([, models]) => expect(models).to.deep.equal(getBrandPresenceDbModels()));
+      expect(capture.in.find(([col]) => col === 'region_code')).to.equal(undefined);
     });
 
     it('uses keyset pagination and re-fetches when a batch fills the limit', async () => {
@@ -330,6 +386,9 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(capture.or).to.have.lengthOf(1);
       expect(capture.or[0]).to.include(lastExec.execution_date);
       expect(capture.or[0]).to.include(lastExec.id);
+      // The caller falls through to SharePoint on a null return, so a mid-pagination query
+      // failure here is recovered, not terminal — logged at `warn` level, not `.failure()`.
+      expect(log.error).to.not.have.been.called;
       expect(log.warn).to.have.been.calledOnce;
       expect(log.warn.firstCall.args[0]).to.include('page 2 failed');
     });
@@ -384,7 +443,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('returns null when embedded brand_presence_sources is null', async () => {
@@ -395,7 +455,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('returns null when embedded source_urls have no valid url', async () => {
@@ -408,7 +469,8 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
-      expect(log.info).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn).to.have.been.calledWithMatch('No usable rows found');
+      expect(log.warn.firstCall.args[0]).to.include('outcome=skip');
     });
 
     it('returns null and warns when the query fails', async () => {
@@ -419,9 +481,13 @@ describe('offsite-brand-presence-postgrest', () => {
       const postgrestClient = { from: sandbox.stub().returns(chain) };
 
       expect(await loadWith({ postgrestClient })).to.equal(null);
+      // The caller falls through to SharePoint on a null return, so a query failure here
+      // is recovered, not terminal — logged at `warn` level (outcome=degraded), not `.failure()`.
+      expect(log.error).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWithMatch(
-        '[offsite:brand-presence-postgrest] PostgREST query failed for site site-123: Failed to fetch brand_presence_executions: query failed',
+        'PostgREST query failed',
       );
+      expect(log.warn.firstCall.args[0]).to.include('outcome=degraded');
     });
 
     it('returns fetched rows and warns when keyset pagination reaches the max-page guard', async () => {
@@ -441,8 +507,11 @@ describe('offsite-brand-presence-postgrest', () => {
       expect(result).to.not.equal(null);
       expect(result.data).to.have.length.greaterThan(0);
       expect(log.warn).to.have.been.calledWithMatch(
-        `Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES})`,
+        'Exceeded maximum brand_presence_executions pages; processing rows fetched so far',
       );
+      const maxPagesCall = log.warn.getCalls()
+        .find((c) => c.args[0].includes('Exceeded maximum brand_presence_executions pages'));
+      expect(maxPagesCall.args[0]).to.include('outcome=degraded');
     });
   });
 });

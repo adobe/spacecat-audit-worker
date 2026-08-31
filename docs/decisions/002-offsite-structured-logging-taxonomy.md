@@ -1,7 +1,8 @@
 # 002 — Offsite Audits: Structured Logging Taxonomy
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-31
+- **Superseded by:** ADR [003 — Offsite Event Taxonomy: Phase Boundaries](003-offsite-event-taxonomy-phase-boundaries.md)
 
 ## Context
 
@@ -45,13 +46,12 @@ silent-event gaps.
    post-processor. The field NAMES match the Mystique side so Splunk
    `stats ... by domain, audit, event, outcome` works across both sourcetypes.
 
-4. **`audit_persist` is logged via an offsite-only post-processor**, prepended/
-   appended to the offsite builders' `.withPostProcessors([...])`, rather than
-   editing the generic `common/base-audit.js`. Zero impact on the other ~100
-   audits.
+4. **`audit_persistence_run_recorded` is logged via an offsite-only post-processor**,
+   prepended/appended to the offsite builders' `.withPostProcessors([...])`, rather than
+   editing the generic `common/base-audit.js`. Zero impact on the other ~100 audits.
 
 5. **Silent failure modes are made loud, but behavior is unchanged.** e.g. the
-   guidance-handler DB-write failure now emits `opportunity_persist outcome=failure`
+   guidance-handler DB-write failure now emits `audit_persistence_opportunity_persisted outcome=failure`
    at error level, but the existing ack-without-retry control flow is left as-is
    (that is a separate correctness question, out of scope for this logging change).
 
@@ -76,14 +76,14 @@ silent-event gaps.
   `imsOrgId`). This keeps an `outcome=skip` Splunk query at a single level.
 - **Errors go through `errorField(err)`**, never interpolated into the free-text message, so the
   message stays injection-safe and `errorName`/`errorMessage` are queryable fields. The unclassified
-  catch-all `guidance_complete` failure additionally passes the raw Error to `failure(...)` for stack
+  catch-all `audit_persistence_completed` failure additionally passes the raw Error to `failure(...)` for stack
   capture in CloudWatch.
 
 ## Consequences
 
 - Splunk can `stats by audit, event, outcome, peer`, alert on
-  `event=opportunity_persist outcome=failure` and
-  `event=drs_poll outcome=failure reason=budget_exceeded`, and follow a run by
+  `event=audit_persistence_opportunity_persisted outcome=failure` and
+  `event=data_acquisition_scrape_job_status_polled outcome=failure reason=budget_exceeded`, and follow a run by
   `siteId`/`auditId` as extracted fields.
 - Shared/generic utils (`analysis-fetch.js`, `brand-resolver.js`,
   `base-audit.js`, `data-access.js`) are intentionally left untouched; offsite

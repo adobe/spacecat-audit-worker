@@ -19,6 +19,7 @@ import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { convertToOpportunity } from '../common/opportunity.js';
+import { isBlackboardEngine } from '../common/delivery-engine.js';
 import { getIssueRanking, trimTagValue, normalizeTagValue } from '../utils/seo-utils.js';
 import { getBaseUrl } from '../utils/url-utils.js';
 import {
@@ -292,6 +293,18 @@ export async function runAuditAndGenerateSuggestions(context) {
 
   log.info(`[metatags] scrapeResultPaths for ${site.getId()}: ${JSON.stringify(scrapeResultPaths)}`);
   log.info(`[metatags] Start runAuditAndGenerateSuggestions step for: ${site.getId()}`);
+
+  // Per-site V1 -> V2 cutover (Spec 009-04 / ADR-0022): when the META_TAGS opportunity is
+  // owned by Mystique's blackboard producer cascade (deliveryConfig.metaTagsEngine=blackboard),
+  // bow out before detection / creation / Mystique dispatch and resolve any pre-existing legacy
+  // META_TAGS opportunity so the flip strands no active rows.
+  if (isBlackboardEngine(site, 'metaTagsEngine')) {
+    log.info(`[metatags] siteId: ${site.getId()} | bowing out — deliveryConfig.metaTagsEngine=blackboard (Mystique-owned); resolving any legacy meta-tags opportunity, skipping detection/creation/dispatch`);
+    await resolveOpportunityIfNoIssues(site.getId(), auditType, context.dataAccess, log);
+    return {
+      status: 'complete',
+    };
+  }
 
   const {
     seoChecks,

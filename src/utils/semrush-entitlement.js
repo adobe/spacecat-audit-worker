@@ -42,8 +42,9 @@
  */
 
 import { resolveFeatureFlagForBrand } from './feature-flags-utils.js';
-
-const LOG_PREFIX = '[semrush-entitlement]';
+import {
+  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
+} from './offsite-logging.js';
 
 const SERENITY_FLAG_PRODUCT = 'LLMO';
 const SERENITY_FLAG_NAME = 'serenity';
@@ -55,14 +56,14 @@ const SERENITY_FLAG_NAME = 'serenity';
  * check (`offsite-brand-presence/handler.js`) share one literal instead of two
  * independently-typed copies that could drift.
  */
-export const SEMRUSH_NOT_ENTITLED_REASON = 'not-entitled';
+export const SEMRUSH_NOT_ENTITLED_REASON = 'not_entitled';
 
 /**
  * Reason code the loader sets on `diagnostics.fallbackReason` when the entitlement
  * check itself could not complete (`resolved:false` — see `entitlementReason` on the
- * same diagnostics object for the granular cause: `no-client` vs `check-failed`).
+ * same diagnostics object for the granular cause: `no_client` vs `check_failed`).
  */
-export const SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON = 'entitlement-check-failed';
+export const SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON = 'entitlement_check_failed';
 
 /**
  * Both entitlement-based skip reasons — a deliberate skip (confirmed or
@@ -82,11 +83,11 @@ export const SEMRUSH_ENTITLEMENT_SKIP_REASONS = Object.freeze(
  */
 export const SEMRUSH_ENTITLEMENT_REASONS = Object.freeze({
   ENTITLED: 'entitled',
-  FLAG_DISABLED: 'flag-disabled',
-  NO_WORKSPACE: 'no-workspace',
-  MISSING_INPUT: 'missing-input',
-  NO_CLIENT: 'no-client',
-  CHECK_FAILED: 'check-failed',
+  FLAG_DISABLED: 'flag_disabled',
+  NO_WORKSPACE: 'no_workspace',
+  MISSING_INPUT: 'missing_input',
+  NO_CLIENT: 'no_client',
+  CHECK_FAILED: 'check_failed',
 });
 
 /**
@@ -97,7 +98,7 @@ export const SEMRUSH_ENTITLEMENT_REASONS = Object.freeze({
  * `Organization.findById`, `Brand.findById`) all run CONCURRENTLY via `Promise.all`, so
  * the critical path here is one round-trip deep, not two — the same budget is, if
  * anything, more generous for this shape. Re-validate against real p99s post-rollout
- * if `check-failed` volume looks high (a symptom the timeout is too tight for
+ * if `check_failed` volume looks high (a symptom the timeout is too tight for
  * `Organization`/`Brand`'s data-access-layer overhead vs a raw PostgREST query).
  */
 export const SEMRUSH_ENTITLEMENT_TIMEOUT_MS = 300;
@@ -194,12 +195,14 @@ export async function resolveSemrushEntitlement(context, { orgId, brandId } = {}
     return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.MISSING_INPUT };
   }
 
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE });
+
   const postgrestClient = dataAccess?.services?.postgrestClient;
   const hasWorkspaceModels = typeof dataAccess?.Organization?.findById === 'function'
     && typeof dataAccess?.Brand?.findById === 'function';
   if (!postgrestClient?.from || !hasWorkspaceModels) {
-    log?.warn(`${LOG_PREFIX} PostgREST client or Organization/Brand data-access not available; cannot resolve Semrush entitlement`, {
-      orgId, brandId,
+    olog.warn('data_acquisition_bp_data_semrush_read', 'PostgREST client or Organization/Brand data-access not available; cannot resolve Semrush entitlement', {
+      peer: PEER.SEMRUSH, direction: 'inbound', reason: 'no_client', outcome: OUTCOME.SKIP, orgId, brandId,
     });
     return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.NO_CLIENT };
   }
@@ -243,8 +246,8 @@ export async function resolveSemrushEntitlement(context, { orgId, brandId } = {}
     };
   } catch (error) {
     clearTimeout(timeoutHandle);
-    log?.warn(`${LOG_PREFIX} Semrush entitlement check failed for org ${orgId} / brand ${brandId}: ${error.message}`, {
-      orgId, brandId, errorName: error.name,
+    olog.warn('data_acquisition_bp_data_semrush_read', 'Semrush entitlement check failed', {
+      peer: PEER.SEMRUSH, direction: 'inbound', reason: 'entitlement_check_failed', outcome: OUTCOME.DEGRADED, orgId, brandId, ...errorField(error),
     });
     return { entitled: false, resolved: false, reason: SEMRUSH_ENTITLEMENT_REASONS.CHECK_FAILED };
   }

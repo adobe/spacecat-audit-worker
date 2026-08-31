@@ -12,21 +12,12 @@
 
 import { getDateRanges } from '@adobe/spacecat-shared-utils';
 import {
-  appendFields, OFFSITE_DOMAIN, OUTCOME, PEER,
+  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
 } from './offsite-logging.js';
 import { PROVIDERS } from '../offsite-brand-presence/constants.js';
 
 export const EXECUTION_FETCH_BATCH_SIZE = 5000;
 export const MAX_EXECUTION_FETCH_PAGES = 50;
-const DEFAULT_REGION_CODE = 'US';
-
-// Offsite-only util: keeps its own human component prefix but emits the offsite taxonomy as
-// Splunk-extractable `key=value` tokens. It does not know the audit slug, so `audit` is omitted.
-const LOG_PREFIX = '[offsite:brand-presence-postgrest]';
-const bp = (message, fields) => appendFields(
-  `${LOG_PREFIX} ${message}`,
-  { domain: OFFSITE_DOMAIN, ...fields },
-);
 
 export const BRAND_PRESENCE_DB_MODEL_BY_PROVIDER = Object.freeze({
   'ai-mode': 'google-ai-mode',
@@ -82,8 +73,7 @@ async function fetchExecutionsWithSources(postgrestClient, {
   startDate,
   endDate,
   models,
-  regionCode = DEFAULT_REGION_CODE,
-  log,
+  olog,
 }) {
   const rows = [];
   let lastDate = null;
@@ -93,9 +83,12 @@ async function fetchExecutionsWithSources(postgrestClient, {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     if (pageCount >= MAX_EXECUTION_FETCH_PAGES) {
-      log.warn(bp(`Exceeded maximum brand_presence_executions pages (${MAX_EXECUTION_FETCH_PAGES}), processing ${rows.length} rows fetched so far`, {
-        event: 'brand_data_load', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length,
-      }));
+      // Kept at `.warn()`: hitting an operational page cap and continuing with only the
+      // rows fetched so far is a reduced/partial result, not a full success — outcome
+      // is degraded.
+      olog.warn('data_acquisition_bp_data_postgres_read', 'Exceeded maximum brand_presence_executions pages; processing rows fetched so far', {
+        peer: PEER.POSTGRES, direction: 'inbound', reason: 'max_pages', pages: MAX_EXECUTION_FETCH_PAGES, rows: rows.length, outcome: OUTCOME.DEGRADED,
+      });
       break;
     }
 
@@ -104,7 +97,6 @@ async function fetchExecutionsWithSources(postgrestClient, {
       .select('id, execution_date, topics, prompt, category_name, region_code, model, brand_presence_sources(source_urls(url))')
       .eq('organization_id', organizationId)
       .eq('site_id', siteId)
-      .eq('region_code', regionCode)
       .in('model', models)
       .gte('execution_date', startDate)
       .lte('execution_date', endDate)
@@ -130,9 +122,9 @@ async function fetchExecutionsWithSources(postgrestClient, {
 
     const batch = data || [];
     rows.push(...batch);
-    log?.info(bp(`Fetched batch: ${batch.length} rows (total: ${rows.length})`, {
-      event: 'brand_data_load', outcome: OUTCOME.START, peer: PEER.POSTGRES, direction: 'inbound', rows: batch.length,
-    }));
+    olog.start('data_acquisition_bp_data_postgres_read', 'Fetched batch', {
+      peer: PEER.POSTGRES, direction: 'inbound', rows: batch.length, total: rows.length,
+    });
 
     if (batch.length < EXECUTION_FETCH_BATCH_SIZE) {
       break;
@@ -168,12 +160,13 @@ export async function loadBrandPresenceDataFromPostgrest({
   organizationId,
   previousWeeks,
   postgrestClient,
-  regionCode = DEFAULT_REGION_CODE,
   log,
 }) {
   if (!siteId || !organizationId || !postgrestClient?.from) {
     return null;
   }
+
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
 
   const models = getBrandPresenceDbModels();
   const dateWindow = getDateWindowForPreviousWeeks(previousWeeks);
@@ -190,33 +183,35 @@ export async function loadBrandPresenceDataFromPostgrest({
       startDate,
       endDate,
       models,
-      regionCode,
-      log,
+      olog,
     });
 
     if (executions.length === 0) {
-      log?.info(bp(`No execution rows found for site ${siteId}`, {
-        event: 'brand_data_load', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions',
-      }));
+      olog.warn('data_acquisition_bp_data_postgres_read', 'No execution rows found', {
+        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_executions', siteId, outcome: OUTCOME.SKIP,
+      });
       return null;
     }
 
     const rows = mapExecutionsToLegacyBrandPresenceRows(executions);
     if (rows.length === 0) {
-      log?.info(bp(`No usable rows found for site ${siteId}`, {
-        event: 'brand_data_load', outcome: OUTCOME.SKIP, peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows',
-      }));
+      olog.warn('data_acquisition_bp_data_postgres_read', 'No usable rows found', {
+        peer: PEER.POSTGRES, direction: 'inbound', count: 0, reason: 'no_usable_rows', siteId, outcome: OUTCOME.SKIP,
+      });
       return null;
     }
 
-    log?.info(bp(`Loaded ${rows.length} legacy-shaped rows from PostgREST for site ${siteId}`, {
-      event: 'brand_data_load', outcome: OUTCOME.SUCCESS, peer: PEER.POSTGRES, direction: 'inbound', rows: rows.length,
-    }));
+    olog.success('data_acquisition_bp_data_postgres_read', 'Loaded legacy-shaped rows from PostgREST', {
+      peer: PEER.POSTGRES, direction: 'inbound', siteId, rows: rows.length,
+    });
     return { data: rows };
   } catch (error) {
-    log?.warn(bp(`PostgREST query failed for site ${siteId}: ${error.message}`, {
-      event: 'brand_data_load', outcome: OUTCOME.FAILURE, peer: PEER.POSTGRES, direction: 'inbound', reason: 'query', errorName: error.name,
-    }));
+    // The caller falls through to the SharePoint path when this returns null, so a query
+    // failure here is recovered, not terminal — outcome=degraded, not failure, so this
+    // doesn't page as a hard stop.
+    olog.warn('data_acquisition_bp_data_postgres_read', 'PostgREST query failed', {
+      peer: PEER.POSTGRES, direction: 'inbound', outcome: OUTCOME.DEGRADED, reason: 'query', siteId, ...errorField(error),
+    });
     return null;
   }
 }

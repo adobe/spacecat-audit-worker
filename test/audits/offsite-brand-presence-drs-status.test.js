@@ -201,7 +201,8 @@ describe('offsite-brand-presence DRS status handler', function () {
     expect(thrown.message).to.equal('SQS reschedule down');
     expect(log.error).to.have.been.calledWith(
       sinon.match(/Failed to re-enqueue DRS status poll/)
-        .and(sinon.match(/event=drs_poll_reschedule/))
+        .and(sinon.match(/event=data_acquisition_drs_scrape_job_poll_request_dispatched/))
+        .and(sinon.match(/firstSchedule=false/))
         .and(sinon.match(/outcome=failure/)),
     );
   });
@@ -235,7 +236,7 @@ describe('offsite-brand-presence DRS status handler', function () {
     // P1-6: the youtube bucket (still running at the deadline) is dropped with a
     // structured, alertable failure instead of only appearing in the Slack prose.
     expect(log.error).to.have.been.calledWith(
-      sinon.match(/event=drs_poll/)
+      sinon.match(/event=data_acquisition_drs_scrape_job_poll_checked/)
         .and(sinon.match(/outcome=failure/))
         .and(sinon.match(/reason=budget_exceeded/))
         .and(sinon.match(/auditType=youtube-analysis/)),
@@ -254,7 +255,7 @@ describe('offsite-brand-presence DRS status handler', function () {
     const sentTypes = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
     expect(sentTypes).to.include('reddit-analysis');
     expect(sentTypes).to.include('offsite-brand-presence-drs-status');
-    expect(log.warn).to.have.been.calledWithMatch(/getJob failed for job-2/);
+    expect(log.warn).to.have.been.calledWithMatch(/DRS getJob call failed.*drsJobId=job-2/);
   });
 
   it('reports a job as still running when getJob errors past the deadline', async () => {
@@ -485,13 +486,20 @@ describe('offsite-brand-presence DRS status handler', function () {
       // P1-6: both buckets failed their scrape (all terminal, no success) → dropped with
       // reason=scrape_failed rather than budget_exceeded.
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=drs_poll/)
+        sinon.match(/event=data_acquisition_drs_scrape_job_poll_checked/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/reason=scrape_failed/))
           .and(sinon.match(/auditType=reddit-analysis/)),
       );
       expect(log.error).to.have.been.calledWith(
         sinon.match(/reason=scrape_failed/).and(sinon.match(/auditType=youtube-analysis/)),
+      );
+      // The aggregate summary line uses a neutral reason regardless of the per-drop
+      // reasons above, since drops in the same run can be a mix of scrape_failed and
+      // budget_exceeded.
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=data_acquisition_drs_scrape_job_poll_end/)
+          .and(sinon.match(/reason=partial_drop/)),
       );
     });
 
@@ -514,7 +522,7 @@ describe('offsite-brand-presence DRS status handler', function () {
 
       expect(result.status).to.equal(200);
       expect(mockPostMessageOptional).to.have.been.calledOnce;
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger .* analysis audit for site/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to dispatch analysis audit/);
     });
 
     it('skips an audit type when a recent audit exists within the cooldown window', async () => {
@@ -530,7 +538,7 @@ describe('offsite-brand-presence DRS status handler', function () {
       const types = context.sqs.sendMessage.getCalls().map((c) => c.args[1].type);
       expect(types).to.include('youtube-analysis');
       expect(types).to.not.include('reddit-analysis');
-      expect(log.info).to.have.been.calledWithMatch(/Skipping reddit-analysis.*recent audit exists/);
+      expect(log.warn).to.have.been.calledWithMatch(/Skipping analysis dispatch; recent audit exists.*outcome=skip.*auditType=reddit-analysis/);
     });
 
     it('triggers within the cooldown when the recent audit is a pending_scrape run', async () => {
@@ -639,7 +647,7 @@ describe('offsite-brand-presence DRS status handler', function () {
 
       expect(result.status).to.equal(200);
       expect(mockPostMessageOptional).to.have.been.calledOnce;
-      expect(log.warn).to.have.been.calledWithMatch(/Failed to trigger analysis audits for/);
+      expect(log.warn).to.have.been.calledWithMatch(/Failed to dispatch analysis audits/);
     });
 
     it('dispatches with partial data at the deadline if a dataset is still running', async () => {

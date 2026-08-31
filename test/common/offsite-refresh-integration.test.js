@@ -60,6 +60,13 @@ describe('offsite refresh handler composition', () => {
     };
     const syncSuggestions = sandbox.stub().resolves();
     const checkGoogleConnection = sandbox.stub().resolves(true);
+    const prepareSuppressedRunSnapshot = sandbox.stub();
+    const prepareSupersededRunSnapshot = sandbox.stub().callsFake(
+      async ({ opportunityData, evergreenOpportunity: evergreenOpportunityToRefresh }) => ({
+        opportunityData,
+        opportunityToUpdate: evergreenOpportunityToRefresh,
+      }),
+    );
     const log = {
       info: sandbox.spy(),
       error: sandbox.spy(),
@@ -92,6 +99,10 @@ describe('offsite refresh handler composition', () => {
     const handler = await esmock('../../src/cited-analysis/guidance-handler.js', {
       '../../src/common/opportunity-utils.js': {
         checkGoogleConnection,
+      },
+      '../../src/common/offsite-snapshot.js': {
+        prepareSuppressedRunSnapshot,
+        prepareSupersededRunSnapshot,
       },
       '../../src/utils/data-access.js': {
         syncSuggestions,
