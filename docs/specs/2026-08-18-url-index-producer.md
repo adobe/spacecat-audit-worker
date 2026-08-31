@@ -25,7 +25,7 @@ source URL to the row it backs. The shared writer/reader lives in `@adobe/spacec
 ## Cross-repo dependency
 
 `syncUrlIndex` ships in `@adobe/spacecat-shared-data-access`. Bump the dependency in `package.json`
-to the first published version containing it (currently `4.22.0`, which predates it).
+to the first published version containing it.
 
 ## Out of scope / follow-up
 
