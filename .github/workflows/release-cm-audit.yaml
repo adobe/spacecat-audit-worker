@@ -27,8 +27,8 @@ jobs:
       - uses: actions/checkout@v4        # for .snow.yml
         with:
           persist-credentials: false
-      # Pin to a full commit SHA once mysticat-ci publishes the action; using @v1 until then.
-      - uses: adobe/mysticat-ci/.github/actions/release-cm-audit@v1
+      # Pin to a full commit SHA once mysticat-ci publishes the action; using @v3 until then.
+      - uses: adobe/mysticat-ci/.github/actions/release-cm-audit@v3
         with:
           since: ${{ inputs.since }}
           mode: ${{ inputs.mode }}

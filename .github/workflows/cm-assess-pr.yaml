@@ -20,5 +20,5 @@ jobs:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      # Pin to a full commit SHA once mysticat-ci publishes the action; using @v1 until then.
-      - uses: adobe/mysticat-ci/.github/actions/cm-assess-pr@v1
+      # Pin to a full commit SHA once mysticat-ci publishes the action; using @v3 until then.
+      - uses: adobe/mysticat-ci/.github/actions/cm-assess-pr@v3

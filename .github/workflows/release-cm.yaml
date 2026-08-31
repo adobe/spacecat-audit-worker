@@ -20,5 +20,5 @@ jobs:
         with:
           persist-credentials: false
       # Pin to a full commit SHA once mysticat-ci publishes the action (supply-chain
-      # hygiene against an accidental tag move); using @v1 until it is released.
-      - uses: adobe/mysticat-ci/.github/actions/release-cm@v1
+      # hygiene against an accidental tag move); using @v3 until it is released.
+      - uses: adobe/mysticat-ci/.github/actions/release-cm@v3
