@@ -380,13 +380,25 @@ describe('Vulnerabilities Handler Integration Tests', () => {
 
       // Mock existing opportunity
       const suggestions = [
-        { getId: () => 'suggestion1', getStatus: () => 'NEW' },
-        { getId: () => 'suggestion2', getStatus: () => 'NEW' },
+        {
+          getId: () => 'suggestion1',
+          getStatus: () => 'NEW',
+          getData: () => ({ library: 'libA', current_version: '1.0.0', dependency_tree: [] }),
+        },
+        {
+          getId: () => 'suggestion2',
+          getStatus: () => 'NEW',
+          getData: () => ({ library: 'libB', current_version: '2.0.0', dependency_tree: [] }),
+        },
       ];
       const mockOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
         getType: () => 'security-vulnerabilities',
         setStatus: sandbox.stub().resolves(),
         getSuggestions: sandbox.stub().resolves(suggestions),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        addFixEntities: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
         setUpdatedBy: sandbox.stub().resolves(),
         save: sandbox.stub().resolves(),
       };
@@ -402,6 +414,83 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         suggestions,
         'OUTDATED',
       );
+      expect(mockOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+      expect(mockOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('should FIX an autofixed IN_PROGRESS suggestion (promoting its PENDING FixEntity) and OUTDATE the rest on an all-clear audit', async () => {
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub().callsFake((handler) => handler !== 'summit-plg'),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_NO_VULNERABILITIES,
+          success: true,
+        }),
+      };
+
+      const inProgressSuggestion = {
+        getId: () => 'sugg-autofixed',
+        getStatus: () => 'IN_PROGRESS',
+        getData: () => ({ library: 'libA', current_version: '1.0.0', dependency_tree: [] }),
+        setStatus: sandbox.stub(),
+        setData: sandbox.stub(),
+        setRank: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const newSuggestion = {
+        getId: () => 'sugg-new',
+        getStatus: () => 'NEW',
+        getData: () => ({ library: 'libB', current_version: '2.0.0', dependency_tree: [] }),
+        setStatus: sandbox.stub(),
+        setData: sandbox.stub(),
+        setRank: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const suggestions = [inProgressSuggestion, newSuggestion];
+
+      const pendingFixEntity = {
+        getId: () => 'fe-autofixed',
+        getStatus: () => 'PENDING',
+        setStatus: sandbox.stub(),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getType: () => 'security-vulnerabilities',
+        setStatus: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves(suggestions),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        addFixEntities: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        setUpdatedBy: sandbox.stub().resolves(),
+        save: sandbox.stub().resolves(),
+      };
+      context.site.getOpportunitiesByStatus.resolves([mockOpportunity]);
+      context.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+      context.dataAccess.FixEntity = {
+        getAllFixesWithSuggestionsByOpportunityId: sandbox.stub().resolves([
+          { fixEntity: pendingFixEntity, suggestions: [inProgressSuggestion] },
+        ]),
+        saveMany: sandbox.stub().resolves(),
+      };
+
+      const result = await opportunityAndSuggestionsStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      // Autofixed IN_PROGRESS suggestion → FIXED, its PENDING FixEntity → DEPLOYED.
+      expect(inProgressSuggestion.setStatus).to.have.been.calledWith('FIXED');
+      expect(pendingFixEntity.setStatus).to.have.been.calledWith('DEPLOYED');
+      expect(context.dataAccess.FixEntity.saveMany).to.have.been.calledWith([pendingFixEntity]);
+      // The non-autofixed NEW suggestion is OUTDATED, not FIXED.
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
+        [newSuggestion],
+        'OUTDATED',
+      );
+      // Opportunity resolved.
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
       expect(mockOpportunity.setUpdatedBy).to.have.been.calledWith('system');
       expect(mockOpportunity.save).to.have.been.calledOnce;
     });
@@ -441,12 +530,20 @@ describe('Vulnerabilities Handler Integration Tests', () => {
 
     it('should resolve a stale opportunity when every reported component has all vulnerabilities ignored', async () => {
       const suggestions = [
-        { getId: () => 'suggestion1', getStatus: () => 'NEW' },
+        {
+          getId: () => 'suggestion1',
+          getStatus: () => 'NEW',
+          getData: () => ({ library: 'libA', current_version: '1.0.0', dependency_tree: [] }),
+        },
       ];
       const staleOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
         getType: () => 'security-vulnerabilities',
         setStatus: sandbox.stub().resolves(),
         getSuggestions: sandbox.stub().resolves(suggestions),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        addFixEntities: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
         setUpdatedBy: sandbox.stub().resolves(),
         save: sandbox.stub().resolves(),
       };
@@ -657,6 +754,280 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         'library', 'current_version', 'recommended_version', 'cves', 'dependency_tree',
       ]);
       expect(updatedData.dependency_tree).to.deep.equal(newJettyComponent.dependencyTree);
+    });
+
+    it('should mark a disappeared IN_PROGRESS (autofixed) suggestion FIXED and promote its PENDING FixEntity to DEPLOYED', async () => {
+      const configuration = {
+        // Enable everything except the TBYB (summit-plg) handler, so reconcile runs.
+        isHandlerEnabledForSite: sandbox.stub().callsFake((handler) => handler !== 'summit-plg'),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      const HTTPCLIENT = 'org.apache.httpcomponents:httpclient';
+      const existingSuggestions = VULNERABILITY_REPORT_OLD_SCAN.vulnerableComponents.map(
+        (component) => ({
+          getId: () => `suggestion-${component.name}`,
+          getData: () => ({
+            library: component.name,
+            current_version: component.version,
+            recommended_version: component.recommendedVersion,
+            cves: (component.vulnerabilities || []).map((vuln) => ({
+              cve_id: vuln.id,
+              score: vuln.score,
+            })),
+            dependency_tree: component.dependencyTree,
+          }),
+          // The autofixed component (httpclient) is IN_PROGRESS; the rest are NEW.
+          getStatus: () => (component.name === HTTPCLIENT ? 'IN_PROGRESS' : 'NEW'),
+          setStatus: sandbox.stub(),
+          setData: sandbox.stub(),
+          setRank: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+        }),
+      );
+      const httpclientSuggestion = existingSuggestions.find(
+        (s) => s.getId() === `suggestion-${HTTPCLIENT}`,
+      );
+
+      // The PR-open PENDING FixEntity linked to the autofixed suggestion.
+      const pendingFixEntity = {
+        getId: () => 'fe-httpclient',
+        getStatus: () => 'PENDING',
+        setStatus: sandbox.stub(),
+      };
+
+      const existingOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getType: () => 'security-vulnerabilities',
+        getData: () => ({}),
+        setData: sandbox.stub(),
+        setAuditId: sandbox.stub(),
+        setScopeType: sandbox.stub(),
+        setScopeId: sandbox.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        addFixEntities: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+      context.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+      context.dataAccess.FixEntity = {
+        getAllFixesWithSuggestionsByOpportunityId: sandbox.stub().resolves([
+          { fixEntity: pendingFixEntity, suggestions: [httpclientSuggestion] },
+        ]),
+        saveMany: sandbox.stub().resolves(),
+      };
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_NEW_SCAN,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      const result = await opportunityAndSuggestionsStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      // The autofixed, now-disappeared suggestion is FIXED (not OUTDATED)...
+      expect(httpclientSuggestion.setStatus).to.have.been.calledWith('FIXED');
+      // ...and its PENDING FixEntity is promoted to DEPLOYED in place (no new entity).
+      expect(pendingFixEntity.setStatus).to.have.been.calledWith('DEPLOYED');
+      expect(context.dataAccess.FixEntity.saveMany).to.have.been.calledWith([pendingFixEntity]);
+      expect(existingOpportunity.addFixEntities).to.not.have.been.called;
+    });
+
+    it('should create a new DEPLOYED FixEntity when a confirmed-fixed suggestion has no PENDING to promote', async () => {
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub().callsFake((handler) => handler !== 'summit-plg'),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      const HTTPCLIENT = 'org.apache.httpcomponents:httpclient';
+      const existingSuggestions = VULNERABILITY_REPORT_OLD_SCAN.vulnerableComponents.map(
+        (component) => ({
+          getId: () => `suggestion-${component.name}`,
+          getData: () => ({
+            library: component.name,
+            current_version: component.version,
+            recommended_version: component.recommendedVersion,
+            cves: [],
+            dependency_tree: component.dependencyTree,
+          }),
+          getStatus: () => (component.name === HTTPCLIENT ? 'IN_PROGRESS' : 'NEW'),
+          setStatus: sandbox.stub(),
+          setData: sandbox.stub(),
+          setRank: sandbox.stub(),
+          setUpdatedBy: sandbox.stub(),
+        }),
+      );
+      const httpclientSuggestion = existingSuggestions.find(
+        (s) => s.getId() === `suggestion-${HTTPCLIENT}`,
+      );
+
+      // A pre-existing DEPLOYED fix for another suggestion — exercises the non-PENDING
+      // skip; the autofixed httpclient suggestion has no PENDING FixEntity to promote.
+      const deployedFixEntityOther = {
+        getId: () => 'fe-other',
+        getStatus: () => 'DEPLOYED',
+        setStatus: sandbox.stub(),
+      };
+
+      const existingOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getType: () => 'security-vulnerabilities',
+        getData: () => ({}),
+        setData: sandbox.stub(),
+        setAuditId: sandbox.stub(),
+        setScopeType: sandbox.stub(),
+        setScopeId: sandbox.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        addFixEntities: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+      context.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+      context.dataAccess.FixEntity = {
+        getAllFixesWithSuggestionsByOpportunityId: sandbox.stub().resolves([
+          { fixEntity: deployedFixEntityOther, suggestions: [] },
+        ]),
+        saveMany: sandbox.stub().resolves(),
+      };
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_NEW_SCAN,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      await opportunityAndSuggestionsStep(context);
+
+      // No PENDING to promote → a new DEPLOYED FixEntity is created for the fixed suggestion.
+      expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+      expect(existingOpportunity.addFixEntities).to.have.been.calledOnce;
+      const createdPayloads = existingOpportunity.addFixEntities.getCall(0).args[0];
+      expect(createdPayloads).to.have.lengthOf(1);
+      expect(createdPayloads[0].status).to.equal('DEPLOYED');
+      expect(createdPayloads[0].suggestions).to.deep.equal([`suggestion-${HTTPCLIENT}`]);
+      expect(createdPayloads[0].changeDetails.library).to.equal(HTTPCLIENT);
+      expect(httpclientSuggestion.setStatus).to.have.been.calledWith('FIXED');
+    });
+
+    it('should leave a still-present IN_PROGRESS suggestion unchanged (not FIXED, not OUTDATED)', async () => {
+      // §T2.4 — a vuln still detected because the customer has not merged yet must stay
+      // IN_PROGRESS across a re-audit (its component is still in the report).
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub().callsFake((handler) => handler !== 'summit-plg'),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      const actionable = VULNERABILITY_REPORT_WITH_VULNERABILITIES.vulnerableComponents
+        .filter((c) => (c.vulnerabilities || []).length > 0);
+      const existingSuggestions = actionable.map((component, i) => ({
+        getId: () => `suggestion-${component.name}`,
+        getData: () => ({
+          library: component.name,
+          current_version: component.version,
+          recommended_version: component.recommendedVersion,
+          cves: [],
+          dependency_tree: component.dependencyTree,
+        }),
+        // The first component's suggestion is mid-fix (IN_PROGRESS); it is still present.
+        getStatus: () => (i === 0 ? 'IN_PROGRESS' : 'NEW'),
+        setStatus: sandbox.stub(),
+        setData: sandbox.stub(),
+        setRank: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      }));
+      const inProgressSuggestion = existingSuggestions[0];
+
+      const existingOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getType: () => 'security-vulnerabilities',
+        getData: () => ({}),
+        setData: sandbox.stub(),
+        setAuditId: sandbox.stub(),
+        setScopeType: sandbox.stub(),
+        setScopeId: sandbox.stub(),
+        getScopeType: () => null,
+        getScopeId: () => null,
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves(existingSuggestions),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        addFixEntities: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+      };
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+      context.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
+
+      await opportunityAndSuggestionsStep(context);
+
+      // Still present → not a disappeared candidate; matched-status merge keeps IN_PROGRESS.
+      expect(inProgressSuggestion.setStatus).to.not.have.been.called;
+    });
+
+    it('should preserve an already-FIXED suggestion through an all-clear audit (§T3.2)', async () => {
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub().callsFake((handler) => handler !== 'summit-plg'),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_NO_VULNERABILITIES,
+          success: true,
+        }),
+      };
+
+      const fixedSuggestion = {
+        getId: () => 'sugg-fixed',
+        getStatus: () => 'FIXED',
+        getData: () => ({ library: 'libA', current_version: '1.0.0', dependency_tree: [] }),
+        setStatus: sandbox.stub(),
+        setData: sandbox.stub(),
+        setRank: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getType: () => 'security-vulnerabilities',
+        setStatus: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([fixedSuggestion]),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        addFixEntities: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        setUpdatedBy: sandbox.stub().resolves(),
+        save: sandbox.stub().resolves(),
+      };
+      context.site.getOpportunitiesByStatus.resolves([mockOpportunity]);
+      context.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+
+      await opportunityAndSuggestionsStep(context);
+
+      // The FIXED suggestion is protected — never re-touched or aged to OUTDATED.
+      expect(fixedSuggestion.setStatus).to.not.have.been.called;
+      expect(mockOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
     });
 
     it('should skip starfish-auto-code when auto suggest is disabled', async () => {

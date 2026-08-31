@@ -10,7 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import {
+  Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess, FixEntity as FixEntityDataAccess,
+} from '@adobe/spacecat-shared-data-access';
 import {
   DELIVERY_TYPES, hasText, isNonEmptyArray, tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
@@ -18,7 +20,7 @@ import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
-import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
+import { getImsOrgId, syncSuggestionsWithPublishDetection } from '../utils/data-access.js';
 import { mapVulnerabilityToSuggestion, toSuggestionData } from './suggestion-data-mapper.js';
 import { noopUrlResolver } from '../common/index.js';
 
@@ -231,6 +233,111 @@ export const extractCodeInfo = (data) => {
 };
 
 /**
+ * Builds a terminal DEPLOYED FixEntity payload for a rescan-confirmed vuln fix. Used
+ * only as a fallback when no PR-open PENDING FixEntity is found to promote (see
+ * {@link promoteVulnFixEntities}), so a suggestion is never flipped to FIXED without a
+ * backing FixEntity. changeDetails is the reader-tolerant v1 freeform shape.
+ *
+ * @param {Object} suggestion - The confirmed-fixed suggestion.
+ * @param {Object} opportunity - The vulnerabilities opportunity.
+ * @param {Object} site - The site (for delivery-type provenance).
+ * @returns {Object} A FixEntity payload with status DEPLOYED.
+ */
+export function buildVulnFixEntityPayload(suggestion, opportunity, site) {
+  const data = suggestion.getData();
+  return {
+    opportunityId: opportunity.getId(),
+    type: 'CODE_CHANGE',
+    status: FixEntityDataAccess.STATUSES.DEPLOYED,
+    executedAt: new Date().toISOString(),
+    changeDetails: {
+      system: site.getDeliveryType(),
+      library: data.library,
+      oldValue: data.current_version,
+      updatedValue: data.recommended_version,
+      dependencyTree: data.dependency_tree,
+    },
+    suggestions: [suggestion.getId()],
+  };
+}
+
+/**
+ * Resolves FixEntities for rescan-confirmed vuln fixes by promoting each suggestion's
+ * existing PR-open PENDING FixEntity to DEPLOYED in place — this preserves the PR-url
+ * provenance and avoids a second entity per fix. A suggestion with no PENDING FixEntity
+ * to promote (edge case) gets a fresh DEPLOYED entity instead, so status never outruns
+ * the FixEntity. Passed as syncSuggestionsWithPublishDetection's resolveFixEntities
+ * hook; a throw leaves the suggestions unchanged for the next audit to retry.
+ *
+ * @param {Array} fixedSuggestions - Suggestions confirmed fixed by the rescan.
+ * @param {Object} opportunity - The vulnerabilities opportunity.
+ * @param {Object} context - The audit context (provides dataAccess + site).
+ * @returns {Promise<void>}
+ */
+export async function promoteVulnFixEntities(fixedSuggestions, opportunity, context) {
+  const { dataAccess, site } = context;
+  const { FixEntity } = dataAccess;
+
+  const fixes = await FixEntity.getAllFixesWithSuggestionsByOpportunityId(opportunity.getId());
+  const pendingBySuggestionId = new Map();
+  for (const { fixEntity, suggestions: linked } of fixes) {
+    if (fixEntity.getStatus() === FixEntityDataAccess.STATUSES.PENDING) {
+      for (const linkedSuggestion of linked) {
+        pendingBySuggestionId.set(linkedSuggestion.getId(), fixEntity);
+      }
+    }
+  }
+
+  const toPromote = [];
+  const toCreate = [];
+  for (const suggestion of fixedSuggestions) {
+    const pending = pendingBySuggestionId.get(suggestion.getId());
+    if (pending) {
+      pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
+      toPromote.push(pending);
+    } else {
+      toCreate.push(buildVulnFixEntityPayload(suggestion, opportunity, site));
+    }
+  }
+
+  if (toPromote.length > 0) {
+    await FixEntity.saveMany(toPromote);
+  }
+  if (toCreate.length > 0) {
+    await opportunity.addFixEntities(toCreate);
+  }
+}
+
+/**
+ * Runs the vulns suggestion sync with rescan-confirmation semantics (PHASES.md Phase 2),
+ * shared by the normal (vulns-present) path and the all-clear (empty newData) path:
+ * a disappeared autofixed (IN_PROGRESS) suggestion becomes FIXED with its PENDING
+ * FixEntity promoted to DEPLOYED (§D3/§D4); a disappeared NEW suggestion becomes
+ * OUTDATED (§D2). The publish step is skipped — 'security-vulnerabilities' is an
+ * author-only opportunity type, so DEPLOYED is terminal (§T2.5).
+ *
+ * @param {Object} opportunity - The vulnerabilities opportunity.
+ * @param {Array} newData - Canonical data for currently-reported vulns ([] on all-clear).
+ * @param {Object} context - The audit context (provides dataAccess + site).
+ * @param {Object} log - Logger.
+ * @returns {Promise<void>}
+ */
+async function syncVulnSuggestions(opportunity, newData, context, log) {
+  await syncSuggestionsWithPublishDetection({
+    opportunity,
+    newData,
+    context,
+    buildKey,
+    mapNewSuggestion: (entry) => mapVulnerabilityToSuggestion(opportunity, entry),
+    log,
+    isReconcileCandidate: (s) => s.getStatus() === SuggestionDataAccess.STATUSES.IN_PROGRESS,
+    isIssueFixedWithAISuggestion: () => true,
+    resolveFixEntities:
+        (fixedSuggestions, opp) => promoteVulnFixEntities(fixedSuggestions, opp, context),
+  });
+}
+
+/**
  * Creates opportunities and syncs suggestions.
  *
  * @param {Object} context - The context object containing log, dataAccess, etc.
@@ -240,7 +347,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const {
     site, data, audit, log, sqs, env, finalUrl, dataAccess,
   } = context;
-  const { Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
@@ -269,18 +375,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
     }
 
     if (opportunity) {
-      // No vulnerabilities found, update opportunity status to RESOLVED
-      log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no vulnerabilities found, but found opportunity, updating status to RESOLVED`);
+      // No vulnerabilities found. Route through the same rescan-confirmation sync with
+      // empty data so every existing suggestion "disappears": autofixed (IN_PROGRESS)
+      // ones become FIXED (their PENDING FixEntity promoted to DEPLOYED) and the rest
+      // OUTDATED; already-FIXED are preserved by the protected-statuses guard (§T3.2).
+      // Then resolve the opportunity.
+      log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no vulnerabilities found, but found opportunity; resolving via sync`);
+      await syncVulnSuggestions(opportunity, [], context, log);
       await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
-
-      // We also need to update all suggestions inside this opportunity
-      // Get all suggestions for this opportunity
-      const suggestions = await opportunity.getSuggestions();
-
-      // If there are suggestions, update their status to outdated
-      if (isNonEmptyArray(suggestions)) {
-        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
-      }
       opportunity.setUpdatedBy('system');
       await opportunity.save();
     }
@@ -302,16 +404,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
   // so both existing and new suggestion data share the same shape and merge cleanly.
   const newData = actionableComponents.map(toSuggestionData);
 
-  // Populate suggestions
-  await syncSuggestions({
-    opportunity,
-    newData,
-    context,
-    buildKey,
-    mapNewSuggestion:
-        (entry) => mapVulnerabilityToSuggestion(opportunity, entry),
-    log,
-  });
+  // Populate suggestions (rescan-confirmation semantics — see syncVulnSuggestions).
+  await syncVulnSuggestions(opportunity, newData, context, log);
 
   const codeInfo = extractCodeInfo(data);
   if (!codeInfo) {

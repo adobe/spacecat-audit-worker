@@ -3096,6 +3096,9 @@ describe('data-access', () => {
     it('should contain expected opportunity types', () => {
       expect(AUTHOR_ONLY_OPPORTUNITY_TYPES).to.include('security-permissions-redundant');
       expect(AUTHOR_ONLY_OPPORTUNITY_TYPES).to.include('security-permissions');
+      // Vulns: the deployed-env rescan IS the prod signal, so DEPLOYED is terminal and
+      // the publish step is skipped (PHASES.md §D3 / §T2.5).
+      expect(AUTHOR_ONLY_OPPORTUNITY_TYPES).to.include('security-vulnerabilities');
     });
   });
 
@@ -3530,6 +3533,123 @@ describe('data-access', () => {
         sinon.match(/Failed to add fix entities.*leaving suggestions unchanged/),
       );
     });
+
+    it('should use the isReconcileCandidate override to select candidates (e.g. IN_PROGRESS)', async () => {
+      // Vulns needs disappeared IN_PROGRESS (autofixed) suggestions reconciled to FIXED.
+      // The default filter only accepts NEW / OUTDATED+isEdited, so callers pass a custom
+      // candidate predicate to opt IN_PROGRESS in.
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-inprogress'),
+        getData: sinon.stub().returns({ key: 'ip' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.IN_PROGRESS),
+        getType: sinon.stub().returns('security-vulnerabilities'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isReconcileCandidate: (s) => s.getStatus() === SuggestionDataAccess.STATUSES.IN_PROGRESS,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: (s, opp) => ({
+          opportunityId: opp.getId(),
+          status: 'DEPLOYED',
+          suggestions: [s.getId()],
+        }),
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(suggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.FIXED);
+      expect(mockOpportunity.addFixEntities).to.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.have.been.called;
+    });
+
+    it('should ignore IN_PROGRESS disappeared suggestions by default (no override)', async () => {
+      // Guards the default candidate set (backlinks path) — IN_PROGRESS is not a
+      // candidate unless a caller opts in via isReconcileCandidate.
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-inprogress-default'),
+        getData: sinon.stub().returns({ key: 'ipd' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.IN_PROGRESS),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        buildFixEntityPayload: sinon.stub(),
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.not.have.been.called;
+    });
+
+    it('should call resolveFixEntities (promote mode) instead of buildFixEntityPayload/addFixEntities', async () => {
+      // Vulns promotes the existing PENDING FixEntity in place rather than creating a new
+      // one, so it passes an async resolveFixEntities that replaces the create path.
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-promote'),
+        getData: sinon.stub().returns({ key: 'pr' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.IN_PROGRESS),
+        getType: sinon.stub().returns('security-vulnerabilities'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const resolveFixEntities = sinon.stub().resolves();
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isReconcileCandidate: (s) => s.getStatus() === SuggestionDataAccess.STATUSES.IN_PROGRESS,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        resolveFixEntities,
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(resolveFixEntities).to.have.been.calledWith([suggestion], mockOpportunity, false);
+      expect(mockOpportunity.addFixEntities).to.not.have.been.called;
+      expect(suggestion.setStatus).to.have.been.calledWith(SuggestionDataAccess.STATUSES.FIXED);
+      expect(mockSuggestionCollection.saveMany).to.have.been.calledWith([suggestion]);
+    });
+
+    it('should NOT flip suggestion status when resolveFixEntities throws (no drift)', async () => {
+      const suggestion = {
+        getId: sinon.stub().returns('sugg-promote-fail'),
+        getData: sinon.stub().returns({ key: 'prf' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.IN_PROGRESS),
+        getType: sinon.stub().returns('security-vulnerabilities'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const resolveFixEntities = sinon.stub().rejects(new Error('promote failed'));
+
+      await reconcileDisappearedSuggestions({
+        opportunity: mockOpportunity,
+        disappearedSuggestions: [suggestion],
+        log: mockLogger,
+        isReconcileCandidate: (s) => s.getStatus() === SuggestionDataAccess.STATUSES.IN_PROGRESS,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        resolveFixEntities,
+        Suggestion: mockSuggestionCollection,
+      });
+
+      expect(suggestion.setStatus).to.not.have.been.called;
+      expect(mockSuggestionCollection.saveMany).to.not.have.been.called;
+      expect(mockLogger.warn).to.have.been.calledWith(
+        sinon.match(/Failed to resolve fix entities.*leaving suggestions unchanged/),
+      );
+    });
   });
 
   describe('publishDeployedFixEntities', () => {
@@ -3873,6 +3993,43 @@ describe('data-access', () => {
       });
 
       expect(isIssueFixedStub).to.have.been.called;
+      expect(disappearedSuggestion.setStatus).to.have.been.calledWith(
+        SuggestionDataAccess.STATUSES.FIXED,
+      );
+    });
+
+    it('should run reconcile with resolveFixEntities (promote) and forward isReconcileCandidate', async () => {
+      // Vulns passes resolveFixEntities instead of buildFixEntityPayload plus an
+      // isReconcileCandidate that opts IN_PROGRESS in; reconcile must still run.
+      const disappearedSuggestion = {
+        getId: sinon.stub().returns('sugg-ip'),
+        getData: sinon.stub().returns({ key: 'ip' }),
+        getStatus: sinon.stub().returns(SuggestionDataAccess.STATUSES.IN_PROGRESS),
+        getType: sinon.stub().returns('TEST'),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      mockOpportunity.getSuggestions.resolves([disappearedSuggestion]);
+
+      const resolveFixEntities = sinon.stub().resolves();
+
+      await syncSuggestionsWithPublishDetection({
+        context,
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+        isReconcileCandidate: (s) => s.getStatus() === SuggestionDataAccess.STATUSES.IN_PROGRESS,
+        isIssueFixedWithAISuggestion: sinon.stub().resolves(true),
+        resolveFixEntities,
+      });
+
+      expect(resolveFixEntities).to.have.been.calledWith(
+        [disappearedSuggestion],
+        mockOpportunity,
+        false,
+      );
       expect(disappearedSuggestion.setStatus).to.have.been.calledWith(
         SuggestionDataAccess.STATUSES.FIXED,
       );
