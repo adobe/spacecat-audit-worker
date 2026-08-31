@@ -57,9 +57,12 @@ export function validateCountryCode(code, siteIgnoreList = []) {
   // these are codes that are not valid to be regions as these are small islands
   // VI/ML/NE/MR/KN/BN/GU/MS/SR/SL/SV/ET/GA collide with language path segments
   // (e.g. /vi/, /ml/, /sv/) and are dominated by that language traffic fleet-wide
-  // (LLMO-7230) rather than genuine traffic from the country they also name
+  // (LLMO-7230) rather than genuine traffic from the country they also name.
+  // GL collides with "Global" locale notation (e.g. /en_gl/) rather than Greenland.
+  // CY is intentionally NOT here: /cy/el/... is a genuine country-then-language path
+  // (Cyprus, Greek), verified against live traffic - not a language-path collision.
   const globalIgnoreCodes = [
-    'TV', 'ST', 'VI', 'ML', 'NE', 'MR', 'KN', 'BN', 'GU', 'MS', 'SR', 'SL', 'SV', 'ET', 'GA',
+    'TV', 'ST', 'VI', 'ML', 'NE', 'MR', 'KN', 'BN', 'GU', 'MS', 'SR', 'SL', 'SV', 'ET', 'GA', 'GL',
   ];
   const countryAliases = {
     UK: 'UK',

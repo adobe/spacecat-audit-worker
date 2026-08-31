@@ -171,6 +171,7 @@ describe('CDN Logs Report Utils', () => {
       expect(reportUtils.validateCountryCode('SV')).to.equal('GLOBAL'); // Swedish vs El Salvador
       expect(reportUtils.validateCountryCode('ET')).to.equal('GLOBAL'); // Estonian vs Ethiopia
       expect(reportUtils.validateCountryCode('GA')).to.equal('GLOBAL'); // Irish/Georgian vs Gabon
+      expect(reportUtils.validateCountryCode('GL')).to.equal('GLOBAL'); // "Global" locale (/en_gl/) vs Greenland
     });
 
     it('does not ignore-list countries with genuine fleet-wide traffic (LLMO-7230)', () => {
@@ -181,6 +182,9 @@ describe('CDN Logs Report Utils', () => {
       expect(reportUtils.validateCountryCode('BE')).to.equal('BE');
       expect(reportUtils.validateCountryCode('DE')).to.equal('DE');
       expect(reportUtils.validateCountryCode('FR')).to.equal('FR');
+      // CY verified against live traffic: /cy/el/... is a genuine Cyprus (country) +
+      // Greek (language) path, not a Welsh-language leak, so CY stays a real code
+      expect(reportUtils.validateCountryCode('CY')).to.equal('CY');
     });
 
     it('allows PA to be ignored per-site (e.g. Zee5 Punjabi /pa/) without a global ignore', () => {
