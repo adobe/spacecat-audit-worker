@@ -16,12 +16,12 @@ const OpptyDataForTOC = {
   runbook: '',
   origin: 'AUTOMATION',
   title: '[Beta] Add Table of Content',
-  description: 'Ensure table of contents (TOC) is properly implemented in the <head> section of each page. Proper TOC implementation improves accessibility and helps search engines and generative engines understand page content. Suggestions are generated based on page heading (H1, H2) structure, so pages with correct heading structure will produce accurate TOC suggestions.',
+  description: 'Ensure a table of contents (TOC) is present on each page. Proper TOC implementation improves accessibility and helps search engines and generative engines understand page content. Suggestions are generated based on page heading (H1, H2) structure, so pages with correct heading structure will produce accurate TOC suggestions.',
   guidance: {
     steps: [
       'Review pages flagged for TOC issues in the audit results.',
       'Use AI-generated suggestions to improve TOC quality, consistency, and SEO performance.',
-      'Ensure TOC is properly implemented in the <head> section of each page.',
+      'Ensure the TOC is placed within the page body, typically after the H1 or at the start of the main content.',
     ],
   },
   tags: ['Accessibility', 'SEO', 'isElmo'],
