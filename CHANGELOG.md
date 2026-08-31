@@ -1,3 +1,10 @@
+# [1.530.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.529.5...v1.530.0) (2026-08-31)
+
+
+### Features
+
+* **LLMO-6973:** add success logging to four DB read events in offsite pipeline ([#2930](https://github.com/adobe/spacecat-audit-worker/issues/2930)) ([34d22da](https://github.com/adobe/spacecat-audit-worker/commit/34d22da53b5ab12bc975159ead83f0465fb29820))
+
 ## [1.529.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.529.4...v1.529.5) (2026-08-31)
 
 
