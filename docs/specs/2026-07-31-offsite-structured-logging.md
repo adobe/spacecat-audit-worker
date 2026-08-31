@@ -91,7 +91,10 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
 - P4: `audit_analysis_run_write` (via post-processor);
   `audit_persistence_evergreen_opportunity_write` success **and** the previously-silent
   DB-write failure made loud; `audit_persistence_mystique_payload_s3_read` success/failure;
-  `audit_persistence_evergreen_opportunity_write` (suggestions half); `audit_persistence_opportunity_retired`.
+  `audit_persistence_evergreen_opportunity_write` (suggestions half); `audit_persistence_opportunity_retired`;
+  `audit_persistence_evergreen_opportunity_read` success (count); `audit_persistence_snapshot_opportunity_read` success (count).
+- P5: `audit_housekeeping_outdated_opportunities_read` success (count);
+  `audit_housekeeping_outdated_suggestions_read` success (count).
 
 ### Scope boundaries
 Offsite-only files were converted (collector, poll, analysis + guidance handlers,
