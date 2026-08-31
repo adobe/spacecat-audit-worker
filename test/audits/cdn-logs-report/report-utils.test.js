@@ -160,6 +160,42 @@ describe('CDN Logs Report Utils', () => {
       expect(reportUtils.validateCountryCode('global')).to.equal('GLOBAL');
     });
 
+    it('returns GLOBAL for language codes that collide with a real country (LLMO-7230)', () => {
+      expect(reportUtils.validateCountryCode('VI')).to.equal('GLOBAL'); // Vietnamese vs Virgin Islands
+      expect(reportUtils.validateCountryCode('vi')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('ML')).to.equal('GLOBAL'); // Malayalam vs Mali
+      expect(reportUtils.validateCountryCode('NE')).to.equal('GLOBAL'); // Nepali vs Niger
+      expect(reportUtils.validateCountryCode('MR')).to.equal('GLOBAL'); // Marathi vs Mauritania
+      expect(reportUtils.validateCountryCode('KN')).to.equal('GLOBAL'); // Kannada vs St Kitts
+      expect(reportUtils.validateCountryCode('BN')).to.equal('GLOBAL'); // Bengali vs Brunei
+      expect(reportUtils.validateCountryCode('GU')).to.equal('GLOBAL'); // Gujarati vs Guam
+      expect(reportUtils.validateCountryCode('MS')).to.equal('GLOBAL'); // Malay(sian) vs Montserrat
+      expect(reportUtils.validateCountryCode('SR')).to.equal('GLOBAL'); // Serbian vs Suriname
+      expect(reportUtils.validateCountryCode('SL')).to.equal('GLOBAL'); // Slovenian vs Sierra Leone (Slovak is 'sk', not 'sl')
+      expect(reportUtils.validateCountryCode('SV')).to.equal('GLOBAL'); // Swedish vs El Salvador
+      expect(reportUtils.validateCountryCode('ET')).to.equal('GLOBAL'); // Estonian vs Ethiopia
+      expect(reportUtils.validateCountryCode('GA')).to.equal('GLOBAL'); // Irish/Georgian vs Gabon
+      expect(reportUtils.validateCountryCode('GL')).to.equal('GLOBAL'); // "Global" locale (/en_gl/) vs Greenland
+    });
+
+    it('does not ignore-list countries with genuine fleet-wide traffic (LLMO-7230)', () => {
+      expect(reportUtils.validateCountryCode('CA')).to.equal('CA');
+      expect(reportUtils.validateCountryCode('MY')).to.equal('MY');
+      expect(reportUtils.validateCountryCode('ID')).to.equal('ID');
+      expect(reportUtils.validateCountryCode('TH')).to.equal('TH');
+      expect(reportUtils.validateCountryCode('BE')).to.equal('BE');
+      expect(reportUtils.validateCountryCode('DE')).to.equal('DE');
+      expect(reportUtils.validateCountryCode('FR')).to.equal('FR');
+      // CY verified against live traffic: /cy/el/... is a genuine Cyprus (country) +
+      // Greek (language) path, not a Welsh-language leak, so CY stays a real code
+      expect(reportUtils.validateCountryCode('CY')).to.equal('CY');
+    });
+
+    it('allows PA to be ignored per-site (e.g. Zee5 Punjabi /pa/) without a global ignore', () => {
+      expect(reportUtils.validateCountryCode('PA')).to.equal('PA');
+      expect(reportUtils.validateCountryCode('PA', ['PA'])).to.equal('GLOBAL');
+    });
+
     it('returns GLOBAL for codes in per-site ignore list', () => {
       expect(reportUtils.validateCountryCode('PS', ['PS'])).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode('ps', ['PS'])).to.equal('GLOBAL');

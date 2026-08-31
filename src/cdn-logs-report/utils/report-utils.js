@@ -52,10 +52,43 @@ export async function loadSql(filename, variables) {
   return getStaticContent(variables, `./src/cdn-logs-report/sql/${filename}.sql`);
 }
 
+// Codes that are valid ISO-3166 countries but are not real regions - small
+// islands whose code is dominated by an unrelated URL path token.
+const NON_REGION_CODES = ['TV', 'ST'];
+
+// Codes that are valid ISO-3166 countries but collide with an ISO-639 language
+// code, and are dominated fleet-wide by that language's URL path segment
+// (e.g. /vi/, /ml/, /sv/, /en_gl/) rather than genuine traffic from the named
+// country (LLMO-7230). Each value documents the collision so the reasoning
+// survives independently of the PR/test history. CY and AF are deliberately
+// NOT here - both were checked against live traffic and are genuine
+// country-then-language paths (/cy/el/..., /af/en/...), not language leaks.
+// PA is also deliberately not here - Panama is genuine traffic fleet-wide;
+// sites needing to exclude it (e.g. Zee5's Punjabi /pa/) use siteIgnoreList.
+const LANGUAGE_COLLISION_CODES = {
+  VI: 'Vietnamese vs Virgin Islands',
+  ML: 'Malayalam vs Mali',
+  NE: 'Nepali vs Niger',
+  MR: 'Marathi vs Mauritania',
+  KN: 'Kannada vs St Kitts',
+  BN: 'Bengali vs Brunei',
+  GU: 'Gujarati vs Guam',
+  MS: 'Malay(sian) vs Montserrat',
+  SR: 'Serbian vs Suriname',
+  SL: 'Slovenian vs Sierra Leone',
+  SV: 'Swedish vs El Salvador',
+  ET: 'Estonian vs Ethiopia',
+  GA: 'Irish/Georgian vs Gabon',
+  GL: '"Global" locale (/en_gl/) vs Greenland',
+};
+
+const GLOBAL_IGNORE_CODES = new Set([
+  ...NON_REGION_CODES,
+  ...Object.keys(LANGUAGE_COLLISION_CODES),
+]);
+
 export function validateCountryCode(code, siteIgnoreList = []) {
   const DEFAULT_COUNTRY_CODE = 'GLOBAL';
-  // these are codes that are not valid to be regions as these are small islands
-  const globalIgnoreCodes = ['TV', 'ST'];
   const countryAliases = {
     UK: 'UK',
   };
@@ -65,7 +98,7 @@ export function validateCountryCode(code, siteIgnoreList = []) {
 
   const upperCode = code.toUpperCase();
   const upperSiteIgnoreList = siteIgnoreList.map((c) => c.toUpperCase());
-  const ignoreCountryCodes = [...globalIgnoreCodes, ...upperSiteIgnoreList];
+  const ignoreCountryCodes = [...GLOBAL_IGNORE_CODES, ...upperSiteIgnoreList];
 
   if (upperCode === DEFAULT_COUNTRY_CODE || ignoreCountryCodes.includes(upperCode)) {
     return DEFAULT_COUNTRY_CODE;
