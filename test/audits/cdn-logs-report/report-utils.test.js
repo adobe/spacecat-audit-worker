@@ -14,9 +14,11 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
+import esmock from 'esmock';
 import { getS3Config } from '../../../src/utils/cdn-utils.js';
 import { fetchAgenticUrlClassificationRules } from '../../../src/common/agentic-url-classification-rules.js';
 import * as reportUtils from '../../../src/cdn-logs-report/utils/report-utils.js';
+import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -24,6 +26,8 @@ use(chaiAsPromised);
 describe('CDN Logs Report Utils', () => {
   let sandbox;
   let mockContext;
+  const referralConfig = getConfigs('test-bucket', 'test-site-id')
+    .find((c) => c.name === 'referral');
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
