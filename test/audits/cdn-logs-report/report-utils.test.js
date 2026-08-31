@@ -171,7 +171,7 @@ describe('CDN Logs Report Utils', () => {
       expect(reportUtils.validateCountryCode('GU')).to.equal('GLOBAL'); // Gujarati vs Guam
       expect(reportUtils.validateCountryCode('MS')).to.equal('GLOBAL'); // Malay(sian) vs Montserrat
       expect(reportUtils.validateCountryCode('SR')).to.equal('GLOBAL'); // Serbian vs Suriname
-      expect(reportUtils.validateCountryCode('SL')).to.equal('GLOBAL'); // Slovenian/Slovak vs Sierra Leone
+      expect(reportUtils.validateCountryCode('SL')).to.equal('GLOBAL'); // Slovenian vs Sierra Leone (Slovak is 'sk', not 'sl')
       expect(reportUtils.validateCountryCode('SV')).to.equal('GLOBAL'); // Swedish vs El Salvador
       expect(reportUtils.validateCountryCode('ET')).to.equal('GLOBAL'); // Estonian vs Ethiopia
       expect(reportUtils.validateCountryCode('GA')).to.equal('GLOBAL'); // Irish/Georgian vs Gabon
