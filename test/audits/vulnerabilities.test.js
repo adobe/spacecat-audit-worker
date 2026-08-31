@@ -28,6 +28,7 @@ import VULNERABILITY_REPORT_OLD_SCAN from '../fixtures/vulnerabilities/vulnerabi
 import VULNERABILITY_REPORT_NEW_SCAN from '../fixtures/vulnerabilities/vulnerability-report-new-scan.json' with { type: 'json' };
 import {
   vulnerabilityAuditRunner, opportunityAndSuggestionsStep, extractCodeInfo, buildKey,
+  promoteVulnFixEntities, buildVulnFixEntityPayload,
 } from '../../src/vulnerabilities/handler.js';
 import {
   toSuggestionData, mapVulnerabilityToSuggestion,
@@ -1543,6 +1544,149 @@ describe('extractCodeInfo', () => {
       };
       expect(buildKey(toSuggestionData(raw))).to.equal(buildKey(mapped));
       expect(buildKey(toSuggestionData(raw))).to.include(`@${raw.version}`);
+    });
+  });
+});
+
+describe('promoteVulnFixEntities', () => {
+  const sandbox = sinon.createSandbox();
+
+  const makeSuggestion = (id) => ({
+    getId: () => id,
+    getData: () => ({
+      library: 'org.apache.httpcomponents:httpclient',
+      current_version: '4.5.13',
+      recommended_version: '4.5.14',
+      dependency_tree: ['root', 'httpclient'],
+    }),
+  });
+
+  const makeFixEntity = (id, status) => ({
+    getId: () => id,
+    getStatus: () => status,
+    setStatus: sandbox.stub(),
+  });
+
+  const makeOpportunity = (id = 'oppty-1') => ({
+    getId: () => id,
+    addFixEntities: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+  });
+
+  const makeContext = (fixes) => ({
+    site: { getDeliveryType: () => 'aem_cs' },
+    dataAccess: {
+      FixEntity: {
+        getAllFixesWithSuggestionsByOpportunityId: sandbox.stub().resolves(fixes),
+        saveMany: sandbox.stub().resolves(),
+      },
+    },
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('promotes a PENDING FixEntity to DEPLOYED in place', async () => {
+    const suggestion = makeSuggestion('s1');
+    const pending = makeFixEntity('fe1', 'PENDING');
+    const opportunity = makeOpportunity();
+    const context = makeContext([{ fixEntity: pending, suggestions: [suggestion] }]);
+
+    await promoteVulnFixEntities([suggestion], opportunity, context);
+
+    expect(pending.setStatus).to.have.been.calledOnce;
+    expect(pending.setStatus).to.have.been.calledWith('DEPLOYED');
+    expect(context.dataAccess.FixEntity.saveMany).to.have.been.calledWith([pending]);
+    expect(opportunity.addFixEntities).to.not.have.been.called;
+  });
+
+  it('creates a fresh DEPLOYED FixEntity when there is no PENDING to promote', async () => {
+    const suggestion = makeSuggestion('s1');
+    const opportunity = makeOpportunity();
+    const context = makeContext([]);
+
+    await promoteVulnFixEntities([suggestion], opportunity, context);
+
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+    expect(opportunity.addFixEntities).to.have.been.calledOnce;
+    const [payloads] = opportunity.addFixEntities.getCall(0).args;
+    expect(payloads).to.have.lengthOf(1);
+    expect(payloads[0].status).to.equal('DEPLOYED');
+    expect(payloads[0].suggestions).to.deep.equal(['s1']);
+  });
+
+  it('skips a suggestion already backed by a DEPLOYED FixEntity on retry', async () => {
+    // Prior run deployed fe1 for s1 but failed before flipping s1 to FIXED, so s1 is handed
+    // back here — it must NOT get a second DEPLOYED entity.
+    const suggestion = makeSuggestion('s1');
+    const deployed = makeFixEntity('fe1', 'DEPLOYED');
+    const opportunity = makeOpportunity();
+    const context = makeContext([{ fixEntity: deployed, suggestions: [suggestion] }]);
+
+    await promoteVulnFixEntities([suggestion], opportunity, context);
+
+    expect(deployed.setStatus).to.not.have.been.called;
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+    expect(opportunity.addFixEntities).to.not.have.been.called;
+  });
+
+  it('promotes a shared PENDING FixEntity only once for multiple suggestions', async () => {
+    const s1 = makeSuggestion('s1');
+    const s2 = makeSuggestion('s2');
+    const pending = makeFixEntity('fe1', 'PENDING');
+    const opportunity = makeOpportunity();
+    // One PR (fe1) backs both s1 and s2.
+    const context = makeContext([{ fixEntity: pending, suggestions: [s1, s2] }]);
+
+    await promoteVulnFixEntities([s1, s2], opportunity, context);
+
+    // Promoted once; saveMany receives the entity a single time (no duplicate).
+    expect(pending.setStatus).to.have.been.calledOnce;
+    expect(context.dataAccess.FixEntity.saveMany).to.have.been.calledWith([pending]);
+    expect(opportunity.addFixEntities).to.not.have.been.called;
+  });
+
+  it('ignores a non-PENDING, non-DEPLOYED FixEntity and creates a fresh fix', async () => {
+    const suggestion = makeSuggestion('s1');
+    const failed = makeFixEntity('fe1', 'FAILED');
+    const opportunity = makeOpportunity();
+    const context = makeContext([{ fixEntity: failed, suggestions: [suggestion] }]);
+
+    await promoteVulnFixEntities([suggestion], opportunity, context);
+
+    // A FAILED prior fix neither blocks the suggestion nor is promoted — a fresh entity is made.
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+    expect(opportunity.addFixEntities).to.have.been.calledOnce;
+  });
+});
+
+describe('buildVulnFixEntityPayload', () => {
+  it('builds a terminal DEPLOYED CODE_CHANGE payload from the suggestion data', () => {
+    const suggestion = {
+      getId: () => 's1',
+      getData: () => ({
+        library: 'org.apache.httpcomponents:httpclient',
+        current_version: '4.5.13',
+        recommended_version: '4.5.14',
+        dependency_tree: ['root', 'httpclient'],
+      }),
+    };
+    const opportunity = { getId: () => 'oppty-1' };
+    const site = { getDeliveryType: () => 'aem_cs' };
+
+    const payload = buildVulnFixEntityPayload(suggestion, opportunity, site);
+
+    expect(payload.opportunityId).to.equal('oppty-1');
+    expect(payload.type).to.equal('CODE_CHANGE');
+    expect(payload.status).to.equal('DEPLOYED');
+    expect(payload.suggestions).to.deep.equal(['s1']);
+    expect(payload.executedAt).to.be.a('string');
+    expect(payload.changeDetails).to.deep.include({
+      system: 'aem_cs',
+      library: 'org.apache.httpcomponents:httpclient',
+      oldValue: '4.5.13',
+      updatedValue: '4.5.14',
+      dependencyTree: ['root', 'httpclient'],
     });
   });
 });

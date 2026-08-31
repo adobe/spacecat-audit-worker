@@ -269,6 +269,13 @@ export function buildVulnFixEntityPayload(suggestion, opportunity, site) {
  * the FixEntity. Passed as syncSuggestionsWithPublishDetection's resolveFixEntities
  * hook; a throw leaves the suggestions unchanged for the next audit to retry.
  *
+ * Idempotent on retry: reconcile persists FixEntities before flipping suggestion status
+ * and, on any later failure, leaves the suggestion IN_PROGRESS for the next audit to
+ * retry. A suggestion already backed by a DEPLOYED FixEntity is therefore skipped here,
+ * so a partially-failed prior run (entity deployed, suggestion not yet FIXED) never
+ * mints a duplicate DEPLOYED entity. A single FixEntity backing several suggestions is
+ * likewise promoted at most once.
+ *
  * @param {Array} fixedSuggestions - Suggestions confirmed fixed by the rescan.
  * @param {Object} opportunity - The vulnerabilities opportunity.
  * @param {Object} context - The audit context (provides dataAccess + site).
@@ -279,22 +286,37 @@ export async function promoteVulnFixEntities(fixedSuggestions, opportunity, cont
   const { FixEntity } = dataAccess;
 
   const fixes = await FixEntity.getAllFixesWithSuggestionsByOpportunityId(opportunity.getId());
+  // Index each suggestion's promotable PENDING FixEntity, and separately record which
+  // suggestions already carry a DEPLOYED FixEntity (resolved on a prior, partially-failed
+  // run) so the retry can skip them instead of creating a duplicate.
   const pendingBySuggestionId = new Map();
+  const deployedSuggestionIds = new Set();
   for (const { fixEntity, suggestions: linked } of fixes) {
-    if (fixEntity.getStatus() === FixEntityDataAccess.STATUSES.PENDING) {
-      for (const linkedSuggestion of linked) {
+    const status = fixEntity.getStatus();
+    for (const linkedSuggestion of linked) {
+      if (status === FixEntityDataAccess.STATUSES.PENDING) {
         pendingBySuggestionId.set(linkedSuggestion.getId(), fixEntity);
+      } else if (status === FixEntityDataAccess.STATUSES.DEPLOYED) {
+        deployedSuggestionIds.add(linkedSuggestion.getId());
       }
     }
   }
 
   const toPromote = [];
   const toCreate = [];
-  for (const suggestion of fixedSuggestions) {
+  const promotedFixEntityIds = new Set();
+  // Skip suggestions already backed by a DEPLOYED FixEntity — idempotent on next-audit retry.
+  const unresolved = fixedSuggestions.filter((s) => !deployedSuggestionIds.has(s.getId()));
+  for (const suggestion of unresolved) {
     const pending = pendingBySuggestionId.get(suggestion.getId());
     if (pending) {
-      pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
-      toPromote.push(pending);
+      // One FixEntity (PR) can back several suggestions; promote it at most once so the
+      // same entity is never handed to saveMany twice.
+      if (!promotedFixEntityIds.has(pending.getId())) {
+        promotedFixEntityIds.add(pending.getId());
+        pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
+        toPromote.push(pending);
+      }
     } else {
       toCreate.push(buildVulnFixEntityPayload(suggestion, opportunity, site));
     }
@@ -331,7 +353,15 @@ async function syncVulnSuggestions(opportunity, newData, context, log) {
     mapNewSuggestion: (entry) => mapVulnerabilityToSuggestion(opportunity, entry),
     log,
     isReconcileCandidate: (s) => s.getStatus() === SuggestionDataAccess.STATUSES.IN_PROGRESS,
+    // Confirmation is disappearance from the deployed-env rescan itself: a candidate that
+    // reached this point (an IN_PROGRESS autofix, per isReconcileCandidate above) no longer
+    // appears in the scan, which IS the fix confirmation — there is no per-suggestion AI
+    // check to run. Returning true is that confirmation, not a stub.
     isIssueFixedWithAISuggestion: () => true,
+    // reconcileDisappearedSuggestions invokes this hook as (fixedSuggestions, opp, isAuthorOnly).
+    // Vulns substitutes the closure's `context` (which the hook does not supply) for that third
+    // arg and drops isAuthorOnly: 'security-vulnerabilities' is author-only, so DEPLOYED is
+    // terminal and the flag would never branch anything here.
     resolveFixEntities:
         (fixedSuggestions, opp) => promoteVulnFixEntities(fixedSuggestions, opp, context),
   });
