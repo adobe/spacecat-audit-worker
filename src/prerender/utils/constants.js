@@ -18,6 +18,13 @@ export const TOP_ORGANIC_URLS_LIMIT = 200;
  * URLs processed within this window are treated as recently scraped and skipped.
  */
 export const PRERENDER_RECENT_PROCESSING_TIME_DAYS = 7;
+/**
+ * A per-URL PRERENDER suggestion whose scrapedAt is older than this many days is evicted
+ * (marked OUTDATED) — see evictStaleSuggestions in evict-stale-suggestions.js (LLMO-7038).
+ * Distinct from PRERENDER_RECENT_PROCESSING_TIME_DAYS above, which governs rescraping, not
+ * eviction, even though both currently happen to be 7.
+ */
+export const SUGGESTION_STALENESS_DAYS = 7;
 export const MODE_AI_ONLY = 'ai-only';
 export const MODE_AI_ONLY_CURRENT = 'ai-only-current';
 export const MODE_AI_ONLY_MISSING = 'ai-only-missing';
