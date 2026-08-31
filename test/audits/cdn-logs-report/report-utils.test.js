@@ -14,11 +14,9 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import esmock from 'esmock';
 import { getS3Config } from '../../../src/utils/cdn-utils.js';
 import { fetchAgenticUrlClassificationRules } from '../../../src/common/agentic-url-classification-rules.js';
 import * as reportUtils from '../../../src/cdn-logs-report/utils/report-utils.js';
-import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -26,8 +24,6 @@ use(chaiAsPromised);
 describe('CDN Logs Report Utils', () => {
   let sandbox;
   let mockContext;
-  const referralConfig = getConfigs('test-bucket', 'test-site-id')
-    .find((c) => c.name === 'referral');
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -158,6 +154,38 @@ describe('CDN Logs Report Utils', () => {
     it('handles GLOBAL country code correctly', () => {
       expect(reportUtils.validateCountryCode('GLOBAL')).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode('global')).to.equal('GLOBAL');
+    });
+
+    it('returns GLOBAL for language codes that collide with a real country (LLMO-7230)', () => {
+      expect(reportUtils.validateCountryCode('VI')).to.equal('GLOBAL'); // Vietnamese vs Virgin Islands
+      expect(reportUtils.validateCountryCode('vi')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('ML')).to.equal('GLOBAL'); // Malayalam vs Mali
+      expect(reportUtils.validateCountryCode('NE')).to.equal('GLOBAL'); // Nepali vs Niger
+      expect(reportUtils.validateCountryCode('MR')).to.equal('GLOBAL'); // Marathi vs Mauritania
+      expect(reportUtils.validateCountryCode('KN')).to.equal('GLOBAL'); // Kannada vs St Kitts
+      expect(reportUtils.validateCountryCode('BN')).to.equal('GLOBAL'); // Bengali vs Brunei
+      expect(reportUtils.validateCountryCode('GU')).to.equal('GLOBAL'); // Gujarati vs Guam
+      expect(reportUtils.validateCountryCode('MS')).to.equal('GLOBAL'); // Malay(sian) vs Montserrat
+      expect(reportUtils.validateCountryCode('SR')).to.equal('GLOBAL'); // Serbian vs Suriname
+      expect(reportUtils.validateCountryCode('SL')).to.equal('GLOBAL'); // Slovenian/Slovak vs Sierra Leone
+      expect(reportUtils.validateCountryCode('SV')).to.equal('GLOBAL'); // Swedish vs El Salvador
+      expect(reportUtils.validateCountryCode('ET')).to.equal('GLOBAL'); // Estonian vs Ethiopia
+      expect(reportUtils.validateCountryCode('GA')).to.equal('GLOBAL'); // Irish/Georgian vs Gabon
+    });
+
+    it('does not ignore-list countries with genuine fleet-wide traffic (LLMO-7230)', () => {
+      expect(reportUtils.validateCountryCode('CA')).to.equal('CA');
+      expect(reportUtils.validateCountryCode('MY')).to.equal('MY');
+      expect(reportUtils.validateCountryCode('ID')).to.equal('ID');
+      expect(reportUtils.validateCountryCode('TH')).to.equal('TH');
+      expect(reportUtils.validateCountryCode('BE')).to.equal('BE');
+      expect(reportUtils.validateCountryCode('DE')).to.equal('DE');
+      expect(reportUtils.validateCountryCode('FR')).to.equal('FR');
+    });
+
+    it('allows PA to be ignored per-site (e.g. Zee5 Punjabi /pa/) without a global ignore', () => {
+      expect(reportUtils.validateCountryCode('PA')).to.equal('PA');
+      expect(reportUtils.validateCountryCode('PA', ['PA'])).to.equal('GLOBAL');
     });
 
     it('returns GLOBAL for codes in per-site ignore list', () => {

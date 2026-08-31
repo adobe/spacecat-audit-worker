@@ -55,7 +55,12 @@ export async function loadSql(filename, variables) {
 export function validateCountryCode(code, siteIgnoreList = []) {
   const DEFAULT_COUNTRY_CODE = 'GLOBAL';
   // these are codes that are not valid to be regions as these are small islands
-  const globalIgnoreCodes = ['TV', 'ST'];
+  // VI/ML/NE/MR/KN/BN/GU/MS/SR/SL/SV/ET/GA collide with language path segments
+  // (e.g. /vi/, /ml/, /sv/) and are dominated by that language traffic fleet-wide
+  // (LLMO-7230) rather than genuine traffic from the country they also name
+  const globalIgnoreCodes = [
+    'TV', 'ST', 'VI', 'ML', 'NE', 'MR', 'KN', 'BN', 'GU', 'MS', 'SR', 'SL', 'SV', 'ET', 'GA',
+  ];
   const countryAliases = {
     UK: 'UK',
   };
