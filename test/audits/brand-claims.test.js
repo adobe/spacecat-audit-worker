@@ -67,11 +67,13 @@ describe('Brand Claims audit handler', function () {
     },
     dataAccess: {
       Site: { findById: sandbox.stub().resolves(null) },
+      Audit: { create: sandbox.stub().resolves({}) },
       services: { postgrestClient },
     },
     site: {
       getId: () => SITE_ID,
       getOrganizationId: () => ORG_ID,
+      getIsLive: () => true,
     },
     ...overrides,
   });
@@ -315,6 +317,37 @@ describe('Brand Claims audit handler', function () {
       });
     });
 
+    it('persists a brand-claims audit so the on-demand cooldown has a row to read', async () => {
+      s3Client.send.resolves({
+        Contents: [{ Key: `${SITE_ID}/acmecorp/analytics/chatgpt_free/2026/01/05/bp-w2-2026.xlsx`, LastModified: new Date('2026-01-05T00:00:00Z') }],
+        IsTruncated: false,
+      });
+      const ctx = buildContext();
+      const res = await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID, onDemand: true }, ctx);
+
+      expect(res.status).to.equal(200);
+      expect(ctx.dataAccess.Audit.create).to.have.been.calledOnce;
+      const auditArg = ctx.dataAccess.Audit.create.firstCall.args[0];
+      expect(auditArg.auditType).to.equal('brand-claims');
+      expect(auditArg.siteId).to.equal(SITE_ID);
+      expect(auditArg.auditedAt).to.be.a('string');
+      expect(auditArg.auditResult.onDemand).to.equal(true);
+    });
+
+    it('still succeeds when the audit persistence fails (best-effort, run already triggered)', async () => {
+      s3Client.send.resolves({
+        Contents: [{ Key: `${SITE_ID}/acmecorp/analytics/chatgpt_free/2026/01/05/bp-w2-2026.xlsx`, LastModified: new Date('2026-01-05T00:00:00Z') }],
+        IsTruncated: false,
+      });
+      const ctx = buildContext();
+      ctx.dataAccess.Audit.create.rejects(new Error('db down'));
+      const res = await brandClaimsHandler(message, ctx);
+
+      expect(res.status).to.equal(200);
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWithMatch(/failed to persist brand-claims audit/);
+    });
+
     it('skips a mid-week daily sheet and picks the latest Monday daily sheet', async () => {
       const prefix = `${SITE_ID}/acmecorp/analytics/chatgpt_free`;
       // Daily-cadence site with a Monday (2026-01-05) and a newer Tuesday
@@ -365,6 +398,7 @@ describe('Brand Claims audit handler', function () {
       ctx.dataAccess.Site.findById.resolves({
         getId: () => SITE_ID,
         getOrganizationId: () => ORG_ID,
+        getIsLive: () => true,
       });
       s3Client.send.resolves({
         Contents: [{ Key: `${SITE_ID}/acmecorp/analytics/chatgpt_free/2026/01/01/bp-w1-2026.xlsx`, LastModified: new Date('2026-01-01T00:00:00Z') }],

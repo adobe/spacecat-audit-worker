@@ -175,7 +175,7 @@ export default async function brandClaimsHandler(message, context) {
     throw new Error(`brand-claims: brand storage (postgrestClient) is not available for site ${siteId}`);
   }
 
-  const { Site } = dataAccess;
+  const { Site, Audit } = dataAccess;
   const site = context.site || await Site.findById(siteId);
   if (!site) {
     log.warn(`brand-claims: site not found: ${siteId}`);
@@ -242,6 +242,33 @@ export default async function brandClaimsHandler(message, context) {
 
   await sqs.sendMessage(queueUrl, event);
   log.info(`brand-claims: published ready-signal for site ${resolvedSiteId} (brand "${brand.name}"), s3_key=${sheet.key}`);
+
+  // Record the run as a `brand-claims` audit (LLMO-7263). This handler is a bare
+  // utility handler (not an AuditBuilder audit), so nothing else persists a row —
+  // yet the on-demand 7-day request cooldown in api-service
+  // (getLatestAuditByAuditType('brand-claims')) and the elmo-ui pending/cooldown
+  // states both read `auditedAt` from it. Without this write those never fire.
+  // Best-effort: the run has already been triggered, so a persistence failure must
+  // not fail the handler (fail-open matches the api-service cooldown's own miss
+  // handling — a missed record just means the next request isn't throttled).
+  try {
+    await Audit.create({
+      siteId: resolvedSiteId,
+      isLive: site.getIsLive(),
+      auditedAt: new Date().toISOString(),
+      auditType: 'brand-claims',
+      auditResult: {
+        onDemand: onDemand === true,
+        week: sheet.week,
+        year: sheet.year,
+        sheetDate: sheet.sheetDate,
+        sheetKey: sheet.key,
+      },
+      fullAuditRef: sheet.key,
+    });
+  } catch (err) {
+    log.warn(`brand-claims: failed to persist brand-claims audit for site ${resolvedSiteId} (run already triggered): ${err.message}`);
+  }
 
   return ok();
 }
