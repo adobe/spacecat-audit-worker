@@ -22,6 +22,7 @@ const WIKI_URL = 'https://en.wikipedia.org/wiki/Adobe_Inc.';
 describe('url-index', () => {
   const sandbox = sinon.createSandbox();
   let syncUrlIndexStub;
+  let syncUrlIndexManyStub;
   let syncOpportunityUrlIndex;
 
   const makeSuggestion = (id) => ({ getId: () => id });
@@ -40,8 +41,12 @@ describe('url-index', () => {
 
   beforeEach(async () => {
     syncUrlIndexStub = sandbox.stub().resolves(1);
+    syncUrlIndexManyStub = sandbox.stub().resolves(new Map());
     ({ syncOpportunityUrlIndex } = await esmock('../../src/common/url-index.js', {
-      '@adobe/spacecat-shared-data-access': { syncUrlIndex: syncUrlIndexStub },
+      '@adobe/spacecat-shared-data-access': {
+        syncUrlIndex: syncUrlIndexStub,
+        syncUrlIndexMany: syncUrlIndexManyStub,
+      },
     }));
   });
 
@@ -49,7 +54,7 @@ describe('url-index', () => {
     sandbox.restore();
   });
 
-  it('indexes the opportunity and each suggestion with the extracted source url', async () => {
+  it('indexes the opportunity singly and its suggestions in one batched call', async () => {
     const context = makeContext();
     const opportunity = makeOpportunity({
       data: { fullAnalysis: { wikipediaUrl: WIKI_URL } },
@@ -58,31 +63,33 @@ describe('url-index', () => {
 
     await syncOpportunityUrlIndex({ context, opportunity, auditType: 'wikipedia-analysis' });
 
-    expect(syncUrlIndexStub).to.have.callCount(3);
-    expect(syncUrlIndexStub.getCall(0).args[0])
-      .to.equal(context.dataAccess.services.postgrestClient);
-    expect(syncUrlIndexStub.getCall(0).args[1]).to.deep.equal({
-      table: 'opportunity_urls',
-      siteId: 'site-1',
-      entityId: 'oppty-1',
-      entityType: 'wikipedia-analysis',
-      urls: [WIKI_URL],
-    });
-    expect(syncUrlIndexStub.getCall(1).args[1]).to.deep.equal({
-      table: 'suggestion_urls',
-      siteId: 'site-1',
-      entityId: 'sugg-1',
-      entityType: 'wikipedia-analysis',
-      urls: [WIKI_URL],
-    });
-    expect(syncUrlIndexStub.getCall(2).args[1]).to.include({
-      table: 'suggestion_urls', entityId: 'sugg-2',
-    });
+    expect(syncUrlIndexStub).to.have.been.calledOnceWith(
+      context.dataAccess.services.postgrestClient,
+      {
+        table: 'opportunity_urls',
+        siteId: 'site-1',
+        entityId: 'oppty-1',
+        entityType: 'wikipedia-analysis',
+        urls: [WIKI_URL],
+      },
+    );
+    expect(syncUrlIndexManyStub).to.have.been.calledOnceWith(
+      context.dataAccess.services.postgrestClient,
+      {
+        table: 'suggestion_urls',
+        siteId: 'site-1',
+        entityType: 'wikipedia-analysis',
+        entries: [
+          { entityId: 'sugg-1', urls: [WIKI_URL] },
+          { entityId: 'sugg-2', urls: [WIKI_URL] },
+        ],
+      },
+    );
     expect(context.log.debug).to.have.been.calledOnce;
     expect(context.log.warn).to.not.have.been.called;
   });
 
-  it('clears the index (empty urls) when no source url is extracted', async () => {
+  it('clears (empty urls) for the opportunity and suggestions when no source url is extracted', async () => {
     const context = makeContext();
     const opportunity = makeOpportunity({
       data: {}, // no fullAnalysis at all
@@ -91,15 +98,16 @@ describe('url-index', () => {
 
     await syncOpportunityUrlIndex({ context, opportunity, auditType: 'wikipedia-analysis' });
 
-    expect(syncUrlIndexStub).to.have.callCount(2);
     expect(syncUrlIndexStub.getCall(0).args[1].urls).to.deep.equal([]);
-    expect(syncUrlIndexStub.getCall(1).args[1]).to.deep.equal({
-      table: 'suggestion_urls',
-      siteId: 'site-1',
-      entityId: 'sugg-1',
-      entityType: 'wikipedia-analysis',
-      urls: [],
-    });
+    expect(syncUrlIndexManyStub).to.have.been.calledOnceWith(
+      context.dataAccess.services.postgrestClient,
+      {
+        table: 'suggestion_urls',
+        siteId: 'site-1',
+        entityType: 'wikipedia-analysis',
+        entries: [{ entityId: 'sugg-1', urls: [] }],
+      },
+    );
   });
 
   it('is a no-op for audit types without a registered extractor', async () => {
@@ -109,6 +117,7 @@ describe('url-index', () => {
     await syncOpportunityUrlIndex({ context, opportunity, auditType: 'cited-analysis' });
 
     expect(syncUrlIndexStub).to.not.have.been.called;
+    expect(syncUrlIndexManyStub).to.not.have.been.called;
     expect(opportunity.getSuggestions).to.not.have.been.called;
   });
 

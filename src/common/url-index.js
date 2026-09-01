@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { syncUrlIndex } from '@adobe/spacecat-shared-data-access';
+import { syncUrlIndex, syncUrlIndexMany } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Writes an opportunity's (and its suggestions') source URLs into the shared URL index at
@@ -66,14 +66,17 @@ export async function syncOpportunityUrlIndex({ context, opportunity, auditType 
       urls,
     });
 
+    // One batched call for all suggestions instead of a per-suggestion fan-out.
     const suggestions = await opportunity.getSuggestions();
-    await Promise.all(suggestions.map((suggestion) => syncUrlIndex(postgrestClient, {
+    await syncUrlIndexMany(postgrestClient, {
       table: SUGGESTION_URLS_TABLE,
       siteId,
-      entityId: suggestion.getId(),
       entityType: auditType,
-      urls,
-    })));
+      entries: suggestions.map((suggestion) => ({
+        entityId: suggestion.getId(),
+        urls,
+      })),
+    });
 
     log.debug(`[url-index] synced ${urls.length} url(s) for opportunity ${entityId}`);
   } catch (error) {
