@@ -1748,7 +1748,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       '../../../src/utils/agentic-urls.js': {
         getTopAgenticUrlsFromAthena: sandbox.stub().resolves([]),
       },
-      '../../../src/cdn-logs-report/utils/report-utils.js': {
+      '../../../src/common/country-codes.js': {
         validateCountryCode: () => 'US',
       },
       exceljs: {
@@ -2323,7 +2323,7 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
         getCdnAwsRuntime: () => ({ createAthenaClient: () => mockAthenaClient }),
       },
       '../../../src/utils/agentic-urls.js': { getTopAgenticUrlsFromAthena: sandbox.stub().resolves([]) },
-      '../../../src/cdn-logs-report/utils/report-utils.js': { validateCountryCode: () => 'US' },
+      '../../../src/common/country-codes.js': { validateCountryCode: () => 'US' },
       exceljs: { default: { Workbook: function W() { return { addWorksheet: () => ({ addRow: sandbox.stub() }) }; } } },
     });
 

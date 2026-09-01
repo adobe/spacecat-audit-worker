@@ -19,7 +19,7 @@ import {
 } from '../common/user-agent-classification.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
-import { validateCountryCode } from '../cdn-logs-report/utils/report-utils.js';
+import { validateCountryCode } from '../common/country-codes.js';
 
 // ============================================================================
 // CONSTANTS
