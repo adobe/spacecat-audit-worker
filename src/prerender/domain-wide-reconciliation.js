@@ -242,7 +242,7 @@ function computeSuggestionsToClear(suggestions, notDeployedKeys) {
 export async function syncCoveredByDomainWide(opportunity, context, successfulComparisons) {
   const { dataAccess, log, site } = context;
   const SuggestionDA = dataAccess?.Suggestion;
-  if (!opportunity || typeof opportunity.getSuggestions !== 'function' || !SuggestionDA?.saveMany) {
+  if (!opportunity) {
     return;
   }
 

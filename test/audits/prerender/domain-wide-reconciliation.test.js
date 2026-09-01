@@ -381,30 +381,6 @@ describe('domain-wide-reconciliation', () => {
       expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
     });
 
-    it('no-ops when opportunity has no getSuggestions function', async () => {
-      const context = buildContext(sandbox);
-
-      await syncCoveredByDomainWide({}, context, [{ url: 'https://example.com/a', isDeployedAtEdge: false }]);
-
-      expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
-    });
-
-    it('no-ops when dataAccess.Suggestion.saveMany is missing', async () => {
-      const opportunity = buildOpportunity(sandbox, {
-        suggestions: [coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a' })],
-      });
-      const context = buildContext(sandbox, { dataAccess: { Suggestion: {} } });
-
-      await syncCoveredByDomainWide(
-        opportunity,
-        context,
-        [{ url: 'https://example.com/a', isDeployedAtEdge: false }],
-      );
-
-      // Should not throw — guard returns before touching getSuggestions at all.
-      expect(opportunity.getSuggestions).to.not.have.been.called;
-    });
-
     it('does not save when every successful comparison confirms isDeployedAtEdge: true and there is no domain-wide suggestion', async () => {
       const opportunity = buildOpportunity(sandbox, {
         suggestions: [coveredSuggestion(sandbox, { id: 's1', url: 'https://example.com/a' })],
