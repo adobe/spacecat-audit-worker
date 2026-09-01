@@ -99,7 +99,7 @@
     "@adobe/spacecat-shared-http-utils": "1.36.0",
     "@adobe/spacecat-shared-ims-client": "1.16.0",
     "@adobe/spacecat-shared-rum-api-client": "2.44.1",
-    "@adobe/spacecat-shared-scrape-client": "2.7.1",
+    "@adobe/spacecat-shared-scrape-client": "2.7.2",
     "@adobe/spacecat-shared-slack-client": "1.7.2",
     "@adobe/spacecat-shared-splunk-client": "^1.0.30",
     "@adobe/spacecat-shared-tier-client": "1.6.3",
@@ -131,7 +131,7 @@
     "zod": "4.5.4"
   },
   "devDependencies": {
-    "@adobe/eslint-config-helix": "3.0.30",
+    "@adobe/eslint-config-helix": "3.0.31",
     "@adobe/helix-deploy": "14.4.4",
     "@adobe/helix-universal": "5.4.3",
     "@adobe/helix-universal-devserver": "1.1.150",
