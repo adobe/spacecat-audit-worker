@@ -31,6 +31,7 @@ import {
   isValidUrlPath,
   downloadExistingCdnSheet,
   groupErrorsByUrl,
+  getSiteCountryIgnoreList,
   parsePeriodIdentifier,
 } from '../../../src/llm-error-pages/utils.js';
 import { extractSiteKeyFromBaseURL, getS3Config } from '../../../src/utils/cdn-utils.js';
@@ -1605,6 +1606,27 @@ describe('LLM Error Pages Utils', () => {
       expect(groupErrorsByUrl(errors)[0].countryCode).to.equal('PA');
       // with PA in the site ignore list (e.g. Zee5's Punjabi /pa/), it collapses
       expect(groupErrorsByUrl(errors, ['PA'])[0].countryCode).to.equal('GLOBAL');
+    });
+  });
+
+  describe('getSiteCountryIgnoreList', () => {
+    it('returns the configured ignore list', () => {
+      const site = { getConfig: () => ({ getLlmoCountryCodeIgnoreList: () => ['PA'] }) };
+      expect(getSiteCountryIgnoreList(site)).to.deep.equal(['PA']);
+    });
+
+    it('defaults to [] when the config method is absent', () => {
+      const site = { getConfig: () => ({}) };
+      expect(getSiteCountryIgnoreList(site)).to.deep.equal([]);
+    });
+
+    it('defaults to [] when getConfig is absent', () => {
+      expect(getSiteCountryIgnoreList({})).to.deep.equal([]);
+    });
+
+    it('defaults to [] when the ignore list is nullish', () => {
+      const site = { getConfig: () => ({ getLlmoCountryCodeIgnoreList: () => undefined }) };
+      expect(getSiteCountryIgnoreList(site)).to.deep.equal([]);
     });
   });
 

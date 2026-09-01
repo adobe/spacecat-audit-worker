@@ -592,6 +592,16 @@ export async function downloadExistingCdnSheet(
 }
 
 /**
+ * Reads the per-site country-code ignore list from site config, defaulting to [].
+ *
+ * @param {Object} site - Site entity.
+ * @returns {Array<string>} Configured ignore list, or [] when unset.
+ */
+export function getSiteCountryIgnoreList(site) {
+  return site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
+}
+
+/**
  * Collapses Athena rows (one per URL × user_agent) into one entry per URL.
  * agentTypes and userAgents are deduped Sets so a URL hit by multiple bots
  * yields a single Suggestion with both arrays populated.

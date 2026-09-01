@@ -21,6 +21,7 @@ import {
   sortErrorsByTrafficVolume,
   categorizeErrorsByStatusCode,
   groupErrorsByUrl,
+  getSiteCountryIgnoreList,
   parsePeriodIdentifier,
   toPathOnly,
 } from './utils.js';
@@ -329,7 +330,7 @@ async function publishObservationLlmBrokenUrls({
         avgTtfb: String(v.avgTtfb),
         category: v.category || '',
         product: v.product ?? null,
-        countryCode: v.countryCode || 'GLOBAL',
+        countryCode: v.countryCode,
       }));
 
     // NOTE: `observationUrls` is guaranteed non-empty here.
@@ -473,7 +474,7 @@ export async function runAuditAndSendToMystique(context) {
         }
 
         // Per-site country codes to force to 'GLOBAL'.
-        const siteCountryIgnoreList = site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
+        const siteCountryIgnoreList = getSiteCountryIgnoreList(site);
 
         await Promise.allSettled(STATUS_BUCKETS.map(async ({ code, auditType, suggestionType }) => {
           try {
