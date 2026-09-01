@@ -15,7 +15,7 @@ import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { hasText, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { resolveSemrushEntitlement } from '../utils/semrush-entitlement.js';
-import { resolveEnableSemrush, toApexHost } from '../utils/offsite-audit-utils.js';
+import { resolveEnableSemrush } from '../utils/offsite-audit-utils.js';
 import { createOffsiteLogger, AUDIT } from '../utils/offsite-logging.js';
 
 const BP_PLATFORM = 'chatgpt_free';
@@ -82,18 +82,6 @@ function resolveRunWeekYear(auditContext) {
   return isoCalendarWeek(new Date());
 }
 
-/**
- * Derives the registrable domain for the Semrush feed from the site's base URL, reusing the
- * shared `toApexHost` (`offsite-audit-utils.js`) so the eventual PSL upgrade stays a
- * one-site change. Returns `''` when no base URL is configured or it cannot be parsed (the
- * caller then falls back to the DRS path, since a `semrush_feed` event requires a `domain`).
- *
- * @param {object} site - Site model (`getBaseURL()`).
- * @returns {string}
- */
-function registrableDomainFromSite(site) {
-  return toApexHost(site?.getBaseURL?.());
-}
 const SHEET_FILENAME_RE = /-w(\d{1,2})-(\d{4})(?:-(\d{6}))?\.xlsx$/i;
 const KEY_DATE_RE = /\/(\d{4})\/(\d{2})\/(\d{2})\//;
 const MAX_LISTING_PAGES = 10;
@@ -290,8 +278,9 @@ export default async function brandClaimsHandler(message, context) {
   // offsite-brand-presence's `resolveEnableSemrush` pattern. Anything else — disabled,
   // non-entitled, or an inconclusive entitlement check — falls back to the unchanged DRS path,
   // so a Semrush hiccup can never zero out a site that has a DRS sheet. This runs BEFORE the
-  // `brandSlug` guard: the Semrush feed is keyed by `domain`, not the S3 brand-slug path
-  // component, so a brand whose name sanitizes to empty can still run on the feed path.
+  // `brandSlug` guard: the Semrush feed carries no S3 brand-slug path component (the downstream
+  // Serenity proxy resolves workspace/project/market from `organization_id` + `brand_id`, both
+  // already on the event), so a brand whose name sanitizes to empty can still run on the feed path.
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_CLAIMS, siteId: resolvedSiteId });
   const enableSemrushOverride = resolveEnableSemrush(message?.auditContext ?? {}, olog);
   const semrushEnabled = enableSemrushOverride
@@ -302,46 +291,41 @@ export default async function brandClaimsHandler(message, context) {
       orgId: organizationId, brandId: brand.id,
     });
     if (entitlement.entitled) {
-      const domain = registrableDomainFromSite(site);
-      if (!hasText(domain)) {
-        // A semrush_feed event REQUIRES a domain; without a parseable base URL we cannot
-        // key the feed, so fall back to the DRS sheet rather than emit an unroutable event.
-        log.warn(`brand-claims: brand ${brand.id} is Semrush-entitled but site ${resolvedSiteId} has no parseable base URL for a registrable domain — falling back to the DRS sheet`);
-      } else {
-        // Replay-stable window: an explicit `week`/`year` (Slack override / redrive) is used
-        // verbatim, else the current ISO week — so a DLQ redrive across the week boundary does
-        // not re-bucket the same run.
-        const { week, year } = resolveRunWeekYear(message?.auditContext);
-        const event = {
-          event_type: 'BRAND_PRESENCE_SHEET_WRITTEN',
-          schema_version: 1,
-          organization_id: organizationId,
-          brand_id: brand.id,
-          brand: brandSlug,
-          site_id: resolvedSiteId,
-          week,
-          year,
-          cadence: BRAND_CLAIMS_DEFAULT_CADENCE,
-          sheet_date: null,
-          platform: BP_PLATFORM,
-          s3_bucket: null,
-          s3_key: null,
-          ingest_source: INGEST_SOURCE_SEMRUSH,
-          domain,
-          parent_job_id: null,
-          batch_id: null,
-        };
+      // Replay-stable window: an explicit `week`/`year` (Slack override / redrive) is used
+      // verbatim, else the current ISO week — so a DLQ redrive across the week boundary does
+      // not re-bucket the same run.
+      const { week, year } = resolveRunWeekYear(message?.auditContext);
+      // No `domain`: it is a per-market concept (each market has its own domain, the brand has
+      // none), and the Serenity proxy resolves workspace/project/market from `organization_id`
+      // + `brand_id` downstream — a brand-primary-site domain would mis-bind multi-market brands
+      // (mysticat-architecture#248 correction).
+      const event = {
+        event_type: 'BRAND_PRESENCE_SHEET_WRITTEN',
+        schema_version: 1,
+        organization_id: organizationId,
+        brand_id: brand.id,
+        brand: brandSlug,
+        site_id: resolvedSiteId,
+        week,
+        year,
+        cadence: BRAND_CLAIMS_DEFAULT_CADENCE,
+        sheet_date: null,
+        platform: BP_PLATFORM,
+        s3_bucket: null,
+        s3_key: null,
+        ingest_source: INGEST_SOURCE_SEMRUSH,
+        parent_job_id: null,
+        batch_id: null,
+      };
 
-        await sqs.sendMessage(queueUrl, event);
-        log.info(`brand-claims: published Semrush-feed ready-signal for site ${resolvedSiteId} (brand "${brand.name}"), domain=${domain}, week=${week}, year=${year}`);
-        return ok();
-      }
-    } else {
-      // resolved:true = confirmed non-entitlement (flag off / no workspace); resolved:false =
-      // inconclusive (no client / transient error). Both fall back to DRS — the entitlement
-      // helper already logs the granular reason.
-      log.info(`brand-claims: brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId} is not Semrush-entitled (reason=${entitlement.reason}, resolved=${entitlement.resolved}) — falling back to the DRS sheet`);
+      await sqs.sendMessage(queueUrl, event);
+      log.info(`brand-claims: published Semrush-feed ready-signal for site ${resolvedSiteId} (brand "${brand.name}"), week=${week}, year=${year}`);
+      return ok();
     }
+    // resolved:true = confirmed non-entitlement (flag off / no workspace); resolved:false =
+    // inconclusive (no client / transient error). Both fall back to DRS — the entitlement
+    // helper already logs the granular reason.
+    log.info(`brand-claims: brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId} is not Semrush-entitled (reason=${entitlement.reason}, resolved=${entitlement.resolved}) — falling back to the DRS sheet`);
   }
 
   // DRS branch requires the S3 brand-slug path component; an empty slug cannot address a sheet.

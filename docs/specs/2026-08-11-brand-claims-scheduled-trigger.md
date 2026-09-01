@@ -61,29 +61,31 @@ Flow (`src/brand-claims/handler.js`), for a message `{ type: 'brand-claims', sit
    tri-state, override wins over env, mirroring `offsite-brand-presence`'s `resolveEnableSemrush`)
    **AND** the brand is entitled to it (`resolveSemrushEntitlement` — the shared "serenity flag
    AND resolvable Semrush workspace" gate, fail-closed with reason codes). Anything else —
-   disabled, non-entitled, an inconclusive entitlement check, or no parseable base URL for the
-   feed's `domain` — falls back to the unchanged DRS path, so a Semrush hiccup can never zero
-   out a site that has a DRS sheet. The decision runs **before** the `brandSlug` guard: the
-   Semrush feed is keyed by `domain`, not the S3 brand-slug path component, so a brand whose
-   name sanitizes to an empty slug can still run on the feed path.
+   disabled, non-entitled, or an inconclusive entitlement check — falls back to the unchanged
+   DRS path, so a Semrush hiccup can never zero out a site that has a DRS sheet. The decision
+   runs **before** the `brandSlug` guard: the Semrush feed carries no S3 brand-slug path
+   component (org+brand identity routes it downstream), so a brand whose name sanitizes to an
+   empty slug can still run on the feed path.
 4. **Run** —
    - *DRS branch:* build the S3 prefix `{siteId}/{brandSlug}/analytics/chatgpt_free/` (brand
      slug via `sanitizePathComponent`, byte-for-byte with DRS) and select the latest sheet
      (max by S3 date partition, then `LastModified`).
    - *Semrush branch:* **skip the S3 prefix build and sheet lookup entirely** — there is no
-     sheet. Derive the registrable `domain` from the site's base URL (shared `toApexHost`) and
-     the `(week, year)` run window (explicit `week`+`year` from the message if supplied and
-     valid — replay-stable across a DLQ redrive — else the current ISO week).
+     sheet. Derive only the `(week, year)` run window (explicit `week`+`year` from the message
+     if supplied and valid — replay-stable across a DLQ redrive — else the current ISO week).
 5. **Emit** — publish `BRAND_PRESENCE_SHEET_WRITTEN` to `SQS_BP_SHEET_READY_QUEUE_URL`.
    `organization_id` = SpaceCat org UUID (the BP consumer feeds it into
    `/v2/orgs/{spaceCatId}/…`, which 400s on an IMS org id), plus `brand_id`, `brand` slug,
    `site_id`, `week`, `year`, `cadence: "weekly"`, `platform`. **New in LLMO-7177:** the event
    carries an additive `ingest_source` on **both** branches (default `brand_presence_s3` when
    absent, so a pre-7177 consumer is unaffected) — `brand_presence_s3` on the DRS branch,
-   `semrush_feed` on the Semrush branch — and `domain` (the registrable domain) on the Semrush
-   branch. Sheet-scoped fields differ by branch: the DRS branch sets `sheet_date`, `s3_bucket`,
-   `s3_key` from the resolved sheet; the Semrush branch sets all three to `null`. Same queue,
-   backward-compatible.
+   `semrush_feed` on the Semrush branch. Sheet-scoped fields differ by branch: the DRS branch
+   sets `sheet_date`, `s3_bucket`, `s3_key` from the resolved sheet; the Semrush branch sets all
+   three to `null`. **No `domain` is emitted:** it is a per-market concept (each market has its
+   own domain; the brand has none), and the downstream Serenity proxy resolves
+   workspace/project/market from the `organization_id` + `brand_id` already on the event — a
+   brand-primary-site domain would mis-bind multi-market brands (mysticat-architecture#248
+   correction). Same queue, backward-compatible.
 
 Env (from Vault): `SQS_BP_SHEET_READY_QUEUE_URL`, `DRS_BP_BUCKET`. Feature gate (env, optional,
 default off): `BRAND_CLAIMS_SEMRUSH_ENABLED` — see ADR 006.

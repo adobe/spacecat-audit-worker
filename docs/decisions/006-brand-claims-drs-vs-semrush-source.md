@@ -48,25 +48,29 @@ event type, backward-compatible.
 
 3. **The Semrush branch skips the S3 sheet lookup entirely.** There is no sheet for a
    Semrush-backed brand, so the branch does not build the `{siteId}/{brandSlug}/analytics/…`
-   prefix or list S3. It derives two things instead:
-   - **`domain`** — the registrable domain the feed is keyed by, via the shared `toApexHost`
-     (`offsite-audit-utils.js`), reused rather than re-inlined so the eventual PSL/eTLD+1
-     upgrade is a one-site change. Today this is the www-stripped hostname of `site.getBaseURL()`
-     (no public-suffix list yet); a subdomain like `blog.acme.com` is preserved. If no base
-     URL is configured or it won't parse, the event would have no routable key, so the run
-     falls back to DRS rather than emit an unroutable `semrush_feed` event.
-   - **`(week, year)`** — see Decision 5.
+   prefix or list S3. It derives only the `(week, year)` run window (see Decision 5); no other
+   per-branch input is needed, because the feed is routed downstream from identity already on
+   the event (Decision 4a).
 
-4. **Additive event contract: `ingest_source` on both branches, `domain` iff `semrush_feed`.**
+4. **Additive event contract: `ingest_source` on both branches, no `domain`.**
    `ingest_source` is **optional with default `brand_presence_s3`** (an absent value means DRS,
    so a pre-7177 consumer is unaffected), but the trigger now stamps it **explicitly on both
    branches** (`brand_presence_s3` / `semrush_feed`) so the consumer never has to infer it.
-   `domain` is present (and required) only on the `semrush_feed` branch. Sheet-scoped fields
-   diverge by branch: the DRS branch sets `sheet_date`/`s3_bucket`/`s3_key` from the resolved
-   sheet; the Semrush branch sets all three to `null` (no sheet). All other fields
-   (`organization_id`, `brand_id`, `brand`, `site_id`, `platform`, `parent_job_id`, `batch_id`)
-   are identical across branches. The DRS branch's pre-existing fields are otherwise unchanged
-   — no regression to the sheet-selection path.
+   Sheet-scoped fields diverge by branch: the DRS branch sets `sheet_date`/`s3_bucket`/`s3_key`
+   from the resolved sheet; the Semrush branch sets all three to `null` (no sheet). All other
+   fields (`organization_id`, `brand_id`, `brand`, `site_id`, `platform`, `parent_job_id`,
+   `batch_id`) are identical across branches. The DRS branch's pre-existing fields are otherwise
+   unchanged — no regression to the sheet-selection path.
+
+4a. **No `domain` on the event (mysticat-architecture#248 correction).** An earlier revision
+   stamped a registrable `domain` (the brand primary site's apex host) on the Semrush branch.
+   This was dropped: `domain` is a per-**market** concept — each market of a brand has its own
+   domain, and the brand itself has none — so a single brand-primary-site domain mis-binds a
+   multi-market brand. It is also unnecessary: the downstream Serenity proxy resolves the
+   workspace / project / market from `organization_id` + `brand_id`, both already stamped on the
+   event. The domain-derivation helper and its "no parseable base URL → fall back to DRS" branch
+   were removed with it; an entitled brand now always emits the `semrush_feed` event regardless
+   of its base URL.
 
 5. **The Semrush `(week, year)` is a replay-stable run window, not the wall clock.** The DRS
    branch reads immutable sheet metadata (`week`/`year` parsed from the sheet filename); the
@@ -80,10 +84,10 @@ event type, backward-compatible.
 
 6. **The source decision runs before the `brandSlug` guard.** The empty-`brandSlug` guard
    (brand name sanitizes to nothing) is a DRS-only precondition — it can't address an S3 sheet
-   prefix. The Semrush feed is keyed by `domain`, not the slug, so the guard is now scoped to
-   the DRS branch: a Semrush-entitled brand with an empty slug still runs on the feed path (the
-   event's `brand` field is the empty slug, which the domain-keyed consumer ignores). The DRS
-   path behavior is unchanged.
+   prefix. The Semrush feed carries no brand-slug path component (org+brand identity routes it
+   downstream), so the guard is now scoped to the DRS branch: a Semrush-entitled brand with an
+   empty slug still runs on the feed path (the event's `brand` field is the empty slug, which
+   the identity-routed consumer ignores). The DRS path behavior is unchanged.
 
 ## Consequences
 
@@ -94,13 +98,13 @@ event type, backward-compatible.
   the tool for testing one run against the real entitlement/feed path before flipping the env
   var. The entitlement gate already narrows the env-global flag to only provisioned brands, so
   turning it on fleet-wide degrades gracefully to DRS for every non-entitled site.
-- `domain` is the www-stripped hostname, **not** a true public-suffix eTLD+1 — a multi-level
-  TLD (e.g. `example.co.uk`) or an intentional subdomain is passed through as-is. Reusing
-  `toApexHost` keeps the PSL upgrade a single-function change shared with the offsite audit.
+- The consumer routes the Semrush feed from `organization_id` + `brand_id` alone; the event
+  carries no market/domain, so a multi-market brand is not pinned to a single primary-site
+  domain by this trigger.
 - The fallback-to-DRS-on-any-doubt policy means a Semrush misconfiguration is **silent** in the
   event stream (it just looks like a DRS run). The granular reason is logged
-  (`not Semrush-entitled (reason=…, resolved=…)` / `no parseable base URL`) for whoever watches
-  logs; there is no dedicated alert (consistent with ADR 002 Decision 8c).
+  (`not Semrush-entitled (reason=…, resolved=…)`) for whoever watches logs; there is no
+  dedicated alert (consistent with ADR 002 Decision 8c).
 
 ## Alternatives Considered
 

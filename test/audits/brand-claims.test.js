@@ -416,7 +416,7 @@ describe('Brand Claims audit handler', function () {
       return ctx;
     };
 
-    it('emits a semrush_feed event (no sheet lookup, domain set) when entitled', async () => {
+    it('emits a semrush_feed event (no sheet lookup, no domain) when entitled', async () => {
       // Freeze the clock so week/year are asserted as literals, not recomputed (MF2).
       // 2026-08-24T12:00:00Z is ISO week 35 of 2026.
       sandbox.useFakeTimers(new Date('2026-08-24T12:00:00Z'));
@@ -452,10 +452,12 @@ describe('Brand Claims audit handler', function () {
         s3_bucket: null,
         s3_key: null,
         ingest_source: 'semrush_feed',
-        domain: 'acme.com',
         parent_job_id: null,
         batch_id: null,
       });
+      // domain is a per-market concept and is resolved downstream from org+brand — it must
+      // NOT be on the event (mysticat-architecture#248 correction).
+      expect(event).to.not.have.property('domain');
     });
 
     it('uses an explicit run window (week/year) from the message over the wall clock (replay-stable)', async () => {
@@ -514,27 +516,10 @@ describe('Brand Claims audit handler', function () {
       expect(event.cadence).to.equal('weekly');
     });
 
-    it('preserves a non-www subdomain in the semrush domain', async () => {
-      const { handler } = await loadHandler({
-        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
-      });
-      const ctx = semrushContext({
-        site: {
-          getId: () => SITE_ID,
-          getOrganizationId: () => ORG_ID,
-          getBaseURL: () => 'https://blog.acme.com',
-        },
-      });
-
-      await handler(message, ctx);
-
-      const [, event] = sqs.sendMessage.firstCall.args;
-      expect(event.domain).to.equal('blog.acme.com');
-    });
-
     it('runs the Semrush feed path even when the brand name sanitizes to an empty slug', async () => {
-      // The feed is keyed by domain, not the S3 brand-slug path component, so an empty slug
-      // must NOT block the Semrush branch (NB2 — decision runs before the brandSlug guard).
+      // The feed carries no S3 brand-slug path component (org+brand identity routes it
+      // downstream), so an empty slug must NOT block the Semrush branch (decision runs before
+      // the brandSlug guard).
       selectResult = {
         data: [{ id: BRAND_ID, name: '   ', brand_claims_enabled: true }],
         error: null,
@@ -550,7 +535,6 @@ describe('Brand Claims audit handler', function () {
       const [, event] = sqs.sendMessage.firstCall.args;
       expect(event.ingest_source).to.equal('semrush_feed');
       expect(event.brand).to.equal('');
-      expect(event.domain).to.equal('acme.com');
     });
 
     it('falls through to the env flag (DRS path) on an invalid enableSemrush override', async () => {
@@ -653,62 +637,8 @@ describe('Brand Claims audit handler', function () {
         const [, event] = sqs.sendMessage.firstCall.args;
         expect(event.ingest_source).to.equal('brand_presence_s3');
         expect(event.s3_key).to.equal(DRS_SHEET_KEY);
-        expect(event.domain).to.be.undefined;
         expect(log.info).to.have.been.calledWithMatch('not Semrush-entitled');
       });
-    });
-
-    it('falls back to the DRS sheet when entitled but the base URL is unparseable', async () => {
-      const { handler } = await loadHandler({
-        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
-      });
-      s3Client.send.resolves({
-        Contents: [{ Key: DRS_SHEET_KEY, LastModified: new Date('2026-01-01T00:00:00Z') }],
-        IsTruncated: false,
-      });
-      const ctx = semrushContext({
-        site: {
-          getId: () => SITE_ID,
-          getOrganizationId: () => ORG_ID,
-          getBaseURL: () => undefined,
-        },
-      });
-
-      const res = await handler(message, ctx);
-
-      expect(res.status).to.equal(200);
-      expect(s3Client.send).to.have.been.called;
-      const [, event] = sqs.sendMessage.firstCall.args;
-      expect(event.ingest_source).to.equal('brand_presence_s3');
-      expect(log.warn).to.have.been.calledWithMatch('no parseable base URL');
-    });
-
-    it('falls back to the DRS sheet when entitled but the base URL is malformed (URL parse throws)', async () => {
-      const { handler } = await loadHandler({
-        entitled: true, resolved: true, reason: 'entitled', mode: 'flat',
-      });
-      s3Client.send.resolves({
-        Contents: [{ Key: DRS_SHEET_KEY, LastModified: new Date('2026-01-01T00:00:00Z') }],
-        IsTruncated: false,
-      });
-      // Non-empty text that `new URL()` rejects — exercises the parse-failure catch,
-      // distinct from the empty/absent base URL handled above.
-      const ctx = semrushContext({
-        site: {
-          getId: () => SITE_ID,
-          getOrganizationId: () => ORG_ID,
-          getBaseURL: () => 'not a valid url',
-        },
-      });
-
-      const res = await handler(message, ctx);
-
-      expect(res.status).to.equal(200);
-      expect(s3Client.send).to.have.been.called;
-      const [, event] = sqs.sendMessage.firstCall.args;
-      expect(event.ingest_source).to.equal('brand_presence_s3');
-      expect(event.domain).to.be.undefined;
-      expect(log.warn).to.have.been.calledWithMatch('no parseable base URL');
     });
 
     it('never consults entitlement or emits a semrush event when Semrush is disabled', async () => {
