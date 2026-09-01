@@ -472,10 +472,7 @@ export async function runAuditAndSendToMystique(context) {
           });
         }
 
-        // Per-site country codes to force to 'GLOBAL' (LLMO-7230); same source
-        // the cdn-logs-report agentic-traffic mapper reads. Passed into
-        // groupErrorsByUrl so both the DB suggestions and the Mystique
-        // observation message get normalized country codes.
+        // Per-site country codes to force to 'GLOBAL'.
         const siteCountryIgnoreList = site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
 
         await Promise.allSettled(STATUS_BUCKETS.map(async ({ code, auditType, suggestionType }) => {

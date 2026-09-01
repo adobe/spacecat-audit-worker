@@ -596,16 +596,11 @@ export async function downloadExistingCdnSheet(
  * agentTypes and userAgents are deduped Sets so a URL hit by multiple bots
  * yields a single Suggestion with both arrays populated.
  *
- * The raw `country_code` is a regex extraction over the URL path (see
- * buildCountryExtractionSQL) that cannot tell an ISO-639 language segment
- * (e.g. /vi/, /ml/) from an ISO-3166 country segment. We run it through
- * validateCountryCode — the same normalizer the cdn-logs-report "hits by
- * market" chart uses (LLMO-7230) — so language-collision codes collapse to
- * 'GLOBAL' and the 5xx/4xx opportunity filter stays consistent with the chart.
+ * The raw `country_code` is regex-extracted from the URL path and normalized
+ * via validateCountryCode.
  *
  * @param {Array<Object>} errors - Categorized error rows.
- * @param {Array<string>} [siteIgnoreList] - Per-site country codes to force to
- *   'GLOBAL' (site.getConfig().getLlmoCountryCodeIgnoreList()), e.g. Zee5's /pa/.
+ * @param {Array<string>} [siteIgnoreList] - Per-site country codes to force to 'GLOBAL'.
  * @returns {Array<Object>} One entry per unique URL with aggregated metrics.
  */
 export function groupErrorsByUrl(errors, siteIgnoreList = []) {

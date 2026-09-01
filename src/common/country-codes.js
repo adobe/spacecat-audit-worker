@@ -70,13 +70,8 @@ const GLOBAL_IGNORE_CODES = new Set([
  * global ignore list (non-region small islands + language-collision codes), or
  * are on the caller-supplied per-site ignore list collapse to 'GLOBAL'.
  *
- * Shared across the cdn-logs-report "hits by market" chart and the
- * llm-error-pages 5xx/4xx opportunity filter so both surfaces label countries
- * consistently (LLMO-7230).
- *
  * @param {string} code - Raw country code (case-insensitive).
- * @param {Array<string>} [siteIgnoreList] - Per-site codes to force to 'GLOBAL'
- *   (e.g. site.getConfig().getLlmoCountryCodeIgnoreList()).
+ * @param {Array<string>} [siteIgnoreList] - Per-site codes to force to 'GLOBAL'.
  * @returns {string} A validated ISO-3166 code, the 'UK' alias, or 'GLOBAL'.
  */
 export function validateCountryCode(code, siteIgnoreList = []) {
