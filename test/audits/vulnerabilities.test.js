@@ -28,7 +28,7 @@ import VULNERABILITY_REPORT_OLD_SCAN from '../fixtures/vulnerabilities/vulnerabi
 import VULNERABILITY_REPORT_NEW_SCAN from '../fixtures/vulnerabilities/vulnerability-report-new-scan.json' with { type: 'json' };
 import {
   vulnerabilityAuditRunner, opportunityAndSuggestionsStep, extractCodeInfo, buildKey,
-  promoteVulnFixEntities, buildVulnFixEntityPayload,
+  promoteVulnFixEntities, buildVulnFixEntityPayload, reconcileFixedVulnSuggestions,
 } from '../../src/vulnerabilities/handler.js';
 import {
   toSuggestionData, mapVulnerabilityToSuggestion,
@@ -410,7 +410,8 @@ describe('Vulnerabilities Handler Integration Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
-      expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
+      // Read twice now: once by the base sync, once by the FIXED-reconcile pass (§10).
+      expect(mockOpportunity.getSuggestions).to.have.been.calledTwice;
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
         suggestions,
         'OUTDATED',
@@ -456,6 +457,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         getId: () => 'fe-autofixed',
         getStatus: () => 'PENDING',
         setStatus: sandbox.stub(),
+        setDeployedAt: sandbox.stub(),
       };
 
       const mockOpportunity = {
@@ -494,6 +496,67 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
       expect(mockOpportunity.setUpdatedBy).to.have.been.calledWith('system');
       expect(mockOpportunity.save).to.have.been.calledOnce;
+    });
+
+    it('promotes an asserted FIXED+PENDING suggestion to DEPLOYED on an all-clear rescan (§10.2 wiring)', async () => {
+      const configuration = {
+        isHandlerEnabledForSite: sandbox.stub().callsFake((handler) => handler !== 'summit-plg'),
+      };
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_NO_VULNERABILITIES,
+          success: true,
+        }),
+      };
+
+      // A human asserted this FIXED but the fix is only PENDING; the rescan now shows the
+      // vuln gone → confirm it (promote the fix, keep the suggestion FIXED).
+      const assertedSuggestion = {
+        getId: () => 'sugg-asserted',
+        getStatus: () => 'FIXED',
+        getData: () => ({ library: 'libA', current_version: '1.0.0', dependency_tree: [] }),
+        setStatus: sandbox.stub(),
+        setData: sandbox.stub(),
+        setRank: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+      };
+      const pendingFixEntity = {
+        getId: () => 'fe-asserted',
+        getStatus: () => 'PENDING',
+        getExecutedAt: () => new Date().toISOString(),
+        setStatus: sandbox.stub(),
+        setDeployedAt: sandbox.stub(),
+      };
+
+      const mockOpportunity = {
+        getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getSiteId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        getType: () => 'security-vulnerabilities',
+        setStatus: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([assertedSuggestion]),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        addFixEntities: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        setUpdatedBy: sandbox.stub().resolves(),
+        save: sandbox.stub().resolves(),
+      };
+      context.site.getOpportunitiesByStatus.resolves([mockOpportunity]);
+      context.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+      context.dataAccess.FixEntity = {
+        getAllFixesWithSuggestionsByOpportunityId: sandbox.stub().resolves([
+          { fixEntity: pendingFixEntity, suggestions: [assertedSuggestion] },
+        ]),
+        saveMany: sandbox.stub().resolves(),
+      };
+
+      await opportunityAndSuggestionsStep(context);
+
+      // §10.2: the PENDING fix is promoted to DEPLOYED (+ deployedAt); the suggestion stays FIXED.
+      expect(pendingFixEntity.setStatus).to.have.been.calledWith('DEPLOYED');
+      expect(pendingFixEntity.setDeployedAt).to.have.been.calledWith(sinon.match.string);
+      expect(context.dataAccess.FixEntity.saveMany).to.have.been.calledWith([pendingFixEntity]);
+      expect(assertedSuggestion.setStatus).to.not.have.been.called;
     });
 
     it('should handle no vulnerabilities scenario when no existing opportunity found', async () => {
@@ -795,6 +858,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         getId: () => 'fe-httpclient',
         getStatus: () => 'PENDING',
         setStatus: sandbox.stub(),
+        setDeployedAt: sandbox.stub(),
       };
 
       const existingOpportunity = {
@@ -1060,9 +1124,13 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         getType: () => 'security-vulnerabilities',
         addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
         getSuggestions: sandbox.stub()
+          // call 0: base sync (no existing) · call 1: FIXED-reconcile pass (nothing to
+          // reconcile) · call 2: dispatch step reads the freshly-created suggestions.
           .onCall(0)
           .resolves([])
           .onCall(1)
+          .resolves([])
+          .onCall(2)
           .resolves([
             { getId: () => 'suggestion-new', getStatus: () => 'NEW' },
             { getId: () => 'suggestion-pending', getStatus: () => 'PENDING_VALIDATION' },
@@ -1565,6 +1633,7 @@ describe('promoteVulnFixEntities', () => {
     getId: () => id,
     getStatus: () => status,
     setStatus: sandbox.stub(),
+    setDeployedAt: sandbox.stub(),
   });
 
   const makeOpportunity = (id = 'oppty-1') => ({
@@ -1596,6 +1665,8 @@ describe('promoteVulnFixEntities', () => {
 
     expect(pending.setStatus).to.have.been.calledOnce;
     expect(pending.setStatus).to.have.been.calledWith('DEPLOYED');
+    // §10: stamp the deploy timestamp on every PENDING → DEPLOYED promotion.
+    expect(pending.setDeployedAt).to.have.been.calledWith(sinon.match.string);
     expect(context.dataAccess.FixEntity.saveMany).to.have.been.calledWith([pending]);
     expect(opportunity.addFixEntities).to.not.have.been.called;
   });
@@ -1681,6 +1752,8 @@ describe('buildVulnFixEntityPayload', () => {
     expect(payload.status).to.equal('DEPLOYED');
     expect(payload.suggestions).to.deep.equal(['s1']);
     expect(payload.executedAt).to.be.a('string');
+    // A rescan-confirmed fix is deployed now — stamp deployedAt (§10 verified marker).
+    expect(payload.deployedAt).to.be.a('string');
     expect(payload.changeDetails).to.deep.include({
       system: 'aem_cs',
       library: 'org.apache.httpcomponents:httpclient',
@@ -1688,5 +1761,205 @@ describe('buildVulnFixEntityPayload', () => {
       updatedValue: '4.5.14',
       dependencyTree: ['root', 'httpclient'],
     });
+  });
+});
+
+describe('reconcileFixedVulnSuggestions', () => {
+  const sandbox = sinon.createSandbox();
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  // data whose buildKey resolves to `key` (empty dependency_tree → key === library@version).
+  const dataFor = (key) => ({
+    library: key.split('@')[0],
+    current_version: key.split('@')[1],
+    dependency_tree: [],
+  });
+
+  const makeSuggestion = (id, status, key) => ({
+    getId: () => id,
+    getStatus: () => status,
+    getData: () => dataFor(key),
+    setStatus: sandbox.stub(),
+    setUpdatedBy: sandbox.stub(),
+  });
+
+  const makeFixEntity = (id, status, { executedAt } = {}) => ({
+    getId: () => id,
+    getStatus: () => status,
+    getExecutedAt: () => executedAt,
+    setStatus: sandbox.stub(),
+    setDeployedAt: sandbox.stub(),
+  });
+
+  const makeOpportunity = (suggestions) => ({
+    getId: () => 'oppty-1',
+    getSuggestions: sandbox.stub().resolves(suggestions),
+  });
+
+  const makeContext = ({ fixes = [], site = {} } = {}) => ({
+    site,
+    log: { warn: sandbox.stub(), debug: sandbox.stub(), info: sandbox.stub() },
+    dataAccess: {
+      FixEntity: {
+        getAllFixesWithSuggestionsByOpportunityId: sandbox.stub().resolves(fixes),
+        saveMany: sandbox.stub().resolves(),
+      },
+      Suggestion: { saveMany: sandbox.stub().resolves() },
+    },
+  });
+
+  afterEach(() => sandbox.restore());
+
+  it('case 2: promotes the PENDING fix of a FIXED suggestion whose vuln is gone (keeps FIXED)', async () => {
+    const s = makeSuggestion('s1', 'FIXED', 'lib@1.0.0');
+    const fix = makeFixEntity('fe1', 'PENDING', { executedAt: new Date().toISOString() });
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({ fixes: [{ fixEntity: fix, suggestions: [s] }] });
+
+    await reconcileFixedVulnSuggestions(opportunity, [], context, context.log);
+
+    expect(fix.setStatus).to.have.been.calledWith('DEPLOYED');
+    expect(fix.setDeployedAt).to.have.been.calledWith(sinon.match.string);
+    expect(context.dataAccess.FixEntity.saveMany).to.have.been.calledWith([fix]);
+    expect(s.setStatus).to.not.have.been.called;
+    expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+  });
+
+  it('case 3: reopens a FIXED+DEPLOYED suggestion whose vuln reappears and rolls the fix back', async () => {
+    const s = makeSuggestion('s1', 'FIXED', 'lib@1.0.0');
+    const fix = makeFixEntity('fe1', 'DEPLOYED');
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({ fixes: [{ fixEntity: fix, suggestions: [s] }] });
+
+    await reconcileFixedVulnSuggestions(opportunity, [dataFor('lib@1.0.0')], context, context.log);
+
+    expect(s.setStatus).to.have.been.calledWith('NEW');
+    expect(s.setUpdatedBy).to.have.been.calledWith('system');
+    expect(fix.setStatus).to.have.been.calledWith('ROLLED_BACK');
+    expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([s]);
+    expect(context.dataAccess.FixEntity.saveMany).to.have.been.calledWith([fix]);
+  });
+
+  it('case 3 (paid): reopens a regressed suggestion to PENDING_VALIDATION on a validation-required site', async () => {
+    const s = makeSuggestion('s1', 'FIXED', 'lib@1.0.0');
+    const fix = makeFixEntity('fe1', 'DEPLOYED');
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({
+      fixes: [{ fixEntity: fix, suggestions: [s] }],
+      site: { requiresValidation: true },
+    });
+
+    await reconcileFixedVulnSuggestions(opportunity, [dataFor('lib@1.0.0')], context, context.log);
+
+    expect(s.setStatus).to.have.been.calledWith('PENDING_VALIDATION');
+    expect(fix.setStatus).to.have.been.calledWith('ROLLED_BACK');
+  });
+
+  it('case 4: leaves a FIXED+PENDING suggestion untouched while the vuln persists but the fix is fresh', async () => {
+    const s = makeSuggestion('s1', 'FIXED', 'lib@1.0.0');
+    const fix = makeFixEntity('fe1', 'PENDING', { executedAt: new Date().toISOString() });
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({ fixes: [{ fixEntity: fix, suggestions: [s] }] });
+
+    await reconcileFixedVulnSuggestions(opportunity, [dataFor('lib@1.0.0')], context, context.log);
+
+    expect(s.setStatus).to.not.have.been.called;
+    expect(fix.setStatus).to.not.have.been.called;
+    expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+  });
+
+  it('case 5: reopens a FIXED+PENDING suggestion whose fix has been unconfirmed past the staleness window', async () => {
+    const s = makeSuggestion('s1', 'FIXED', 'lib@1.0.0');
+    const staleExecutedAt = new Date(Date.now() - 31 * DAY_MS).toISOString();
+    const fix = makeFixEntity('fe1', 'PENDING', { executedAt: staleExecutedAt });
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({ fixes: [{ fixEntity: fix, suggestions: [s] }] });
+
+    await reconcileFixedVulnSuggestions(opportunity, [dataFor('lib@1.0.0')], context, context.log);
+
+    expect(s.setStatus).to.have.been.calledWith('NEW');
+    expect(s.setUpdatedBy).to.have.been.calledWith('system');
+    expect(fix.setStatus).to.have.been.calledWith('FAILED');
+    expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([s]);
+    expect(context.dataAccess.FixEntity.saveMany).to.have.been.calledWith([fix]);
+  });
+
+  it('does nothing (and never fetches fixes) when there are no FIXED suggestions', async () => {
+    const s = makeSuggestion('s1', 'NEW', 'lib@1.0.0');
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({});
+
+    await reconcileFixedVulnSuggestions(opportunity, [], context, context.log);
+
+    expect(context.dataAccess.FixEntity.getAllFixesWithSuggestionsByOpportunityId)
+      .to.not.have.been.called;
+    expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+  });
+
+  it('is fail-safe: skips reconciliation and logs when fetching fix entities throws', async () => {
+    const s = makeSuggestion('s1', 'FIXED', 'lib@1.0.0');
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({});
+    context.dataAccess.FixEntity.getAllFixesWithSuggestionsByOpportunityId
+      .rejects(new Error('boom'));
+
+    await reconcileFixedVulnSuggestions(opportunity, [dataFor('lib@1.0.0')], context, context.log);
+
+    expect(context.log.warn).to.have.been.called;
+    expect(s.setStatus).to.not.have.been.called;
+    expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+  });
+
+  it('leaves a FIXED suggestion untouched when the vuln is present but it has no active fix entity', async () => {
+    const s = makeSuggestion('s1', 'FIXED', 'lib@1.0.0');
+    // A non-active (FAILED) fix is ignored, so the suggestion has no PENDING/DEPLOYED fix.
+    const fix = makeFixEntity('fe1', 'FAILED');
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({ fixes: [{ fixEntity: fix, suggestions: [s] }] });
+
+    await reconcileFixedVulnSuggestions(opportunity, [dataFor('lib@1.0.0')], context, context.log);
+
+    expect(s.setStatus).to.not.have.been.called;
+    expect(context.dataAccess.Suggestion.saveMany).to.not.have.been.called;
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+  });
+
+  it('leaves a verified FIXED+DEPLOYED suggestion untouched while its vuln stays gone', async () => {
+    const s = makeSuggestion('s1', 'FIXED', 'lib@1.0.0');
+    const fix = makeFixEntity('fe1', 'DEPLOYED');
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({ fixes: [{ fixEntity: fix, suggestions: [s] }] });
+
+    await reconcileFixedVulnSuggestions(opportunity, [], context, context.log);
+
+    expect(s.setStatus).to.not.have.been.called;
+    expect(fix.setStatus).to.not.have.been.called;
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+  });
+
+  it('leaves a gone FIXED suggestion with no active fix untouched', async () => {
+    const s = makeSuggestion('s1', 'FIXED', 'lib@1.0.0');
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({ fixes: [] });
+
+    await reconcileFixedVulnSuggestions(opportunity, [], context, context.log);
+
+    expect(s.setStatus).to.not.have.been.called;
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+  });
+
+  it('treats a FIXED+PENDING fix with no executedAt as not-yet-stale (waits)', async () => {
+    const s = makeSuggestion('s1', 'FIXED', 'lib@1.0.0');
+    const fix = makeFixEntity('fe1', 'PENDING', {});
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({ fixes: [{ fixEntity: fix, suggestions: [s] }] });
+
+    await reconcileFixedVulnSuggestions(opportunity, [dataFor('lib@1.0.0')], context, context.log);
+
+    expect(s.setStatus).to.not.have.been.called;
+    expect(fix.setStatus).to.not.have.been.called;
   });
 });

@@ -250,6 +250,7 @@ export function buildVulnFixEntityPayload(suggestion, opportunity, site) {
     type: 'CODE_CHANGE',
     status: FixEntityDataAccess.STATUSES.DEPLOYED,
     executedAt: new Date().toISOString(),
+    deployedAt: new Date().toISOString(),
     changeDetails: {
       system: site.getDeliveryType(),
       library: data.library,
@@ -315,6 +316,8 @@ export async function promoteVulnFixEntities(fixedSuggestions, opportunity, cont
       if (!promotedFixEntityIds.has(pending.getId())) {
         promotedFixEntityIds.add(pending.getId());
         pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
+        // Durable "verified" marker (§10): stamp the deploy timestamp on every promotion.
+        pending.setDeployedAt(new Date().toISOString());
         toPromote.push(pending);
       }
     } else {
@@ -327,6 +330,145 @@ export async function promoteVulnFixEntities(fixedSuggestions, opportunity, cont
   }
   if (toCreate.length > 0) {
     await opportunity.addFixEntities(toCreate);
+  }
+}
+
+/**
+ * Staleness window for an asserted-but-unconfirmed fix (§10.5). When a FIXED suggestion's
+ * fix is still PENDING (never scan-confirmed) and the vuln keeps reappearing past this
+ * window (measured from the fix's executedAt), the assertion is treated as stale and the
+ * suggestion is reopened so an unverified claim can't mask a live vuln forever.
+ */
+const STALE_ASSERTED_FIX_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/**
+ * Reopen target for a re-detected or aged-out FIXED suggestion: PENDING_VALIDATION on
+ * validation-required (paid) sites, else NEW — mirrors the regression rule in
+ * data-access.js `defaultMergeStatusFunction`.
+ * @param {Object} site - The site.
+ * @returns {string} NEW or PENDING_VALIDATION.
+ */
+const reopenStatusForSite = (site) => (
+  site.requiresValidation
+    ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+    : SuggestionDataAccess.STATUSES.NEW
+);
+
+/**
+ * True when an asserted (PENDING) fix has gone unconfirmed past the staleness window.
+ * @param {Object} fix - The PENDING FixEntity.
+ * @returns {boolean}
+ */
+const isAssertedFixStale = (fix) => {
+  const executedAt = fix.getExecutedAt();
+  return Boolean(executedAt)
+    && (Date.now() - new Date(executedAt).getTime() > STALE_ASSERTED_FIX_MS);
+};
+
+/**
+ * Reconciles already-`FIXED` vuln suggestions against the current scan, keeping the
+ * (Suggestion, FixEntity) pair consistent (PHASES.md §10). The base rescan-confirmation
+ * sync only touches IN_PROGRESS/NEW suggestions; this pass owns the FIXED ones, joining
+ * each to its active (PENDING/DEPLOYED) fix so the reopen decision is FixEntity-aware:
+ *
+ * - FIXED + PENDING, vuln gone     → asserted fix confirmed: promote PENDING → DEPLOYED
+ *   (+ stamp deployedAt), keep FIXED (§10.2).
+ * - FIXED + DEPLOYED, vuln back    → regression: reopen (NEW / PENDING_VALIDATION on paid)
+ *   and roll the fix DEPLOYED → ROLLED_BACK (§10.3).
+ * - FIXED + PENDING, vuln present, fix fresh → wait (§10.4), no change.
+ * - FIXED + PENDING, vuln present, fix stale → reopen and fail the abandoned fix
+ *   PENDING → FAILED (§10.5).
+ *
+ * Fail-safe: any error fetching the fix entities skips the whole pass for this run rather
+ * than reopen/promote against incomplete data. Reopened suggestions are persisted before
+ * the fix-entity transitions, so a reopen is never lost to a trailing fix-save failure.
+ *
+ * @param {Object} opportunity - The vulnerabilities opportunity.
+ * @param {Array} newData - Canonical data for currently-reported vulns ([] on all-clear).
+ * @param {Object} context - The audit context (provides dataAccess + site).
+ * @param {Object} log - Logger.
+ * @returns {Promise<void>}
+ */
+export async function reconcileFixedVulnSuggestions(opportunity, newData, context, log) {
+  const { dataAccess, site } = context;
+  const { FixEntity, Suggestion } = dataAccess;
+
+  const suggestions = await opportunity.getSuggestions();
+  const fixedSuggestions = suggestions.filter(
+    (s) => s.getStatus() === SuggestionDataAccess.STATUSES.FIXED,
+  );
+  if (fixedSuggestions.length === 0) {
+    return;
+  }
+
+  let fixes;
+  try {
+    fixes = await FixEntity.getAllFixesWithSuggestionsByOpportunityId(opportunity.getId());
+  } catch (e) {
+    log.warn(`[${AUDIT_TYPE}] failed to fetch fix entities for opportunity ${opportunity.getId()}; skipping FIXED reconcile this run: ${e.message}`);
+    return;
+  }
+
+  // Join each suggestion to its active fix. A suggestion can carry historical fixes; only
+  // PENDING (asserted) and DEPLOYED (verified) drive the decisions below.
+  const pendingBySuggestionId = new Map();
+  const deployedBySuggestionId = new Map();
+  for (const { fixEntity, suggestions: linked } of fixes) {
+    const status = fixEntity.getStatus();
+    for (const linkedSuggestion of linked) {
+      if (status === FixEntityDataAccess.STATUSES.PENDING) {
+        pendingBySuggestionId.set(linkedSuggestion.getId(), fixEntity);
+      } else if (status === FixEntityDataAccess.STATUSES.DEPLOYED) {
+        deployedBySuggestionId.set(linkedSuggestion.getId(), fixEntity);
+      }
+    }
+  }
+
+  const presentKeys = new Set(newData.map(buildKey));
+  const reopenStatus = reopenStatusForSite(site);
+
+  const suggestionsToSave = [];
+  const fixesToSave = [];
+  for (const suggestion of fixedSuggestions) {
+    const suggestionId = suggestion.getId();
+    const present = presentKeys.has(buildKey(suggestion.getData()));
+    const deployed = deployedBySuggestionId.get(suggestionId);
+    const pending = pendingBySuggestionId.get(suggestionId);
+
+    if (!present) {
+      // Vuln gone. A DEPLOYED fix is already the correct terminal state; a still-PENDING
+      // asserted fix is now scan-confirmed → promote it, keeping the suggestion FIXED.
+      if (!deployed && pending) {
+        pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
+        pending.setDeployedAt(new Date().toISOString());
+        fixesToSave.push(pending);
+      }
+    } else if (deployed) {
+      // Regression: a verified-fixed vuln reappeared → reopen + roll the fix back.
+      suggestion.setStatus(reopenStatus);
+      suggestion.setUpdatedBy('system');
+      suggestionsToSave.push(suggestion);
+      deployed.setStatus(FixEntityDataAccess.STATUSES.ROLLED_BACK);
+      fixesToSave.push(deployed);
+    } else if (pending && isAssertedFixStale(pending)) {
+      // Asserted fix never confirmed past the staleness window while the vuln persists →
+      // reopen + fail the abandoned fix.
+      suggestion.setStatus(reopenStatus);
+      suggestion.setUpdatedBy('system');
+      suggestionsToSave.push(suggestion);
+      pending.setStatus(FixEntityDataAccess.STATUSES.FAILED);
+      fixesToSave.push(pending);
+    }
+    // else: present + fresh PENDING (wait) or present + no active fix → no change.
+  }
+
+  // Persist reopens first so a trailing fix-save failure can't strand a reopened
+  // suggestion in a stuck FIXED state on the next audit.
+  if (suggestionsToSave.length > 0) {
+    await Suggestion.saveMany(suggestionsToSave);
+  }
+  if (fixesToSave.length > 0) {
+    await FixEntity.saveMany(fixesToSave);
   }
 }
 
@@ -365,6 +507,11 @@ async function syncVulnSuggestions(opportunity, newData, context, log) {
     resolveFixEntities:
         (fixedSuggestions, opp) => promoteVulnFixEntities(fixedSuggestions, opp, context),
   });
+
+  // §10: the base sync above only moves IN_PROGRESS/NEW suggestions. Now reconcile the
+  // already-FIXED ones against this same scan — promote asserted fixes whose vuln is gone,
+  // and reopen regressions / stale-unconfirmed asserts whose vuln is still present.
+  await reconcileFixedVulnSuggestions(opportunity, newData, context, log);
 }
 
 /**
