@@ -151,7 +151,7 @@ export default async function brandClaimsHandler(message, context) {
   const {
     log, sqs, dataAccess, s3Client, env,
   } = context;
-  const { siteId, onDemand } = message;
+  const { siteId, onDemand, topics } = message;
 
   if (!hasText(siteId)) {
     log.warn('brand-claims: message missing siteId');
@@ -239,6 +239,13 @@ export default async function brandClaimsHandler(message, context) {
     parent_job_id: null,
     batch_id: null,
   };
+
+  // Optional topic filter (LLMO-7263): pass the selected topics through to the
+  // Brand Claims consumer, which scopes the run to claims for those topics.
+  // Absent/empty means all topics (default weekly behavior).
+  if (Array.isArray(topics) && topics.length > 0) {
+    event.topics = topics;
+  }
 
   await sqs.sendMessage(queueUrl, event);
   log.info(`brand-claims: published ready-signal for site ${resolvedSiteId} (brand "${brand.name}"), s3_key=${sheet.key}`);

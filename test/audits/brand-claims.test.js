@@ -211,7 +211,10 @@ describe('Brand Claims audit handler', function () {
         IsTruncated: false,
       });
 
-      const res = await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID, onDemand: true }, buildContext());
+      const res = await brandClaimsHandler(
+        { type: 'brand-claims', siteId: SITE_ID, onDemand: true, topics: ['Pricing', 'Support'] },
+        buildContext(),
+      );
 
       expect(res.status).to.equal(200);
       expect(log.info).to.not.have.been.calledWithMatch('not enabled for claims');
@@ -219,6 +222,21 @@ describe('Brand Claims audit handler', function () {
       const [, event] = sqs.sendMessage.firstCall.args;
       expect(event.on_demand).to.equal(true);
       expect(event.event_type).to.equal('BRAND_PRESENCE_SHEET_WRITTEN');
+      // Topic filter (LLMO-7263) is passed through to the consumer.
+      expect(event.topics).to.deep.equal(['Pricing', 'Support']);
+    });
+
+    it('does not stamp topics when none are provided (empty array)', async () => {
+      const prefix = `${SITE_ID}/acmecorp/analytics/chatgpt_free`;
+      s3Client.send.resolves({
+        Contents: [{ Key: `${prefix}/2026/01/05/bp-w2-2026.xlsx`, LastModified: new Date('2026-01-05T00:00:00Z') }],
+        IsTruncated: false,
+      });
+
+      await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID, topics: [] }, buildContext());
+
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event).to.not.have.property('topics');
     });
   });
 
