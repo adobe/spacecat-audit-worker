@@ -133,12 +133,107 @@ export async function getDomainWideReconciliationCandidates(context, siteId, sit
 }
 
 /**
+ * Partitions this run's comparisons into deployed/not-deployed identity keys (same key as
+ * buildSuggestionKey — each suggestion reconciled against its own result only). On a
+ * same-key disagreement this run, positive confirmation wins.
+ * @param {Array} successfulComparisons - This run's non-error comparison results
+ * @returns {{deployedAtEdgeKeys: Set<string>, notDeployedKeys: Set<string>}}
+ */
+function partitionComparisonResults(successfulComparisons) {
+  const deployedAtEdgeKeys = new Set();
+  const notDeployedKeys = new Set();
+  successfulComparisons.forEach((r) => {
+    (r.isDeployedAtEdge ? deployedAtEdgeKeys : notDeployedKeys)
+      .add(normalizePathnameWithQuery(r.url));
+  });
+  deployedAtEdgeKeys.forEach((key) => notDeployedKeys.delete(key));
+  return { deployedAtEdgeKeys, notDeployedKeys };
+}
+
+/**
+ * Add branch: NEW suggestions confirmed deployed at edge this run get `coveredByDomainWide`
+ * set. No-op (returns []) when no domain-wide suggestion is currently deployed.
+ * @param {Array} suggestions - All suggestions on the opportunity
+ * @param {Object|null} domainWideSuggestion - The active deployed domain-wide suggestion, if any
+ * @param {Set<string>} deployedAtEdgeKeys - Identity keys confirmed deployed this run
+ * @param {{log: Object, baseUrl: string, siteId: string}} logCtx
+ * @returns {Array} Suggestions mutated (and needing save)
+ */
+function computeSuggestionsToCover(suggestions, domainWideSuggestion, deployedAtEdgeKeys, {
+  log, baseUrl, siteId,
+}) {
+  if (!domainWideSuggestion) {
+    return [];
+  }
+  const domainWideSuggestionId = domainWideSuggestion.getId();
+  // Domain-wide suggestion is always NEW, so newSuggestions is never empty here.
+  const newSuggestions = suggestions.filter((s) => s.getStatus() === Suggestion.STATUSES.NEW);
+
+  // Path and domain-wide suggestions have no url field — guard before normalizing.
+  const urlSuggestionsToCover = deployedAtEdgeKeys.size > 0
+    ? newSuggestions.filter((s) => {
+      const data = s.getData();
+      if (!data?.url) {
+        return false;
+      }
+      return deployedAtEdgeKeys.has(normalizePathnameWithQuery(data.url))
+        && !data?.edgeDeployed
+        && !data?.coveredByDomainWide;
+    })
+    : [];
+
+  // Path suggestions are redundant while domain-wide (/*) is active — cover unconditionally.
+  const pathSuggestionsToCover = newSuggestions.filter((s) => {
+    const data = s.getData();
+    return isPathSuggestionData(data) && !data?.edgeDeployed && !data?.coveredByDomainWide;
+  });
+
+  const toCover = [...urlSuggestionsToCover, ...pathSuggestionsToCover];
+  if (toCover.length === 0) {
+    log.info(`${LOG_PREFIX} syncCoveredByDomainWide: no NEW suggestions to cover. `
+      + `baseUrl=${baseUrl}, siteId=${siteId}`);
+  } else {
+    toCover.forEach((s) => {
+      s.setData({
+        ...s.getData(),
+        coveredByDomainWide: domainWideSuggestionId,
+      });
+      s.setUpdatedBy('system');
+    });
+    log.info(`${LOG_PREFIX} All domain deployed: marking ${urlSuggestionsToCover.length} `
+      + `per-URL and ${pathSuggestionsToCover.length} path suggestions as coveredByDomainWide. `
+      + `baseUrl=${baseUrl}, siteId=${siteId}`);
+  }
+  return toCover;
+}
+
+/**
+ * Remove branch: any suggestion currently `coveredByDomainWide` and confirmed NOT deployed
+ * this run has the flag cleared — no grace period, any status.
+ * @param {Array} suggestions - All suggestions on the opportunity
+ * @param {Set<string>} notDeployedKeys - Identity keys confirmed not deployed this run
+ * @returns {Array} Suggestions mutated (and needing save)
+ */
+function computeSuggestionsToClear(suggestions, notDeployedKeys) {
+  const toClear = suggestions.filter((s) => {
+    const data = s.getData();
+    return !!data?.coveredByDomainWide
+      && isIndividualUrlSuggestionData(data)
+      && notDeployedKeys.has(normalizePathnameWithQuery(data.url));
+  });
+  toClear.forEach((s) => {
+    // eslint-disable-next-line no-unused-vars
+    const { coveredByDomainWide, ...rest } = s.getData();
+    s.setData(rest);
+    s.setUpdatedBy('system');
+  });
+  return toClear;
+}
+
+/**
  * Reconciles `coveredByDomainWide` against this run's confirmed edge state (LLMO-7052).
- * One fetch, one save:
- *  - Add: NEW suggestions confirmed deployed at edge this run get `coveredByDomainWide` set.
- *  - Remove: any suggestion confirmed NOT deployed this run has the flag cleared, no grace
- *    period.
- * Save failures are logged and swallowed — non-fatal, doesn't fail the audit run.
+ * One fetch, one save. Save failures are logged and swallowed — non-fatal, doesn't fail the
+ * audit run.
  * @param {Object|null} opportunity - Opportunity entity (no-op if null)
  * @param {Object} context - Audit context (dataAccess, log, site)
  * @param {Array} successfulComparisons - This run's non-error comparison results
@@ -160,71 +255,12 @@ export async function syncCoveredByDomainWide(opportunity, context, successfulCo
   log.info(`${LOG_PREFIX} syncCoveredByDomainWide: isAllDomainDeployedAtEdge=`
     + `${!!domainWideSuggestion}, baseUrl=${baseUrl}`);
 
-  // Same key as buildSuggestionKey — each suggestion reconciled against its own result only.
-  const deployedAtEdgeKeys = new Set();
-  const notDeployedKeys = new Set();
-  successfulComparisons.forEach((r) => {
-    (r.isDeployedAtEdge ? deployedAtEdgeKeys : notDeployedKeys)
-      .add(normalizePathnameWithQuery(r.url));
+  const { deployedAtEdgeKeys, notDeployedKeys } = partitionComparisonResults(successfulComparisons);
+
+  const toCover = computeSuggestionsToCover(suggestions, domainWideSuggestion, deployedAtEdgeKeys, {
+    log, baseUrl, siteId,
   });
-  // On a same-key disagreement this run, positive confirmation wins.
-  deployedAtEdgeKeys.forEach((key) => notDeployedKeys.delete(key));
-
-  const toCover = [];
-  if (domainWideSuggestion) {
-    const domainWideSuggestionId = domainWideSuggestion.getId();
-    // Domain-wide suggestion is always NEW, so newSuggestions is never empty here.
-    const newSuggestions = suggestions.filter((s) => s.getStatus() === Suggestion.STATUSES.NEW);
-
-    // Path and domain-wide suggestions have no url field — guard before normalizing.
-    const urlSuggestionsToCover = deployedAtEdgeKeys.size > 0
-      ? newSuggestions.filter((s) => {
-        const data = s.getData();
-        if (!data?.url) {
-          return false;
-        }
-        return deployedAtEdgeKeys.has(normalizePathnameWithQuery(data.url))
-          && !data?.edgeDeployed
-          && !data?.coveredByDomainWide;
-      })
-      : [];
-
-    // Path suggestions are redundant while domain-wide (/*) is active — cover unconditionally.
-    const pathSuggestionsToCover = newSuggestions.filter((s) => {
-      const data = s.getData();
-      return isPathSuggestionData(data) && !data?.edgeDeployed && !data?.coveredByDomainWide;
-    });
-
-    toCover.push(...urlSuggestionsToCover, ...pathSuggestionsToCover);
-    if (toCover.length === 0) {
-      log.info(`${LOG_PREFIX} syncCoveredByDomainWide: no NEW suggestions to cover. `
-        + `baseUrl=${baseUrl}, siteId=${siteId}`);
-    } else {
-      toCover.forEach((s) => {
-        s.setData({
-          ...s.getData(),
-          coveredByDomainWide: domainWideSuggestionId,
-        });
-        s.setUpdatedBy('system');
-      });
-      log.info(`${LOG_PREFIX} All domain deployed: marking ${urlSuggestionsToCover.length} `
-        + `per-URL and ${pathSuggestionsToCover.length} path suggestions as coveredByDomainWide. `
-        + `baseUrl=${baseUrl}, siteId=${siteId}`);
-    }
-  }
-
-  const toClear = suggestions.filter((s) => {
-    const data = s.getData();
-    return !!data?.coveredByDomainWide
-      && isIndividualUrlSuggestionData(data)
-      && notDeployedKeys.has(normalizePathnameWithQuery(data.url));
-  });
-  toClear.forEach((s) => {
-    // eslint-disable-next-line no-unused-vars
-    const { coveredByDomainWide, ...rest } = s.getData();
-    s.setData(rest);
-    s.setUpdatedBy('system');
-  });
+  const toClear = computeSuggestionsToClear(suggestions, notDeployedKeys);
 
   const toSave = [...toCover, ...toClear];
   if (toSave.length === 0) {
