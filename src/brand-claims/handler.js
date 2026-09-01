@@ -151,7 +151,7 @@ export default async function brandClaimsHandler(message, context) {
   const {
     log, sqs, dataAccess, s3Client, env,
   } = context;
-  const { siteId } = message;
+  const { siteId, onDemand } = message;
 
   if (!hasText(siteId)) {
     log.warn('brand-claims: message missing siteId');
@@ -199,7 +199,11 @@ export default async function brandClaimsHandler(message, context) {
   // enable-brand-claims Slack command) for the sites we want weekly claims on. A disabled
   // brand is skipped entirely — no ready-signal is published, so no claims are (re)generated
   // for sites we don't want to touch.
-  if (!brand.brand_claims_enabled) {
+  // On-demand runs (LLMO-7263) bypass the per-brand enable gate: the request is an
+  // explicit one-shot, and the emitted event carries on_demand=true so the Brand
+  // Claims consumer also bypasses its own enablement gate for this single event.
+  // The weekly (non-on-demand) path stays gated as before.
+  if (!brand.brand_claims_enabled && onDemand !== true) {
     log.info(`brand-claims: brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId} is not enabled for claims — skipping run`);
     return ok();
   }
@@ -231,6 +235,7 @@ export default async function brandClaimsHandler(message, context) {
     platform: BP_PLATFORM,
     s3_bucket: drsBpBucket,
     s3_key: sheet.key,
+    on_demand: onDemand === true,
     parent_job_id: null,
     batch_id: null,
   };

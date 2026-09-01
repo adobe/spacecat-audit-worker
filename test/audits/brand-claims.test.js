@@ -200,6 +200,26 @@ describe('Brand Claims audit handler', function () {
       expect(log.warn).to.have.been.calledWithMatch('no Brand Presence sheet');
       expect(sqs.sendMessage).to.not.have.been.called;
     });
+
+    it('on_demand bypasses the enable gate for a disabled brand and stamps on_demand=true', async () => {
+      // Disabled brand + onDemand=true → runs anyway and marks the event on-demand
+      // (LLMO-7263), so the Brand Claims consumer bypasses its gate for this event.
+      selectResult = { data: [{ id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: false }], error: null };
+      const prefix = `${SITE_ID}/acmecorp/analytics/chatgpt_free`;
+      s3Client.send.resolves({
+        Contents: [{ Key: `${prefix}/2026/01/05/bp-w2-2026.xlsx`, LastModified: new Date('2026-01-05T00:00:00Z') }],
+        IsTruncated: false,
+      });
+
+      const res = await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID, onDemand: true }, buildContext());
+
+      expect(res.status).to.equal(200);
+      expect(log.info).to.not.have.been.calledWithMatch('not enabled for claims');
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.on_demand).to.equal(true);
+      expect(event.event_type).to.equal('BRAND_PRESENCE_SHEET_WRITTEN');
+    });
   });
 
   describe('error propagation (SQS retry)', () => {
@@ -289,6 +309,7 @@ describe('Brand Claims audit handler', function () {
         platform: 'chatgpt_free',
         s3_bucket: 'drs-bp-bucket',
         s3_key: `${prefix}/2026/01/05/bp-w2-2026-030405.xlsx`,
+        on_demand: false,
         parent_job_id: null,
         batch_id: null,
       });
