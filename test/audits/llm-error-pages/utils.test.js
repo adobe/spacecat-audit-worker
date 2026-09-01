@@ -1569,6 +1569,43 @@ describe('LLM Error Pages Utils', () => {
     it('returns empty array for empty input', () => {
       expect(groupErrorsByUrl([])).to.deep.equal([]);
     });
+
+    it('normalizes country codes via validateCountryCode (LLMO-7230)', () => {
+      const result = groupErrorsByUrl([
+        {
+          url: '/valid', status: 404, total_requests: 1, country_code: 'us',
+        },
+        {
+          url: '/lang', status: 404, total_requests: 1, country_code: 'VI',
+        },
+        {
+          url: '/junk', status: 404, total_requests: 1, country_code: 'ZZ',
+        },
+        {
+          url: '/missing', status: 404, total_requests: 1,
+        },
+      ]);
+
+      // valid ISO country code is kept (and upper-cased)
+      expect(result.find((r) => r.url === '/valid').countryCode).to.equal('US');
+      // language-collision code (VI = Vietnamese /vi/, not US Virgin Islands) → GLOBAL
+      expect(result.find((r) => r.url === '/lang').countryCode).to.equal('GLOBAL');
+      // non-ISO junk collapses to GLOBAL
+      expect(result.find((r) => r.url === '/junk').countryCode).to.equal('GLOBAL');
+      // absent country_code collapses to GLOBAL
+      expect(result.find((r) => r.url === '/missing').countryCode).to.equal('GLOBAL');
+    });
+
+    it('applies the per-site country ignore list', () => {
+      const errors = [{
+        url: '/pa', status: 404, total_requests: 1, country_code: 'PA',
+      }];
+
+      // without the site ignore list, PA (Panama) is genuine traffic
+      expect(groupErrorsByUrl(errors)[0].countryCode).to.equal('PA');
+      // with PA in the site ignore list (e.g. Zee5's Punjabi /pa/), it collapses
+      expect(groupErrorsByUrl(errors, ['PA'])[0].countryCode).to.equal('GLOBAL');
+    });
   });
 
   describe('parsePeriodIdentifier', () => {

@@ -472,6 +472,12 @@ export async function runAuditAndSendToMystique(context) {
           });
         }
 
+        // Per-site country codes to force to 'GLOBAL' (LLMO-7230); same source
+        // the cdn-logs-report agentic-traffic mapper reads. Passed into
+        // groupErrorsByUrl so both the DB suggestions and the Mystique
+        // observation message get normalized country codes.
+        const siteCountryIgnoreList = site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
+
         await Promise.allSettled(STATUS_BUCKETS.map(async ({ code, auditType, suggestionType }) => {
           try {
             const rawAll = categorizedResults[code] || [];
@@ -480,7 +486,7 @@ export async function runAuditAndSendToMystique(context) {
             let scrapedUrls = new Set();
 
             if (rawErrors.length > 0) {
-              const groupedErrors = groupErrorsByUrl(rawErrors);
+              const groupedErrors = groupErrorsByUrl(rawErrors, siteCountryIgnoreList);
               scrapedUrls = new Set(groupedErrors.map((e) => e.url));
 
               const opportunity = await convertToOpportunity(
@@ -675,7 +681,7 @@ export async function runAuditAndSendToMystique(context) {
               // keyed by the raw `url` so the helper can look them up while it
               // re-groups sorted404 into the observation wire shape.
               const facetsByUrl = new Map(
-                groupErrorsByUrl(errors404).map((r) => [r.url, r]),
+                groupErrorsByUrl(errors404, siteCountryIgnoreList).map((r) => [r.url, r]),
               );
               await publishObservationLlmBrokenUrls({
                 sorted404,
