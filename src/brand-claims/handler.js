@@ -25,8 +25,9 @@ const BP_PLATFORM = 'chatgpt_free';
  * (LLMO-7177): the field is OPTIONAL and defaults to `brand_presence_s3` when absent (so a
  * pre-7177 consumer is unaffected). BOTH branches now stamp it explicitly — the DRS branch
  * with `brand_presence_s3`, the Semrush branch with `semrush_feed` — so Mystique can read
- * it to source the right feed (the DRS BP `.xlsx` in S3 vs the Semrush URL-Inspector feed
- * keyed by `domain`) without relying on the absent-means-DRS default.
+ * it to source the right feed (the DRS BP `.xlsx` in S3 vs the Semrush feed, scoped
+ * downstream from `organization_id` + `brand_id` via the Serenity proxy) without relying
+ * on the absent-means-DRS default.
  */
 const INGEST_SOURCE_DRS = 'brand_presence_s3';
 const INGEST_SOURCE_SEMRUSH = 'semrush_feed';
