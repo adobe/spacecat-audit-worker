@@ -53,6 +53,7 @@ describe('offsite-logging helper', () => {
         YOUTUBE: 'youtube',
         WIKIPEDIA: 'wikipedia',
         BRAND_PRESENCE: 'brand-presence',
+        BRAND_CLAIMS: 'brand-claims',
       });
       expect(OUTCOME).to.deep.equal({
         START: 'start', SUCCESS: 'success', FAILURE: 'failure', SKIP: 'skip', DEGRADED: 'degraded',

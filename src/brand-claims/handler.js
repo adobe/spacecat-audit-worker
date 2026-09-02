@@ -13,9 +13,76 @@
 import crypto from 'crypto';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { hasText } from '@adobe/spacecat-shared-utils';
+import { hasText, isoCalendarWeek } from '@adobe/spacecat-shared-utils';
+import { resolveSemrushEntitlement } from '../utils/semrush-entitlement.js';
+import { resolveEnableSemrush } from '../utils/offsite-audit-utils.js';
+import { createOffsiteLogger, AUDIT } from '../utils/offsite-logging.js';
 
 const BP_PLATFORM = 'chatgpt_free';
+
+/**
+ * `ingest_source` values on the `BRAND_PRESENCE_SHEET_WRITTEN` event. Additive contract
+ * (LLMO-7177): the field is OPTIONAL and defaults to `brand_presence_s3` when absent (so a
+ * pre-7177 consumer is unaffected). BOTH branches now stamp it explicitly — the DRS branch
+ * with `brand_presence_s3`, the Semrush branch with `semrush_feed` — so Mystique can read
+ * it to source the right feed (the DRS BP `.xlsx` in S3 vs the Semrush feed, scoped
+ * downstream from `organization_id` + `brand_id` via the Serenity proxy) without relying
+ * on the absent-means-DRS default.
+ */
+const INGEST_SOURCE_DRS = 'brand_presence_s3';
+const INGEST_SOURCE_SEMRUSH = 'semrush_feed';
+
+/**
+ * Cadence stamped on the Semrush-branch event. Claims runs on a weekly cadence (see
+ * `isMondayPartition`), and the `brands` projection (`getBrandForSite`) selects no cadence
+ * column — there is none today — so the value is a fixed default. When a per-brand `cadence`
+ * column is added to `brands`, extend that projection AND read it here (do not read
+ * `brand.cadence` today: it is always `undefined`).
+ */
+const BRAND_CLAIMS_DEFAULT_CADENCE = 'weekly';
+
+/**
+ * Coerces a Slack-delivered `week`/`year` override to a bounded positive integer, or
+ * `undefined` when absent/invalid. Slack custom args arrive as strings, so numeric strings
+ * are accepted alongside real numbers; anything outside the sane bound is rejected (treated
+ * as "not supplied") rather than trusted.
+ *
+ * @param {number|string} raw
+ * @param {number} min
+ * @param {number} max
+ * @returns {number|undefined}
+ */
+function toBoundedInt(raw, min, max) {
+  if (raw === undefined || raw === null || raw === '') {
+    return undefined;
+  }
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    return undefined;
+  }
+  return n;
+}
+
+/**
+ * Resolves the `(week, year)` the Semrush run is FOR. Prefers an explicit run window from
+ * `auditContext.messageData` (`week`+`year`, tri-state like `enableSemrush`: both must be
+ * present and valid to override), so a retry / DLQ redrive that crosses the UTC ISO-week
+ * boundary re-emits the SAME bucket for the same run rather than drifting to a new week.
+ * Falls back to the current ISO week when no valid explicit window is supplied.
+ *
+ * @param {object} [auditContext] - `message.auditContext`
+ * @returns {{week: number, year: number}}
+ */
+function resolveRunWeekYear(auditContext) {
+  const md = auditContext?.messageData ?? {};
+  const week = toBoundedInt(md.week, 1, 53);
+  const year = toBoundedInt(md.year, 2000, 9999);
+  if (week !== undefined && year !== undefined) {
+    return { week, year };
+  }
+  return isoCalendarWeek(new Date());
+}
+
 const SHEET_FILENAME_RE = /-w(\d{1,2})-(\d{4})(?:-(\d{6}))?\.xlsx$/i;
 const KEY_DATE_RE = /\/(\d{4})\/(\d{2})\/(\d{2})\//;
 const MAX_LISTING_PAGES = 10;
@@ -205,6 +272,64 @@ export default async function brandClaimsHandler(message, context) {
   }
 
   const brandSlug = sanitizePathComponent(brand.name);
+
+  // Per-site DRS-vs-Semrush decision (LLMO-7177). Default is the DRS Brand Presence sheet;
+  // Semrush is chosen only when it is enabled for this run AND the brand is entitled to it.
+  // The per-run Slack override (`enableSemrush`) takes precedence over the env flag, mirroring
+  // offsite-brand-presence's `resolveEnableSemrush` pattern. Anything else — disabled,
+  // non-entitled, or an inconclusive entitlement check — falls back to the unchanged DRS path,
+  // so a Semrush hiccup can never zero out a site that has a DRS sheet. This runs BEFORE the
+  // `brandSlug` guard: the Semrush feed carries no S3 brand-slug path component (the downstream
+  // Serenity proxy resolves workspace/project/market from `organization_id` + `brand_id`, both
+  // already on the event), so a brand whose name sanitizes to empty can still run on the feed path.
+  const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_CLAIMS, siteId: resolvedSiteId });
+  const enableSemrushOverride = resolveEnableSemrush(message?.auditContext ?? {}, olog);
+  const semrushEnabled = enableSemrushOverride
+    ?? (env?.BRAND_CLAIMS_SEMRUSH_ENABLED === 'true');
+
+  if (semrushEnabled) {
+    const entitlement = await resolveSemrushEntitlement(context, {
+      orgId: organizationId, brandId: brand.id,
+    });
+    if (entitlement.entitled) {
+      // Replay-stable window: an explicit `week`/`year` (Slack override / redrive) is used
+      // verbatim, else the current ISO week — so a DLQ redrive across the week boundary does
+      // not re-bucket the same run.
+      const { week, year } = resolveRunWeekYear(message?.auditContext);
+      // No `domain`: it is a per-market concept (each market has its own domain, the brand has
+      // none), and the Serenity proxy resolves workspace/project/market from `organization_id`
+      // + `brand_id` downstream — a brand-primary-site domain would mis-bind multi-market brands
+      // (mysticat-architecture#248 correction).
+      const event = {
+        event_type: 'BRAND_PRESENCE_SHEET_WRITTEN',
+        schema_version: 1,
+        organization_id: organizationId,
+        brand_id: brand.id,
+        brand: brandSlug,
+        site_id: resolvedSiteId,
+        week,
+        year,
+        cadence: BRAND_CLAIMS_DEFAULT_CADENCE,
+        sheet_date: null,
+        platform: BP_PLATFORM,
+        s3_bucket: null,
+        s3_key: null,
+        ingest_source: INGEST_SOURCE_SEMRUSH,
+        parent_job_id: null,
+        batch_id: null,
+      };
+
+      await sqs.sendMessage(queueUrl, event);
+      log.info(`brand-claims: published Semrush-feed ready-signal for site ${resolvedSiteId} (brand "${brand.name}"), week=${week}, year=${year}`);
+      return ok();
+    }
+    // resolved:true = confirmed non-entitlement (flag off / no workspace); resolved:false =
+    // inconclusive (no client / transient error). Both fall back to DRS — the entitlement
+    // helper already logs the granular reason.
+    log.info(`brand-claims: brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId} is not Semrush-entitled (reason=${entitlement.reason}, resolved=${entitlement.resolved}) — falling back to the DRS sheet`);
+  }
+
+  // DRS branch requires the S3 brand-slug path component; an empty slug cannot address a sheet.
   if (!brandSlug) {
     log.warn(`brand-claims: brand name "${brand.name}" (${brand.id}) sanitizes to an empty S3 path component — cannot look up its sheet`);
     return ok();
@@ -231,6 +356,7 @@ export default async function brandClaimsHandler(message, context) {
     platform: BP_PLATFORM,
     s3_bucket: drsBpBucket,
     s3_key: sheet.key,
+    ingest_source: INGEST_SOURCE_DRS,
     parent_job_id: null,
     batch_id: null,
   };
