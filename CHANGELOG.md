@@ -1,3 +1,10 @@
+# [1.532.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.531.0...v1.532.0) (2026-09-02)
+
+
+### Features
+
+* **brand-claims:** forward enrichment mode on the ready-signal (LLMO-7312) ([#2937](https://github.com/adobe/spacecat-audit-worker/issues/2937)) ([75b982c](https://github.com/adobe/spacecat-audit-worker/commit/75b982c4c8fac8121611dbc94615f65620c2aa9c)), closes [experience-platform/mystique#4804](https://github.com/experience-platform/mystique/issues/4804)
+
 # [1.531.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.530.1...v1.531.0) (2026-09-02)
 
 
