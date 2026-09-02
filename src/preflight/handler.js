@@ -457,6 +457,21 @@ export const preflightAudit = async (context) => {
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const anyProcessing = handlerResults.some((r) => r && r.processing === true);
+
+    // Race guard: when a check dispatches async work to Mystique (processing),
+    // its guidance response is handled on a separate SQS invocation that marks
+    // this job COMPLETED once all responses land. If Mystique responds before
+    // the remaining checks here finish, the job is already COMPLETED by the time
+    // we reach this terminal write. Writing IN_PROGRESS (or overwriting the
+    // guidance-enriched result) would clobber that completion — and because
+    // save() is a dirty-field patch, it would leave `endedAt` set while
+    // reverting `status`, stranding the job. Leave a completed job untouched.
+    if (jobEntity.getStatus() === AsyncJob.Status.COMPLETED) {
+      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. `
+        + 'Job already COMPLETED by guidance response; skipping terminal status write.');
+      return;
+    }
+
     jobEntity.setResultType(AsyncJob.ResultType.INLINE);
     jobEntity.setResult(resultWithProfiling);
     if (anyProcessing) {

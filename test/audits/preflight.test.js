@@ -759,6 +759,7 @@ describe('Preflight Audit', () => {
 
       context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
         getId: () => 'job-123',
+        getStatus: () => 'IN_PROGRESS',
         setResult: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
@@ -820,6 +821,7 @@ describe('Preflight Audit', () => {
         context.dataAccess.AsyncJob.findById = sinon.stub().resolves({
           getId: () => 'job-123',
           getMetadata: () => ({ payload: {} }),
+          getStatus: () => 'IN_PROGRESS',
           setResult: sinon.stub(),
           setStatus: sinon.stub(),
           setResultType: sinon.stub(),
@@ -966,6 +968,95 @@ describe('Preflight Audit', () => {
         ...expected,
         profiling: actualResult[0].profiling, // Use actual profiling data
       })));
+    });
+
+    it('does not revert an already-COMPLETED job back to IN_PROGRESS when a guidance response won the race', async () => {
+      // Regression: the readability suggest step dispatches to Mystique during
+      // the check reduce and returns { processing: true }. When Mystique
+      // responds fast, the guidance handler marks the AsyncJob COMPLETED before
+      // this handler reaches its terminal write. The terminal write must NOT
+      // clobber that COMPLETED status back to IN_PROGRESS.
+      context.promiseToken = 'mock-promise-token';
+      const head = '<head><a href="https://example.com/header-url"/></head>';
+      const body = '<body><a href="https://example.com/broken"></a><h1>Page 1 H1</h1></body>';
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [{ Key: 'scrapes/site-123/page1/scrape.json' }],
+            IsTruncated: false,
+          });
+        }
+        return Promise.resolve({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sinon.stub().resolves(JSON.stringify({
+              scrapeResult: {
+                rawBody: html.replaceAll('https://example.com', 'https://main--example--page.aem.page'),
+                canonical: {
+                  exists: true,
+                  count: 1,
+                  href: 'https://main--example--page.aem.page/wrong',
+                  inHead: true,
+                },
+                tags: {
+                  title: 'Page 1 Title',
+                  description: 'Page 1 Description',
+                  h1: ['Page 1 H1'],
+                },
+              },
+              finalUrl: 'https://main--example--page.aem.page/page1',
+              scrapedAt: Date.now(),
+            })),
+          },
+        });
+      });
+
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_SUGGEST,
+          urls: ['https://main--example--page.aem.page/page1'],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(true);
+      genvarClient.generateSuggestions.resolves({ '/page1': {} });
+
+      // Re-mock the handler so every check is a no-op except readability, which
+      // reports async processing (i.e. it dispatched work to Mystique).
+      const { preflightAudit: racedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/preflight/canonical.js': { default: sinon.stub().resolves({}) },
+        '../../src/preflight/metatags.js': { default: sinon.stub().resolves({}) },
+        '../../src/preflight/links.js': { default: sinon.stub().resolves({}) },
+        '../../src/preflight/headings.js': { default: sinon.stub().resolves({}) },
+        '../../src/preflight/accessibility.js': { default: sinon.stub().resolves() },
+        '../../src/preflight/form-accessibility.js': { default: sinon.stub().resolves() },
+        '../../src/readability/preflight/handler.js': { default: sinon.stub().resolves({ processing: true }) },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
+        },
+      });
+
+      // Simulate the guidance handler having already completed the job: the
+      // terminal findById returns a job whose status is COMPLETED.
+      context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
+        getId: () => 'job-123',
+        getMetadata: () => ({ payload: {} }),
+        getStatus: () => 'COMPLETED',
+        setResult: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setMetadata: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      }));
+
+      await racedPreflightAudit(context);
+
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      expect(finalJobEntity.setStatus).to.not.have.been.calledWith('IN_PROGRESS');
     });
 
     it('completes successfully on the happy path for the suggest step for the root page', async () => {
@@ -1656,6 +1747,7 @@ describe('Preflight Audit', () => {
         findByIdCallCount += 1;
         return Promise.resolve({
           getId: () => 'job-123',
+          getStatus: () => 'IN_PROGRESS',
           setResult: sinon.stub(),
           setStatus: sinon.stub(),
           setResultType: sinon.stub(),
@@ -1934,6 +2026,7 @@ describe('Preflight Audit', () => {
 
       mockContext.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
         getId: () => 'job-123',
+        getStatus: () => 'IN_PROGRESS',
         setResult: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
@@ -2013,6 +2106,7 @@ describe('Preflight Audit', () => {
 
       mockContext.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
         getId: () => 'job-123',
+        getStatus: () => 'IN_PROGRESS',
         setResult: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
@@ -5014,6 +5108,7 @@ describe('Preflight Audit', () => {
 
       const jobEntity = {
         getMetadata: sinon.stub().returns(job.getMetadata()),
+        getStatus: () => 'IN_PROGRESS',
         setMetadata: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
@@ -5075,6 +5170,7 @@ describe('Preflight Audit', () => {
 
       const jobEntity = {
         getMetadata: sinon.stub().returns(job.getMetadata()),
+        getStatus: () => 'IN_PROGRESS',
         setMetadata: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
