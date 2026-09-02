@@ -1,3 +1,17 @@
+# [1.532.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.531.0...v1.532.0) (2026-09-02)
+
+
+### Features
+
+* **brand-claims:** forward enrichment mode on the ready-signal (LLMO-7312) ([#2937](https://github.com/adobe/spacecat-audit-worker/issues/2937)) ([75b982c](https://github.com/adobe/spacecat-audit-worker/commit/75b982c4c8fac8121611dbc94615f65620c2aa9c)), closes [experience-platform/mystique#4804](https://github.com/experience-platform/mystique/issues/4804)
+
+# [1.531.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.530.1...v1.531.0) (2026-09-02)
+
+
+### Features
+
+* **brand-claims:** on-demand one-shot trial runs (LLMO-7263) ([#2932](https://github.com/adobe/spacecat-audit-worker/issues/2932)) ([aebc00a](https://github.com/adobe/spacecat-audit-worker/commit/aebc00a561c50fe2c3ce96c488976bb1fc36943d))
+
 ## [1.530.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.530.0...v1.530.1) (2026-09-01)
 
 
