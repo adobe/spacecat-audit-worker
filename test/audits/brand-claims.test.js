@@ -224,6 +224,69 @@ describe('Brand Claims audit handler', function () {
     });
   });
 
+  describe('off-site opportunity enrichment mode (LLMO-7312)', () => {
+    const enabledSheet = () => {
+      const prefix = `${SITE_ID}/acmecorp/analytics/chatgpt_free`;
+      s3Client.send.resolves({
+        Contents: [{ Key: `${prefix}/2026/01/05/bp-w2-2026.xlsx`, LastModified: new Date('2026-01-05T00:00:00Z') }],
+        IsTruncated: false,
+      });
+    };
+
+    it('stamps mode=enrich on the event for a top-level mode=enrich message', async () => {
+      enabledSheet();
+      const res = await brandClaimsHandler(
+        { type: 'brand-claims', siteId: SITE_ID, mode: 'enrich' },
+        buildContext(),
+      );
+      expect(res.status).to.equal(200);
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.mode).to.equal('enrich');
+    });
+
+    it('omits mode entirely for a full run (no mode field)', async () => {
+      enabledSheet();
+      await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID }, buildContext());
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event).to.not.have.property('mode');
+    });
+
+    it('treats an unknown mode as a full run (no mode field)', async () => {
+      enabledSheet();
+      await brandClaimsHandler(
+        { type: 'brand-claims', siteId: SITE_ID, mode: 'bogus' },
+        buildContext(),
+      );
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event).to.not.have.property('mode');
+    });
+
+    it('does NOT persist a brand-claims audit row for enrich (preserves on-demand cooldown)', async () => {
+      enabledSheet();
+      const ctx = buildContext();
+      await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID, mode: 'enrich' }, ctx);
+      // The audit row drives the api-service on-demand cooldown + elmo-ui state;
+      // an enrich must not advance it.
+      expect(ctx.dataAccess.Audit.create).to.not.have.been.called;
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+    });
+
+    it('enrich bypasses the enable gate for a disabled brand (like on_demand)', async () => {
+      selectResult = { data: [{ id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: false }], error: null };
+      enabledSheet();
+      const res = await brandClaimsHandler(
+        { type: 'brand-claims', siteId: SITE_ID, mode: 'enrich' },
+        buildContext(),
+      );
+      expect(res.status).to.equal(200);
+      expect(log.info).to.not.have.been.calledWithMatch('not enabled for claims');
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.mode).to.equal('enrich');
+    });
+  });
+
   describe('error propagation (SQS retry)', () => {
     it('throws when the brand lookup query errors', async () => {
       selectResult = { data: null, error: { message: 'boom' } };

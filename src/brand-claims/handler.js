@@ -151,7 +151,11 @@ export default async function brandClaimsHandler(message, context) {
   const {
     log, sqs, dataAccess, s3Client, env,
   } = context;
-  const { siteId, onDemand } = message;
+  // `mode` is a plain top-level message field (mirrors `onDemand`): the api-service
+  // command sets mode='enrich' to request the cache-safe off-site opportunity link
+  // refresh. Anything else is a normal full run.
+  const { siteId, onDemand, mode } = message;
+  const isEnrich = mode === 'enrich';
 
   if (!hasText(siteId)) {
     log.warn('brand-claims: message missing siteId');
@@ -202,8 +206,10 @@ export default async function brandClaimsHandler(message, context) {
   // On-demand runs (LLMO-7263) bypass the per-brand enable gate: the request is an
   // explicit one-shot, and the emitted event carries on_demand=true so the Brand
   // Claims consumer also bypasses its own enablement gate for this single event.
-  // The weekly (non-on-demand) path stays gated as before.
-  if (!brand.brand_claims_enabled && onDemand !== true) {
+  // An off-site opportunity enrichment (LLMO-7312) is likewise an explicit
+  // operator run and carries mode=enrich, so it bypasses the gate too.
+  // The weekly (non-on-demand, full) path stays gated as before.
+  if (!brand.brand_claims_enabled && onDemand !== true && !isEnrich) {
     log.info(`brand-claims: brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId} is not enabled for claims — skipping run`);
     return ok();
   }
@@ -236,6 +242,9 @@ export default async function brandClaimsHandler(message, context) {
     s3_bucket: drsBpBucket,
     s3_key: sheet.key,
     on_demand: onDemand === true,
+    // Only stamp `mode` for enrichment; a full run omits it entirely so its event
+    // stays identical to the DRS weekly emit (mystique treats absent mode as full).
+    ...(isEnrich ? { mode: 'enrich' } : {}),
     parent_job_id: null,
     batch_id: null,
   };
@@ -251,23 +260,30 @@ export default async function brandClaimsHandler(message, context) {
   // Best-effort: the run has already been triggered, so a persistence failure must
   // not fail the handler (fail-open matches the api-service cooldown's own miss
   // handling — a missed record just means the next request isn't throttled).
-  try {
-    await Audit.create({
-      siteId: resolvedSiteId,
-      isLive: site.getIsLive(),
-      auditedAt: new Date().toISOString(),
-      auditType: 'brand-claims',
-      auditResult: {
-        onDemand: onDemand === true,
-        week: sheet.week,
-        year: sheet.year,
-        sheetDate: sheet.sheetDate,
-        sheetKey: sheet.key,
-      },
-      fullAuditRef: sheet.key,
-    });
-  } catch (err) {
-    log.warn(`brand-claims: failed to persist brand-claims audit for site ${resolvedSiteId} (run already triggered): ${err.message}`);
+  //
+  // Enrichment runs (LLMO-7312) are skipped: an off-site opportunity link refresh
+  // is not a claims "run", so it must NOT advance `auditedAt` — doing so would
+  // reset the on-demand cooldown (blocking a subsequent full run) and flip the
+  // elmo-ui cooldown state. The cooldown/UI track full claims runs only.
+  if (!isEnrich) {
+    try {
+      await Audit.create({
+        siteId: resolvedSiteId,
+        isLive: site.getIsLive(),
+        auditedAt: new Date().toISOString(),
+        auditType: 'brand-claims',
+        auditResult: {
+          onDemand: onDemand === true,
+          week: sheet.week,
+          year: sheet.year,
+          sheetDate: sheet.sheetDate,
+          sheetKey: sheet.key,
+        },
+        fullAuditRef: sheet.key,
+      });
+    } catch (err) {
+      log.warn(`brand-claims: failed to persist brand-claims audit for site ${resolvedSiteId} (run already triggered): ${err.message}`);
+    }
   }
 
   return ok();
