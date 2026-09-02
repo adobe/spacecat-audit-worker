@@ -15,6 +15,48 @@ import { syncSuggestions, defaultMergeStatusFunction } from '../utils/data-acces
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit, { THRESHOLDS, METRICS, calculateConfidenceScore } from './kpi-metrics.js';
+import { isHomepage } from './cwv-audit-result.js';
+import { removeTrailingSlash } from '../utils/url-utils.js';
+
+/**
+ * Minimum number of RUM measurements a metric's p75 must be computed from before a
+ * threshold breach is treated as a real, actionable CWV issue (SITES-50756). A p75
+ * derived from a handful of samples is dominated by a single outlier navigation — a bot,
+ * a bot-mitigation challenge, a cold-cache hit — which surfaced as false "Critical" LCP
+ * suggestions on low-traffic pages that Google PSI/CrUX (larger sample-count gate, longer
+ * window) never showed. The homepage is always reported per product decision, so its
+ * suggestions waive this floor; groups and every other page are gated.
+ */
+export const MIN_METRIC_SAMPLES = 10;
+
+/**
+ * Number of measurements behind a metric's p75 for a given device row. A missing count
+ * (legacy data, or a metric not observed on that device) is treated as zero samples.
+ * @param {Object} deviceMetrics - a single device-level metrics object
+ * @param {string} metric - one of lcp / cls / inp
+ * @returns {number}
+ */
+function metricSampleCount(deviceMetrics, metric) {
+  return deviceMetrics[`${metric}Count`] || 0;
+}
+
+/**
+ * A device-level metric is "failing" when its p75 exceeds the good threshold AND — unless
+ * the sample floor is waived (homepage) — it is backed by at least MIN_METRIC_SAMPLES
+ * measurements. Null/undefined values are treated as passing (no data = not failing).
+ * @param {Object} deviceMetrics - a single device-level metrics object
+ * @param {string} metric - one of lcp / cls / inp
+ * @param {boolean} enforceMinSamples - when true, a threshold breach below the sample
+ *   floor is treated as passing (noise); when false the floor is waived
+ * @returns {boolean}
+ */
+function isDeviceMetricFailing(deviceMetrics, metric, enforceMinSamples) {
+  const value = deviceMetrics[metric];
+  if (value === null || value === undefined || value <= THRESHOLDS[metric]) {
+    return false;
+  }
+  return !enforceMinSamples || metricSampleCount(deviceMetrics, metric) >= MIN_METRIC_SAMPLES;
+}
 
 /**
  * Per-issue statuses that should NOT be removed when re-audit detects a metric
@@ -34,32 +76,56 @@ const ISSUE_STATUSES_TO_PRESERVE = new Set([
 
 /**
  * Returns true if the CWV entry has at least one metric that exceeds the "good" threshold
- * on any device type. Null/undefined metric values are treated as passing (no data = not failing).
+ * on any device type. Null/undefined metric values are treated as passing (no data = not
+ * failing). By default a threshold breach must clear the MIN_METRIC_SAMPLES floor to count
+ * (SITES-50756); pass enforceMinSamples=false to waive the floor (homepage).
  * @param {Object} entry - CWV audit entry ({ metrics: [{lcp, cls, inp, ...}] })
+ * @param {boolean} [enforceMinSamples=true] - whether the sample floor applies
  * @returns {boolean}
  */
-function hasFailingMetrics(entry) {
-  return entry.metrics.some((deviceMetrics) => METRICS.some((metric) => {
-    const value = deviceMetrics[metric];
-    return value !== null && value !== undefined && value > THRESHOLDS[metric];
-  }));
+export function hasFailingMetrics(entry, enforceMinSamples = true) {
+  return entry.metrics.some(
+    (deviceMetrics) => METRICS.some(
+      (metric) => isDeviceMetricFailing(deviceMetrics, metric, enforceMinSamples),
+    ),
+  );
 }
 
 /**
  * Returns a copy of the entry where the metrics array only contains device entries
- * that have at least one metric above the "good" threshold. This prevents suggestions
- * from containing green device-level data alongside failing ones.
+ * that have at least one failing metric (threshold breach clearing the sample floor,
+ * unless waived). This prevents suggestions from containing green device-level data
+ * alongside failing ones, and drops device rows whose only breach is noise.
  * @param {Object} entry - CWV audit entry
+ * @param {boolean} [enforceMinSamples=true] - whether the sample floor applies
  * @returns {Object} Entry with metrics filtered to failing device types only
  */
-function filterToFailingDeviceMetrics(entry) {
+export function filterToFailingDeviceMetrics(entry, enforceMinSamples = true) {
   return {
     ...entry,
-    metrics: entry.metrics.filter((deviceMetrics) => METRICS.some((metric) => {
-      const value = deviceMetrics[metric];
-      return value !== null && value !== undefined && value > THRESHOLDS[metric];
-    })),
+    metrics: entry.metrics.filter(
+      (deviceMetrics) => METRICS.some(
+        (metric) => isDeviceMetricFailing(deviceMetrics, metric, enforceMinSamples),
+      ),
+    ),
   };
+}
+
+/**
+ * True when the page was observed this run with a trustworthy sample volume — at least one
+ * metric on any device backed by MIN_METRIC_SAMPLES measurements. A page seen only through
+ * a handful of samples carries no reliable signal in EITHER direction, so it must neither
+ * spawn a new suggestion nor age out an existing one: excluding it from the OUTDATED
+ * coverage set preserves a prior issue across a sparse week (SITES-50756 + SITES-48436).
+ * @param {Object} entry - CWV audit entry
+ * @returns {boolean}
+ */
+export function hasReliableSamples(entry) {
+  return entry.metrics.some(
+    (deviceMetrics) => METRICS.some(
+      (metric) => metricSampleCount(deviceMetrics, metric) >= MIN_METRIC_SAMPLES,
+    ),
+  );
 }
 
 /**
@@ -210,30 +276,38 @@ export async function syncOpportunitiesAndSuggestions(context) {
 
   const auditResult = audit.getAuditResult();
   const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
+  const baseURL = removeTrailingSlash(site.getBaseURL());
+  // The homepage is always reported per product decision, so its suggestions waive the
+  // per-metric sample floor; every other page (and every group) enforces it (SITES-50756).
+  const enforceMinSamplesFor = (entry) => !isHomepage(entry, baseURL);
 
   // Only sync suggestions for pages where at least one CWV metric is failing.
   // Pages where all metrics pass are not actionable. Data is already sorted by
   // page views descending from step 1.
-  // Additionally, strip device-level metrics that are all-green so that suggestions
-  // only contain data for device types with actual CWV issues. This prevents a page
-  // that is failing on one device but passing on another from surfacing green metric
-  // values in its suggestion, which would make it appear incorrectly resolved.
+  // A threshold breach computed from too few RUM samples is statistical noise, not an
+  // actionable issue, so it is not treated as failing unless the page is the homepage
+  // (SITES-50756). Additionally, strip device-level metrics that are all-green so that
+  // suggestions only contain data for device types with actual CWV issues. This prevents
+  // a page that is failing on one device but passing on another from surfacing green
+  // metric values in its suggestion, which would make it appear incorrectly resolved.
   const cwvData = auditResult.cwv
-    .filter(hasFailingMetrics)
-    .map(filterToFailingDeviceMetrics);
+    .filter((entry) => hasFailingMetrics(entry, enforceMinSamplesFor(entry)))
+    .map((entry) => filterToFailingDeviceMetrics(entry, enforceMinSamplesFor(entry)));
   log.info(`[syncOpportunitiesAndSuggestions] site ${site.getId()} - ${cwvData.length} of ${auditResult.cwv.length} CWV entries have failing metrics`);
 
-  // Set of page URLs actually observed in THIS run's RUM data (the full reported
-  // set, before the failing-metrics filter). Passed to syncSuggestions so a
-  // suggestion is only aged out to OUTDATED when its page was measured this run
-  // and dropped from the failing set because it now passes. A URL absent from
-  // this set — bot/WAF-blocked HEAD, dropped from the top-N/threshold selection,
-  // or sparse/empty RUM — is NOT evidence the issue is resolved, so it must not
-  // be marked OUTDATED (SITES-48436). Group/pattern rows carry no scraped-URL
-  // identity and are unaffected by this guard.
+  // Set of page URLs RELIABLY observed in THIS run's RUM data (the full reported set,
+  // before the failing-metrics filter). Passed to syncSuggestions so a suggestion is only
+  // aged out to OUTDATED when its page was measured this run and dropped from the failing
+  // set because it now passes. A URL absent from this set — bot/WAF-blocked HEAD, dropped
+  // from the top-N/threshold selection, or sparse/empty RUM — is NOT evidence the issue is
+  // resolved, so it must not be marked OUTDATED (SITES-48436). A page seen only through too
+  // few samples is likewise no reliable signal, so it is excluded here to preserve a prior
+  // issue across a sparse week (SITES-50756); the always-reported homepage is kept. Group/
+  // pattern rows carry no scraped-URL identity and are unaffected by this guard.
   const scrapedUrlsSet = new Set(
     auditResult.cwv
       .filter((entry) => entry.type === 'url')
+      .filter((entry) => isHomepage(entry, baseURL) || hasReliableSamples(entry))
       .map((entry) => entry.url),
   );
 

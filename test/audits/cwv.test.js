@@ -569,6 +569,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
             metrics: [{
               deviceType: 'mobile',
               lcp: 3000, // > 2500 threshold — ensures group passes hasFailingMetrics
+              lcpCount: 20, // clears the MIN_METRIC_SAMPLES floor (SITES-50756)
               cls: null,
               inp: null,
             }],
@@ -595,6 +596,138 @@ describe('collectCWVDataAndImportCode Tests', () => {
       expect(suggestionsArg[0].data.type).to.equal('group');
       expect(suggestionsArg[0].data).to.have.property('jiraLink', null);
     });
+
+    it('does not create a suggestion for a low-traffic page whose failing metric has too few samples (SITES-50756)', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      // A campaign page whose "Critical" 31s LCP p75 is computed from only 2 samples —
+      // statistical noise, not an actionable regression. It must not spawn a suggestion.
+      const noisyAudit = {
+        ...mockAudit,
+        getAuditResult: () => ({
+          cwv: [{
+            type: 'url',
+            url: 'https://www.spacecat.com/campaigns/promo',
+            pageviews: 600,
+            organic: 100,
+            metrics: [{
+              deviceType: 'desktop',
+              pageviews: 400,
+              organic: 100,
+              lcp: 31000,
+              lcpCount: 2,
+              cls: 0.01,
+              clsCount: 1,
+              inp: null,
+              inpCount: 0,
+            }],
+          }],
+          auditContext: { interval: 7 },
+        }),
+      };
+
+      const stepContext = { ...context, site, audit: noisyAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(oppty.addSuggestions).to.not.have.been.called;
+    });
+
+    it('still creates a suggestion for the homepage even when its failing metric has few samples (homepage exemption, SITES-50756)', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      // Same sparse data as above, but on the homepage — which is always reported per
+      // product decision, so the sample floor is waived and a suggestion IS created.
+      const homepageAudit = {
+        ...mockAudit,
+        getAuditResult: () => ({
+          cwv: [{
+            type: 'url',
+            url: baseURL,
+            pageviews: 600,
+            organic: 100,
+            metrics: [{
+              deviceType: 'desktop',
+              pageviews: 600,
+              organic: 100,
+              lcp: 31000,
+              lcpCount: 2,
+              cls: 0.01,
+              clsCount: 1,
+              inp: null,
+              inpCount: 0,
+            }],
+          }],
+          auditContext: { interval: 7 },
+        }),
+      };
+
+      const stepContext = { ...context, site, audit: homepageAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(oppty.addSuggestions).to.have.been.calledOnce;
+      const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
+      expect(suggestionsArg).to.have.lengthOf(1);
+      expect(suggestionsArg[0].data.url).to.equal(baseURL);
+    });
+
+    it('does not outdate an existing suggestion for a page observed this run only with too few samples (SITES-50756 + SITES-48436)', async () => {
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
+
+      const sparseUrl = 'https://www.spacecat.com/campaigns/promo';
+      const existing = {
+        opportunityId: oppty.getId(),
+        getId: () => 'sugg-sparse',
+        getData: () => ({
+          type: 'url',
+          url: sparseUrl,
+          metrics: [{ deviceType: 'desktop', lcp: 6000, cls: 1.2, inp: 800 }],
+        }),
+        getStatus: () => 'NEW',
+        setData: sinon.stub(),
+        setUpdatedBy: sinon.stub().returnsThis(),
+        save: sinon.stub(),
+        remove: sinon.stub(),
+      };
+      oppty.getSuggestions.resolves([existing]);
+
+      // The page WAS measured this run, but with only 2 LCP samples — no trustworthy
+      // signal in either direction, so its prior suggestion must be preserved, never
+      // aged to OUTDATED (a sparse week is not evidence the issue is resolved).
+      const sparseAudit = {
+        ...mockAudit,
+        getAuditResult: () => ({
+          cwv: [{
+            type: 'url',
+            url: sparseUrl,
+            pageviews: 600,
+            organic: 100,
+            metrics: [{
+              deviceType: 'desktop',
+              pageviews: 600,
+              organic: 100,
+              lcp: 31000,
+              lcpCount: 2,
+              cls: 0.01,
+              clsCount: 1,
+              inp: null,
+              inpCount: 0,
+            }],
+          }],
+          auditContext: { interval: 7 },
+        }),
+      };
+
+      const stepContext = { ...context, site, audit: sparseAudit, finalUrl: auditUrl };
+      await syncOpportunityAndSuggestionsStep(stepContext);
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    });
+
     it('creating a new opportunity object fails', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.rejects(new Error('big error happened'));
@@ -720,7 +853,7 @@ describe('collectCWVDataAndImportCode Tests', () => {
             pageviews: 9000,
             organic: 5000,
             metrics: [{
-              deviceType: 'mobile', lcp: 1000, cls: 0.01, inp: 100,
+              deviceType: 'mobile', lcp: 1000, lcpCount: 20, cls: 0.01, inp: 100,
             }],
           }],
           auditContext: { interval: 7 },
@@ -1510,5 +1643,95 @@ describe('createMergeCwvStatus — reclaim stale stuck IN_PROGRESS suggestions',
     const merge = createMergeCwvStatus(new Set(), false);
     const s = makeSuggestion({ id: 's1', status: 'ERROR', updatedAt: twoDaysAgo() });
     expect(merge(s, {}, ctx)).to.equal(SuggestionModel.STATUSES.NEW);
+  });
+});
+
+describe('CWV min-sample floor helpers (SITES-50756)', () => {
+  // Imported lazily to keep the existing top-level imports unchanged.
+  let hasFailingMetrics;
+  let filterToFailingDeviceMetrics;
+  let hasReliableSamples;
+  let MIN_METRIC_SAMPLES;
+
+  before(async () => {
+    ({
+      hasFailingMetrics,
+      filterToFailingDeviceMetrics,
+      hasReliableSamples,
+      MIN_METRIC_SAMPLES,
+    } = await import('../../src/cwv/opportunity-sync.js'));
+  });
+
+  // A 31s LCP p75 computed from just 2 measurements — a threshold breach, but noise.
+  const failingLowSample = {
+    type: 'url',
+    url: 'https://x.com/a',
+    metrics: [{
+      deviceType: 'desktop', lcp: 31000, lcpCount: 2, cls: 0.01, clsCount: 1,
+    }],
+  };
+  // The same breach, but backed by a trustworthy sample volume.
+  const failingWellSampled = {
+    type: 'url',
+    url: 'https://x.com/b',
+    metrics: [{
+      deviceType: 'desktop', lcp: 31000, lcpCount: 40, cls: 0.01, clsCount: 40,
+    }],
+  };
+
+  describe('MIN_METRIC_SAMPLES', () => {
+    it('is a numeric floor greater than one', () => {
+      expect(MIN_METRIC_SAMPLES).to.be.a('number').that.is.greaterThan(1);
+    });
+  });
+
+  describe('hasFailingMetrics', () => {
+    it('does not treat a threshold breach from too few samples as failing (floor enforced by default)', () => {
+      expect(hasFailingMetrics(failingLowSample)).to.be.false;
+    });
+
+    it('treats a well-sampled threshold breach as failing', () => {
+      expect(hasFailingMetrics(failingWellSampled)).to.be.true;
+    });
+
+    it('waives the sample floor when enforceMinSamples is false (homepage exemption)', () => {
+      expect(hasFailingMetrics(failingLowSample, false)).to.be.true;
+    });
+
+    it('treats missing/undefined metric values as passing', () => {
+      expect(hasFailingMetrics({
+        metrics: [{ deviceType: 'desktop', lcp: null, cls: undefined }],
+      })).to.be.false;
+    });
+  });
+
+  describe('filterToFailingDeviceMetrics', () => {
+    it('strips a device row whose only breach is below the sample floor', () => {
+      expect(filterToFailingDeviceMetrics(failingLowSample).metrics).to.have.lengthOf(0);
+    });
+
+    it('keeps a low-sample breach when the floor is waived', () => {
+      expect(filterToFailingDeviceMetrics(failingLowSample, false).metrics).to.have.lengthOf(1);
+    });
+
+    it('keeps a well-sampled failing device row', () => {
+      expect(filterToFailingDeviceMetrics(failingWellSampled).metrics).to.have.lengthOf(1);
+    });
+  });
+
+  describe('hasReliableSamples', () => {
+    it('is false when no metric reaches the sample floor', () => {
+      expect(hasReliableSamples(failingLowSample)).to.be.false;
+    });
+
+    it('is true when some metric reaches the sample floor', () => {
+      expect(hasReliableSamples(failingWellSampled)).to.be.true;
+    });
+
+    it('treats a missing count as zero samples', () => {
+      expect(hasReliableSamples({
+        metrics: [{ deviceType: 'desktop', lcp: 9000 }],
+      })).to.be.false;
+    });
   });
 });
