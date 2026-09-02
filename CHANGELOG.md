@@ -1,3 +1,10 @@
+# [1.531.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.530.1...v1.531.0) (2026-09-02)
+
+
+### Features
+
+* **brand-claims:** on-demand one-shot trial runs (LLMO-7263) ([#2932](https://github.com/adobe/spacecat-audit-worker/issues/2932)) ([aebc00a](https://github.com/adobe/spacecat-audit-worker/commit/aebc00a561c50fe2c3ce96c488976bb1fc36943d))
+
 ## [1.530.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.530.0...v1.530.1) (2026-09-01)
 
 
