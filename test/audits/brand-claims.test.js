@@ -224,6 +224,66 @@ describe('Brand Claims audit handler', function () {
     });
   });
 
+  describe('off-site opportunity enrichment mode (LLMO-7312)', () => {
+    const enabledSheet = () => {
+      const prefix = `${SITE_ID}/acmecorp/analytics/chatgpt_free`;
+      s3Client.send.resolves({
+        Contents: [{ Key: `${prefix}/2026/01/05/bp-w2-2026.xlsx`, LastModified: new Date('2026-01-05T00:00:00Z') }],
+        IsTruncated: false,
+      });
+    };
+
+    it('stamps mode=enrich on the event when mode is folded into the audit data (JSON string)', async () => {
+      enabledSheet();
+      const res = await brandClaimsHandler(
+        { type: 'brand-claims', siteId: SITE_ID, data: JSON.stringify({ mode: 'enrich' }) },
+        buildContext(),
+      );
+      expect(res.status).to.equal(200);
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.mode).to.equal('enrich');
+    });
+
+    it('honors mode passed as a top-level message field', async () => {
+      enabledSheet();
+      await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID, mode: 'enrich' }, buildContext());
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.mode).to.equal('enrich');
+    });
+
+    it('defaults to mode=full when no mode is provided', async () => {
+      enabledSheet();
+      await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID }, buildContext());
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.mode).to.equal('full');
+    });
+
+    it('treats an unknown or malformed mode as full', async () => {
+      enabledSheet();
+      await brandClaimsHandler(
+        { type: 'brand-claims', siteId: SITE_ID, data: 'not-json{' },
+        buildContext(),
+      );
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.mode).to.equal('full');
+    });
+
+    it('enrich bypasses the enable gate for a disabled brand (like on_demand)', async () => {
+      selectResult = { data: [{ id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: false }], error: null };
+      enabledSheet();
+      const res = await brandClaimsHandler(
+        { type: 'brand-claims', siteId: SITE_ID, mode: 'enrich' },
+        buildContext(),
+      );
+      expect(res.status).to.equal(200);
+      expect(log.info).to.not.have.been.calledWithMatch('not enabled for claims');
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      const [, event] = sqs.sendMessage.firstCall.args;
+      expect(event.mode).to.equal('enrich');
+    });
+  });
+
   describe('error propagation (SQS retry)', () => {
     it('throws when the brand lookup query errors', async () => {
       selectResult = { data: null, error: { message: 'boom' } };
@@ -312,6 +372,7 @@ describe('Brand Claims audit handler', function () {
         s3_bucket: 'drs-bp-bucket',
         s3_key: `${prefix}/2026/01/05/bp-w2-2026-030405.xlsx`,
         on_demand: false,
+        mode: 'full',
         parent_job_id: null,
         batch_id: null,
       });
