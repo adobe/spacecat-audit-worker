@@ -151,7 +151,7 @@ export default async function brandClaimsHandler(message, context) {
   const {
     log, sqs, dataAccess, s3Client, env,
   } = context;
-  const { siteId } = message;
+  const { siteId, onDemand } = message;
 
   if (!hasText(siteId)) {
     log.warn('brand-claims: message missing siteId');
@@ -175,7 +175,7 @@ export default async function brandClaimsHandler(message, context) {
     throw new Error(`brand-claims: brand storage (postgrestClient) is not available for site ${siteId}`);
   }
 
-  const { Site } = dataAccess;
+  const { Site, Audit } = dataAccess;
   const site = context.site || await Site.findById(siteId);
   if (!site) {
     log.warn(`brand-claims: site not found: ${siteId}`);
@@ -199,7 +199,11 @@ export default async function brandClaimsHandler(message, context) {
   // enable-brand-claims Slack command) for the sites we want weekly claims on. A disabled
   // brand is skipped entirely — no ready-signal is published, so no claims are (re)generated
   // for sites we don't want to touch.
-  if (!brand.brand_claims_enabled) {
+  // On-demand runs (LLMO-7263) bypass the per-brand enable gate: the request is an
+  // explicit one-shot, and the emitted event carries on_demand=true so the Brand
+  // Claims consumer also bypasses its own enablement gate for this single event.
+  // The weekly (non-on-demand) path stays gated as before.
+  if (!brand.brand_claims_enabled && onDemand !== true) {
     log.info(`brand-claims: brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId} is not enabled for claims — skipping run`);
     return ok();
   }
@@ -231,12 +235,40 @@ export default async function brandClaimsHandler(message, context) {
     platform: BP_PLATFORM,
     s3_bucket: drsBpBucket,
     s3_key: sheet.key,
+    on_demand: onDemand === true,
     parent_job_id: null,
     batch_id: null,
   };
 
   await sqs.sendMessage(queueUrl, event);
   log.info(`brand-claims: published ready-signal for site ${resolvedSiteId} (brand "${brand.name}"), s3_key=${sheet.key}`);
+
+  // Record the run as a `brand-claims` audit (LLMO-7263). This handler is a bare
+  // utility handler (not an AuditBuilder audit), so nothing else persists a row —
+  // yet the on-demand 7-day request cooldown in api-service
+  // (getLatestAuditByAuditType('brand-claims')) and the elmo-ui pending/cooldown
+  // states both read `auditedAt` from it. Without this write those never fire.
+  // Best-effort: the run has already been triggered, so a persistence failure must
+  // not fail the handler (fail-open matches the api-service cooldown's own miss
+  // handling — a missed record just means the next request isn't throttled).
+  try {
+    await Audit.create({
+      siteId: resolvedSiteId,
+      isLive: site.getIsLive(),
+      auditedAt: new Date().toISOString(),
+      auditType: 'brand-claims',
+      auditResult: {
+        onDemand: onDemand === true,
+        week: sheet.week,
+        year: sheet.year,
+        sheetDate: sheet.sheetDate,
+        sheetKey: sheet.key,
+      },
+      fullAuditRef: sheet.key,
+    });
+  } catch (err) {
+    log.warn(`brand-claims: failed to persist brand-claims audit for site ${resolvedSiteId} (run already triggered): ${err.message}`);
+  }
 
   return ok();
 }
