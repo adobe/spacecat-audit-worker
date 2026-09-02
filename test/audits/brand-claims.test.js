@@ -262,6 +262,16 @@ describe('Brand Claims audit handler', function () {
       expect(event).to.not.have.property('mode');
     });
 
+    it('does NOT persist a brand-claims audit row for enrich (preserves on-demand cooldown)', async () => {
+      enabledSheet();
+      const ctx = buildContext();
+      await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID, mode: 'enrich' }, ctx);
+      // The audit row drives the api-service on-demand cooldown + elmo-ui state;
+      // an enrich must not advance it.
+      expect(ctx.dataAccess.Audit.create).to.not.have.been.called;
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+    });
+
     it('enrich bypasses the enable gate for a disabled brand (like on_demand)', async () => {
       selectResult = { data: [{ id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: false }], error: null };
       enabledSheet();

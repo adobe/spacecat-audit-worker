@@ -260,23 +260,30 @@ export default async function brandClaimsHandler(message, context) {
   // Best-effort: the run has already been triggered, so a persistence failure must
   // not fail the handler (fail-open matches the api-service cooldown's own miss
   // handling — a missed record just means the next request isn't throttled).
-  try {
-    await Audit.create({
-      siteId: resolvedSiteId,
-      isLive: site.getIsLive(),
-      auditedAt: new Date().toISOString(),
-      auditType: 'brand-claims',
-      auditResult: {
-        onDemand: onDemand === true,
-        week: sheet.week,
-        year: sheet.year,
-        sheetDate: sheet.sheetDate,
-        sheetKey: sheet.key,
-      },
-      fullAuditRef: sheet.key,
-    });
-  } catch (err) {
-    log.warn(`brand-claims: failed to persist brand-claims audit for site ${resolvedSiteId} (run already triggered): ${err.message}`);
+  //
+  // Enrichment runs (LLMO-7312) are skipped: an off-site opportunity link refresh
+  // is not a claims "run", so it must NOT advance `auditedAt` — doing so would
+  // reset the on-demand cooldown (blocking a subsequent full run) and flip the
+  // elmo-ui cooldown state. The cooldown/UI track full claims runs only.
+  if (!isEnrich) {
+    try {
+      await Audit.create({
+        siteId: resolvedSiteId,
+        isLive: site.getIsLive(),
+        auditedAt: new Date().toISOString(),
+        auditType: 'brand-claims',
+        auditResult: {
+          onDemand: onDemand === true,
+          week: sheet.week,
+          year: sheet.year,
+          sheetDate: sheet.sheetDate,
+          sheetKey: sheet.key,
+        },
+        fullAuditRef: sheet.key,
+      });
+    } catch (err) {
+      log.warn(`brand-claims: failed to persist brand-claims audit for site ${resolvedSiteId} (run already triggered): ${err.message}`);
+    }
   }
 
   return ok();
