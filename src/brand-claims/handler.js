@@ -147,29 +147,15 @@ async function findLatestSheet(s3Client, bucket, prefix, log) {
 // Publishes the ready-signal for the brand's latest BP sheet, but only for brands whose
 // brand_claims_enabled gate is on. Enabling/disabling the gate is done out of band (the
 // api-service enable-brand-claims Slack command) and acts as the per-site opt-in list.
-// Reads the run mode from the audit message (LLMO-7312). api-service's run-audit
-// folds `mode` into the audit `data` (a JSON string, or object); an explicit
-// top-level `mode` or `auditContext.mode` is also honored. Anything other than
-// "enrich" is a normal full run.
-function readRunMode(message) {
-  let data = message?.data;
-  if (typeof data === 'string') {
-    try {
-      data = JSON.parse(data);
-    } catch {
-      data = null;
-    }
-  }
-  const mode = message?.mode ?? data?.mode ?? message?.auditContext?.mode;
-  return mode === 'enrich' ? 'enrich' : 'full';
-}
-
 export default async function brandClaimsHandler(message, context) {
   const {
     log, sqs, dataAccess, s3Client, env,
   } = context;
-  const { siteId, onDemand } = message;
-  const runMode = readRunMode(message);
+  // `mode` is a plain top-level message field (mirrors `onDemand`): the api-service
+  // command sets mode='enrich' to request the cache-safe off-site opportunity link
+  // refresh. Anything else is a normal full run.
+  const { siteId, onDemand, mode } = message;
+  const isEnrich = mode === 'enrich';
 
   if (!hasText(siteId)) {
     log.warn('brand-claims: message missing siteId');
@@ -223,7 +209,7 @@ export default async function brandClaimsHandler(message, context) {
   // An off-site opportunity enrichment (LLMO-7312) is likewise an explicit
   // operator run and carries mode=enrich, so it bypasses the gate too.
   // The weekly (non-on-demand, full) path stays gated as before.
-  if (!brand.brand_claims_enabled && onDemand !== true && runMode !== 'enrich') {
+  if (!brand.brand_claims_enabled && onDemand !== true && !isEnrich) {
     log.info(`brand-claims: brand ${brand.id} ("${brand.name}") on site ${resolvedSiteId} is not enabled for claims — skipping run`);
     return ok();
   }
@@ -256,7 +242,9 @@ export default async function brandClaimsHandler(message, context) {
     s3_bucket: drsBpBucket,
     s3_key: sheet.key,
     on_demand: onDemand === true,
-    mode: runMode,
+    // Only stamp `mode` for enrichment; a full run omits it entirely so its event
+    // stays identical to the DRS weekly emit (mystique treats absent mode as full).
+    ...(isEnrich ? { mode: 'enrich' } : {}),
     parent_job_id: null,
     batch_id: null,
   };

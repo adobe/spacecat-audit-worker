@@ -233,10 +233,10 @@ describe('Brand Claims audit handler', function () {
       });
     };
 
-    it('stamps mode=enrich on the event when mode is folded into the audit data (JSON string)', async () => {
+    it('stamps mode=enrich on the event for a top-level mode=enrich message', async () => {
       enabledSheet();
       const res = await brandClaimsHandler(
-        { type: 'brand-claims', siteId: SITE_ID, data: JSON.stringify({ mode: 'enrich' }) },
+        { type: 'brand-claims', siteId: SITE_ID, mode: 'enrich' },
         buildContext(),
       );
       expect(res.status).to.equal(200);
@@ -245,28 +245,21 @@ describe('Brand Claims audit handler', function () {
       expect(event.mode).to.equal('enrich');
     });
 
-    it('honors mode passed as a top-level message field', async () => {
-      enabledSheet();
-      await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID, mode: 'enrich' }, buildContext());
-      const [, event] = sqs.sendMessage.firstCall.args;
-      expect(event.mode).to.equal('enrich');
-    });
-
-    it('defaults to mode=full when no mode is provided', async () => {
+    it('omits mode entirely for a full run (no mode field)', async () => {
       enabledSheet();
       await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID }, buildContext());
       const [, event] = sqs.sendMessage.firstCall.args;
-      expect(event.mode).to.equal('full');
+      expect(event).to.not.have.property('mode');
     });
 
-    it('treats an unknown or malformed mode as full', async () => {
+    it('treats an unknown mode as a full run (no mode field)', async () => {
       enabledSheet();
       await brandClaimsHandler(
-        { type: 'brand-claims', siteId: SITE_ID, data: 'not-json{' },
+        { type: 'brand-claims', siteId: SITE_ID, mode: 'bogus' },
         buildContext(),
       );
       const [, event] = sqs.sendMessage.firstCall.args;
-      expect(event.mode).to.equal('full');
+      expect(event).to.not.have.property('mode');
     });
 
     it('enrich bypasses the enable gate for a disabled brand (like on_demand)', async () => {
@@ -372,7 +365,6 @@ describe('Brand Claims audit handler', function () {
         s3_bucket: 'drs-bp-bucket',
         s3_key: `${prefix}/2026/01/05/bp-w2-2026-030405.xlsx`,
         on_demand: false,
-        mode: 'full',
         parent_job_id: null,
         batch_id: null,
       });
