@@ -20,7 +20,7 @@ import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
-import { getImsOrgId, syncSuggestionsWithPublishDetection } from '../utils/data-access.js';
+import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
 import { mapVulnerabilityToSuggestion, toSuggestionData } from './suggestion-data-mapper.js';
 import { noopUrlResolver } from '../common/index.js';
 
@@ -233,15 +233,16 @@ export const extractCodeInfo = (data) => {
 };
 
 /**
- * Builds a terminal DEPLOYED FixEntity payload for a rescan-confirmed vuln fix. Used
- * only as a fallback when no PR-open PENDING FixEntity is found to promote (see
- * {@link promoteVulnFixEntities}), so a suggestion is never flipped to FIXED without a
- * backing FixEntity. changeDetails is the reader-tolerant v1 freeform shape.
+ * Builds a DEPLOYED CODE_CHANGE FixEntity payload for a customer self-fix — an open
+ * finding that disappeared from the scan with no backing FixEntity, i.e. the customer
+ * upgraded the dependency themselves. Stamped with the CUSTOMER_SELF_FIX origin so it is
+ * distinguishable from ASO/automated fixes (which carry origin `spacecat`). changeDetails
+ * is the reader-tolerant v1 freeform shape.
  *
- * @param {Object} suggestion - The confirmed-fixed suggestion.
+ * @param {Object} suggestion - The self-fixed suggestion.
  * @param {Object} opportunity - The vulnerabilities opportunity.
  * @param {Object} site - The site (for delivery-type provenance).
- * @returns {Object} A FixEntity payload with status DEPLOYED.
+ * @returns {Object} A FixEntity payload: status DEPLOYED, origin CUSTOMER_SELF_FIX.
  */
 export function buildVulnFixEntityPayload(suggestion, opportunity, site) {
   const data = suggestion.getData();
@@ -249,6 +250,7 @@ export function buildVulnFixEntityPayload(suggestion, opportunity, site) {
     opportunityId: opportunity.getId(),
     type: 'CODE_CHANGE',
     status: FixEntityDataAccess.STATUSES.DEPLOYED,
+    origin: FixEntityDataAccess.ORIGINS.CUSTOMER_SELF_FIX,
     executedAt: new Date().toISOString(),
     deployedAt: new Date().toISOString(),
     changeDetails: {
@@ -260,77 +262,6 @@ export function buildVulnFixEntityPayload(suggestion, opportunity, site) {
     },
     suggestions: [suggestion.getId()],
   };
-}
-
-/**
- * Resolves FixEntities for rescan-confirmed vuln fixes by promoting each suggestion's
- * existing PR-open PENDING FixEntity to DEPLOYED in place — this preserves the PR-url
- * provenance and avoids a second entity per fix. A suggestion with no PENDING FixEntity
- * to promote (edge case) gets a fresh DEPLOYED entity instead, so status never outruns
- * the FixEntity. Passed as syncSuggestionsWithPublishDetection's resolveFixEntities
- * hook; a throw leaves the suggestions unchanged for the next audit to retry.
- *
- * Idempotent on retry: reconcile persists FixEntities before flipping suggestion status
- * and, on any later failure, leaves the suggestion IN_PROGRESS for the next audit to
- * retry. A suggestion already backed by a DEPLOYED FixEntity is therefore skipped here,
- * so a partially-failed prior run (entity deployed, suggestion not yet FIXED) never
- * mints a duplicate DEPLOYED entity. A single FixEntity backing several suggestions is
- * likewise promoted at most once.
- *
- * @param {Array} fixedSuggestions - Suggestions confirmed fixed by the rescan.
- * @param {Object} opportunity - The vulnerabilities opportunity.
- * @param {Object} context - The audit context (provides dataAccess + site).
- * @returns {Promise<void>}
- */
-export async function promoteVulnFixEntities(fixedSuggestions, opportunity, context) {
-  const { dataAccess, site } = context;
-  const { FixEntity } = dataAccess;
-
-  const fixes = await FixEntity.getAllFixesWithSuggestionsByOpportunityId(opportunity.getId());
-  // Index each suggestion's promotable PENDING FixEntity, and separately record which
-  // suggestions already carry a DEPLOYED FixEntity (resolved on a prior, partially-failed
-  // run) so the retry can skip them instead of creating a duplicate.
-  const pendingBySuggestionId = new Map();
-  const deployedSuggestionIds = new Set();
-  for (const { fixEntity, suggestions: linked } of fixes) {
-    const status = fixEntity.getStatus();
-    for (const linkedSuggestion of linked) {
-      if (status === FixEntityDataAccess.STATUSES.PENDING) {
-        pendingBySuggestionId.set(linkedSuggestion.getId(), fixEntity);
-      } else if (status === FixEntityDataAccess.STATUSES.DEPLOYED) {
-        deployedSuggestionIds.add(linkedSuggestion.getId());
-      }
-    }
-  }
-
-  const toPromote = [];
-  const toCreate = [];
-  const promotedFixEntityIds = new Set();
-  // Skip suggestions already backed by a DEPLOYED FixEntity — idempotent on next-audit retry.
-  const unresolved = fixedSuggestions.filter((s) => !deployedSuggestionIds.has(s.getId()));
-  for (const suggestion of unresolved) {
-    const pending = pendingBySuggestionId.get(suggestion.getId());
-    if (pending) {
-      // One FixEntity (PR) can back several suggestions; promote it at most once so the
-      // same entity is never handed to saveMany twice.
-      if (!promotedFixEntityIds.has(pending.getId())) {
-        promotedFixEntityIds.add(pending.getId());
-        pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
-        // Durable "verified" marker (§10): stamp the deploy timestamp on every promotion.
-        pending.setDeployedAt(new Date().toISOString());
-        toPromote.push(pending);
-      }
-    } else {
-      toCreate.push(buildVulnFixEntityPayload(suggestion, opportunity, site));
-    }
-  }
-
-  if (toPromote.length > 0) {
-    await FixEntity.saveMany(toPromote);
-  }
-  if (toCreate.length > 0) {
-    await opportunity.addFixEntities(toCreate);
-  }
 }
 
 /**
@@ -366,22 +297,29 @@ const isAssertedFixStale = (fix) => {
 };
 
 /**
- * Reconciles already-`FIXED` vuln suggestions against the current scan, keeping the
- * (Suggestion, FixEntity) pair consistent (PHASES.md §10). The base rescan-confirmation
- * sync only touches IN_PROGRESS/NEW suggestions; this pass owns the FIXED ones, joining
- * each to its active (PENDING/DEPLOYED) fix so the reopen decision is FixEntity-aware:
+ * Reconciles vuln suggestions against the current scan, owning EVERY status transition so
+ * the (Suggestion, FixEntity) pair stays consistent (spec:
+ * docs/specs/2026-09-02-security-vulnerabilities-fixed-lifecycle-reconcile.md). Joins each
+ * suggestion to its FixEntity so the decision is FixEntity-aware:
  *
+ * - open (NEW/PENDING_VALIDATION) + no fix, vuln gone → customer self-fix: suggestion
+ *   FIXED + create a DEPLOYED FixEntity stamped origin CUSTOMER_SELF_FIX.
  * - FIXED + PENDING, vuln gone     → asserted fix confirmed: promote PENDING → DEPLOYED
- *   (+ stamp deployedAt), keep FIXED (§10.2).
- * - FIXED + DEPLOYED, vuln back    → regression: reopen (NEW / PENDING_VALIDATION on paid)
- *   and roll the fix DEPLOYED → ROLLED_BACK (§10.3).
- * - FIXED + PENDING, vuln present, fix fresh → wait (§10.4), no change.
- * - FIXED + PENDING, vuln present, fix stale → reopen and fail the abandoned fix
- *   PENDING → FAILED (§10.5).
+ *   (+ stamp deployedAt), keep FIXED.
+ * - FIXED + DEPLOYED, vuln back    → regression: archive the old suggestion to OUTDATED,
+ *   open a fresh NEW/PENDING_VALIDATION suggestion, roll the fix DEPLOYED → ROLLED_BACK.
+ * - FIXED + PENDING, vuln present, fix fresh → wait, no change.
+ * - FIXED + PENDING, vuln present, fix stale → archive old to OUTDATED, open a fresh
+ *   suggestion, fail the fix PENDING → FAILED.
  *
- * Fail-safe: any error fetching the fix entities skips the whole pass for this run rather
- * than reopen/promote against incomplete data. Reopened suggestions are persisted before
- * the fix-entity transitions, so a reopen is never lost to a trailing fix-save failure.
+ * Runs BEFORE the base syncSuggestions (which then only creates brand-new findings and
+ * refreshes present ones). Regression/stale never mutate the FIXED record in place — the
+ * old record is archived and a fresh finding opened — so history stays clean.
+ *
+ * Safety: any error fetching the fix entities skips the whole pass for this run rather
+ * than acting on incomplete data; a self-fix FixEntity is created BEFORE its suggestion is
+ * flipped FIXED (never FIXED without a backing fix); suggestion writes are persisted before
+ * the fix-entity transitions so a trailing fix-save failure can't strand a reopen.
  *
  * @param {Object} opportunity - The vulnerabilities opportunity.
  * @param {Array} newData - Canonical data for currently-reported vulns ([] on all-clear).
@@ -389,15 +327,26 @@ const isAssertedFixStale = (fix) => {
  * @param {Object} log - Logger.
  * @returns {Promise<void>}
  */
-export async function reconcileFixedVulnSuggestions(opportunity, newData, context, log) {
+export async function reconcileVulnSuggestions(opportunity, newData, context, log) {
   const { dataAccess, site } = context;
   const { FixEntity, Suggestion } = dataAccess;
 
+  const presentKeys = new Set(newData.map(buildKey));
+  const newDataByKey = new Map(newData.map((d) => [buildKey(d), d]));
   const suggestions = await opportunity.getSuggestions();
+
+  // Candidates needing FixEntity-aware reconciliation: every FIXED suggestion, plus any
+  // open finding (NEW/PENDING_VALIDATION) that DISAPPEARED from the scan (a self-fix).
+  // Present open findings and every other status are left to the base sync.
+  const isOpen = (s) => s.getStatus() === SuggestionDataAccess.STATUSES.NEW
+    || s.getStatus() === SuggestionDataAccess.STATUSES.PENDING_VALIDATION;
   const fixedSuggestions = suggestions.filter(
     (s) => s.getStatus() === SuggestionDataAccess.STATUSES.FIXED,
   );
-  if (fixedSuggestions.length === 0) {
+  const selfFixedSuggestions = suggestions.filter(
+    (s) => isOpen(s) && !presentKeys.has(buildKey(s.getData())),
+  );
+  if (fixedSuggestions.length === 0 && selfFixedSuggestions.length === 0) {
     return;
   }
 
@@ -405,17 +354,19 @@ export async function reconcileFixedVulnSuggestions(opportunity, newData, contex
   try {
     fixes = await FixEntity.getAllFixesWithSuggestionsByOpportunityId(opportunity.getId());
   } catch (e) {
-    log.warn(`[${AUDIT_TYPE}] failed to fetch fix entities for opportunity ${opportunity.getId()}; skipping FIXED reconcile this run: ${e.message}`);
+    log.warn(`[${AUDIT_TYPE}] failed to fetch fix entities for opportunity ${opportunity.getId()}; skipping vuln reconcile this run: ${e.message}`);
     return;
   }
 
-  // Join each suggestion to its active fix. A suggestion can carry historical fixes; only
-  // PENDING (asserted) and DEPLOYED (verified) drive the decisions below.
+  // Join each suggestion to its fixes. PENDING (asserted) and DEPLOYED (verified) drive the
+  // FIXED-side decisions; the linked-ids set drives self-fix detection ("no fix at all").
   const pendingBySuggestionId = new Map();
   const deployedBySuggestionId = new Map();
+  const linkedFixSuggestionIds = new Set();
   for (const { fixEntity, suggestions: linked } of fixes) {
     const status = fixEntity.getStatus();
     for (const linkedSuggestion of linked) {
+      linkedFixSuggestionIds.add(linkedSuggestion.getId());
       if (status === FixEntityDataAccess.STATUSES.PENDING) {
         pendingBySuggestionId.set(linkedSuggestion.getId(), fixEntity);
       } else if (status === FixEntityDataAccess.STATUSES.DEPLOYED) {
@@ -424,48 +375,89 @@ export async function reconcileFixedVulnSuggestions(opportunity, newData, contex
     }
   }
 
-  const presentKeys = new Set(newData.map(buildKey));
   const reopenStatus = reopenStatusForSite(site);
+  const suggestionsToSave = []; // existing suggestions whose status changed
+  const newSuggestionPayloads = []; // fresh findings opened for regressions / stale reopens
+  const newFixPayloads = []; // self-fix DEPLOYED FixEntities to create
+  const fixesToSave = []; // existing fixes promoted / rolled-back / failed
 
-  const suggestionsToSave = [];
-  const fixesToSave = [];
+  // Regression/stale reopen: archive the old FIXED record to OUTDATED and open a fresh
+  // finding for the still-present vuln, rather than mutating the FIXED record in place.
+  const archiveAndReopen = (suggestion) => {
+    suggestion.setStatus(SuggestionDataAccess.STATUSES.OUTDATED);
+    suggestion.setUpdatedBy('system');
+    suggestionsToSave.push(suggestion);
+    const entry = newDataByKey.get(buildKey(suggestion.getData()));
+    newSuggestionPayloads.push({
+      ...mapVulnerabilityToSuggestion(opportunity, entry),
+      status: reopenStatus,
+    });
+  };
+
   for (const suggestion of fixedSuggestions) {
-    const suggestionId = suggestion.getId();
+    const id = suggestion.getId();
     const present = presentKeys.has(buildKey(suggestion.getData()));
-    const deployed = deployedBySuggestionId.get(suggestionId);
-    const pending = pendingBySuggestionId.get(suggestionId);
+    const deployed = deployedBySuggestionId.get(id);
+    const pending = pendingBySuggestionId.get(id);
 
     if (!present) {
-      // Vuln gone. A DEPLOYED fix is already the correct terminal state; a still-PENDING
-      // asserted fix is now scan-confirmed → promote it, keeping the suggestion FIXED.
+      // Vuln gone. A still-PENDING asserted fix is now scan-confirmed → promote it; a
+      // DEPLOYED fix is already the correct terminal state.
       if (!deployed && pending) {
         pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
         pending.setDeployedAt(new Date().toISOString());
         fixesToSave.push(pending);
       }
     } else if (deployed) {
-      // Regression: a verified-fixed vuln reappeared → reopen + roll the fix back.
-      suggestion.setStatus(reopenStatus);
-      suggestion.setUpdatedBy('system');
-      suggestionsToSave.push(suggestion);
+      // Regression: a verified-fixed vuln reappeared → archive + reopen, roll the fix back.
+      archiveAndReopen(suggestion);
       deployed.setStatus(FixEntityDataAccess.STATUSES.ROLLED_BACK);
       fixesToSave.push(deployed);
     } else if (pending && isAssertedFixStale(pending)) {
-      // Asserted fix never confirmed past the staleness window while the vuln persists →
-      // reopen + fail the abandoned fix.
-      suggestion.setStatus(reopenStatus);
-      suggestion.setUpdatedBy('system');
-      suggestionsToSave.push(suggestion);
+      // Asserted fix never confirmed past the staleness window → archive + reopen, fail it.
+      archiveAndReopen(suggestion);
       pending.setStatus(FixEntityDataAccess.STATUSES.FAILED);
       fixesToSave.push(pending);
     }
     // else: present + fresh PENDING (wait) or present + no active fix → no change.
   }
 
-  // Persist reopens first so a trailing fix-save failure can't strand a reopened
-  // suggestion in a stuck FIXED state on the next audit.
+  for (const suggestion of selfFixedSuggestions) {
+    const id = suggestion.getId();
+    const pending = pendingBySuggestionId.get(id);
+    suggestion.setStatus(SuggestionDataAccess.STATUSES.FIXED);
+    suggestion.setUpdatedBy('system');
+    suggestionsToSave.push(suggestion);
+    if (pending) {
+      // Edge: the open finding already had a PENDING fix → promote it, don't create one.
+      pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
+      pending.setDeployedAt(new Date().toISOString());
+      fixesToSave.push(pending);
+    } else if (!linkedFixSuggestionIds.has(id)) {
+      // No fix at all → the customer fixed it themselves; synthesize a DEPLOYED FixEntity
+      // stamped with the customer-self-fix origin.
+      newFixPayloads.push(buildVulnFixEntityPayload(suggestion, opportunity, site));
+    }
+    // else: an existing non-PENDING fix already backs it → just mark FIXED (idempotent).
+  }
+
+  // Create self-fix FixEntities BEFORE flipping their suggestions FIXED, so a FIXED is never
+  // left without a backing fix; on failure leave everything for the next audit to retry.
+  if (newFixPayloads.length > 0) {
+    try {
+      await opportunity.addFixEntities(newFixPayloads);
+    } catch (e) {
+      log.warn(`[${AUDIT_TYPE}] failed to create self-fix fix entities for opportunity ${opportunity.getId()}; skipping vuln reconcile this run: ${e.message}`);
+      return;
+    }
+  }
+  // Persist suggestion status changes (incl. archived OUTDATED) and the fresh findings
+  // BEFORE the fix-entity transitions, so a trailing fix-save failure can't strand a reopen.
   if (suggestionsToSave.length > 0) {
     await Suggestion.saveMany(suggestionsToSave);
+  }
+  if (newSuggestionPayloads.length > 0) {
+    await opportunity.addSuggestions(newSuggestionPayloads);
   }
   if (fixesToSave.length > 0) {
     await FixEntity.saveMany(fixesToSave);
@@ -473,12 +465,17 @@ export async function reconcileFixedVulnSuggestions(opportunity, newData, contex
 }
 
 /**
- * Runs the vulns suggestion sync with rescan-confirmation semantics (PHASES.md Phase 2),
- * shared by the normal (vulns-present) path and the all-clear (empty newData) path:
- * a disappeared autofixed (IN_PROGRESS) suggestion becomes FIXED with its PENDING
- * FixEntity promoted to DEPLOYED (§D3/§D4); a disappeared NEW suggestion becomes
- * OUTDATED (§D2). The publish step is skipped — 'security-vulnerabilities' is an
- * author-only opportunity type, so DEPLOYED is terminal (§T2.5).
+ * Runs the vulns suggestion sync for a scan, shared by the normal (vulns-present) path and
+ * the all-clear (empty newData) path. Two steps, reconcile first:
+ *
+ * 1. reconcileVulnSuggestions owns EVERY status transition (self-fix, rescan-confirm,
+ *    regression, stale) — see its doc for the decision table.
+ * 2. syncSuggestions then only creates brand-new findings and refreshes data on present
+ *    ones. mergeStatusFunction returns null so it makes NO status decisions: the default
+ *    merge would flip an archived OUTDATED record whose vuln is still present back to NEW
+ *    (data-access.js defaultMergeStatusFunction), resurrecting the record reconcile just
+ *    archived in a regression. Its OUTDATED sweep is a no-op because reconcile has already
+ *    transitioned every disappeared open finding.
  *
  * @param {Object} opportunity - The vulnerabilities opportunity.
  * @param {Array} newData - Canonical data for currently-reported vulns ([] on all-clear).
@@ -487,31 +484,17 @@ export async function reconcileFixedVulnSuggestions(opportunity, newData, contex
  * @returns {Promise<void>}
  */
 async function syncVulnSuggestions(opportunity, newData, context, log) {
-  await syncSuggestionsWithPublishDetection({
+  await reconcileVulnSuggestions(opportunity, newData, context, log);
+
+  await syncSuggestions({
     opportunity,
     newData,
     context,
     buildKey,
     mapNewSuggestion: (entry) => mapVulnerabilityToSuggestion(opportunity, entry),
+    mergeStatusFunction: () => null,
     log,
-    isReconcileCandidate: (s) => s.getStatus() === SuggestionDataAccess.STATUSES.IN_PROGRESS,
-    // Confirmation is disappearance from the deployed-env rescan itself: a candidate that
-    // reached this point (an IN_PROGRESS autofix, per isReconcileCandidate above) no longer
-    // appears in the scan, which IS the fix confirmation — there is no per-suggestion AI
-    // check to run. Returning true is that confirmation, not a stub.
-    isIssueFixedWithAISuggestion: () => true,
-    // reconcileDisappearedSuggestions invokes this hook as (fixedSuggestions, opp, isAuthorOnly).
-    // Vulns substitutes the closure's `context` (which the hook does not supply) for that third
-    // arg and drops isAuthorOnly: 'security-vulnerabilities' is author-only, so DEPLOYED is
-    // terminal and the flag would never branch anything here.
-    resolveFixEntities:
-        (fixedSuggestions, opp) => promoteVulnFixEntities(fixedSuggestions, opp, context),
   });
-
-  // §10: the base sync above only moves IN_PROGRESS/NEW suggestions. Now reconcile the
-  // already-FIXED ones against this same scan — promote asserted fixes whose vuln is gone,
-  // and reopen regressions / stale-unconfirmed asserts whose vuln is still present.
-  await reconcileFixedVulnSuggestions(opportunity, newData, context, log);
 }
 
 /**

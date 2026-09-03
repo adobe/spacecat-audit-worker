@@ -32,10 +32,6 @@ export const SUMMIT_PLG_HANDLER = 'summit-plg';
 export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
   'security-permissions-redundant',
   'security-permissions',
-  // Vulns: the audit fetches a report of the deployed AEM CS environment, so a
-  // component disappearing already means "gone from prod". DEPLOYED is terminal and
-  // the separate publish step is skipped (PHASES.md §D3 / §T2.5).
-  'security-vulnerabilities',
 ];
 
 /**
@@ -757,8 +753,6 @@ export async function reconcileDisappearedSuggestions({
   log,
   isIssueFixedWithAISuggestion,
   buildFixEntityPayload,
-  isReconcileCandidate,
-  resolveFixEntities,
   isAuthorOnly = false,
   Suggestion,
 }) {
@@ -775,10 +769,7 @@ export async function reconcileDisappearedSuggestions({
     // customer explicitly picked a redirect target, not a generic content edit.
     // Keep the pre-existing exemption unchanged here (no regression review/tests
     // for backlinks in this PR).
-    // Default candidacy: NEW (not customer-edited) + OUTDATED&isEdited. A caller can
-    // override it entirely via isReconcileCandidate — e.g. vulns opts IN_PROGRESS
-    // (autofixed) suggestions in, which the default set excludes.
-    const defaultIsReconcileCandidate = (s) => {
+    const candidates = disappearedSuggestions.filter((s) => {
       const status = s?.getStatus?.();
       const isEdited = s?.getData?.()?.isEdited === true;
       if (newStatus && status === newStatus) {
@@ -792,12 +783,7 @@ export async function reconcileDisappearedSuggestions({
         return true;
       }
       return false;
-    };
-    const candidates = disappearedSuggestions.filter(
-      typeof isReconcileCandidate === 'function'
-        ? isReconcileCandidate
-        : defaultIsReconcileCandidate,
-    );
+    });
 
     if (candidates.length === 0) {
       return;
@@ -816,51 +802,39 @@ export async function reconcileDisappearedSuggestions({
       return;
     }
 
-    // Persist FixEntities BEFORE flipping suggestion status, so a FixEntity write
-    // failure leaves the suggestion in its prior state for the next audit to retry —
-    // preferring "under-report" to "credit-without-attribution".
-    if (typeof resolveFixEntities === 'function') {
-      // Promote mode: the caller resolves FixEntities in place (e.g. vulns flips the
-      // suggestion's existing PENDING FixEntity to DEPLOYED) instead of creating new
-      // ones. A throw leaves suggestions untouched for the next-audit retry.
-      try {
-        await resolveFixEntities(fixedSuggestions, opportunity, isAuthorOnly);
-      } catch (e) {
-        log.warn(`Failed to resolve fix entities on opportunity ${opportunity.getId?.()}; leaving suggestions unchanged for next-audit retry: ${e.message}`);
+    // Build fix-entity payloads BEFORE flipping suggestion status, so a FixEntity
+    // write failure leaves the suggestion in its prior state for the next audit
+    // to retry — preferring "under-report" to "credit-without-attribution".
+    const fixEntityObjects = [];
+    let payloadThrows = 0;
+    if (typeof buildFixEntityPayload === 'function') {
+      for (const suggestion of fixedSuggestions) {
+        try {
+          const fixEntity = buildFixEntityPayload(suggestion, opportunity, isAuthorOnly);
+          if (fixEntity) {
+            fixEntityObjects.push(fixEntity);
+          }
+        } catch (e) {
+          payloadThrows += 1;
+          log.warn(`Failed building fix entity for suggestion ${suggestion?.getId?.()}: ${e.message}`);
+        }
+      }
+      // Defensive (batch-wide throw): if EVERY payload build threw, do not flip
+      // suggestion status. Otherwise we would land FIXED with no FixEntity —
+      // the exact drift the reorder prevents.
+      if (payloadThrows > 0 && payloadThrows === fixedSuggestions.length) {
+        log.warn(`[reconcileDisappearedSuggestions] All ${payloadThrows} payload builds threw; leaving suggestions unchanged for next-audit retry`);
         return;
       }
-    } else {
-      const fixEntityObjects = [];
-      let payloadThrows = 0;
-      if (typeof buildFixEntityPayload === 'function') {
-        for (const suggestion of fixedSuggestions) {
-          try {
-            const fixEntity = buildFixEntityPayload(suggestion, opportunity, isAuthorOnly);
-            if (fixEntity) {
-              fixEntityObjects.push(fixEntity);
-            }
-          } catch (e) {
-            payloadThrows += 1;
-            log.warn(`Failed building fix entity for suggestion ${suggestion?.getId?.()}: ${e.message}`);
-          }
-        }
-        // Defensive (batch-wide throw): if EVERY payload build threw, do not flip
-        // suggestion status. Otherwise we would land FIXED with no FixEntity —
-        // the exact drift the reorder prevents.
-        if (payloadThrows > 0 && payloadThrows === fixedSuggestions.length) {
-          log.warn(`[reconcileDisappearedSuggestions] All ${payloadThrows} payload builds threw; leaving suggestions unchanged for next-audit retry`);
-          return;
-        }
-      }
+    }
 
-      if (fixEntityObjects.length > 0 && typeof opportunity.addFixEntities === 'function') {
-        try {
-          await opportunity.addFixEntities(fixEntityObjects);
-          log.info(`Added ${fixEntityObjects.length} fix entities for opportunity ${opportunity.getId?.()}`);
-        } catch (e) {
-          log.warn(`Failed to add fix entities on opportunity ${opportunity.getId?.()}; leaving suggestions unchanged for next-audit retry: ${e.message}`);
-          return;
-        }
+    if (fixEntityObjects.length > 0 && typeof opportunity.addFixEntities === 'function') {
+      try {
+        await opportunity.addFixEntities(fixEntityObjects);
+        log.info(`Added ${fixEntityObjects.length} fix entities for opportunity ${opportunity.getId?.()}`);
+      } catch (e) {
+        log.warn(`Failed to add fix entities on opportunity ${opportunity.getId?.()}; leaving suggestions unchanged for next-audit retry: ${e.message}`);
+        return;
       }
     }
 
@@ -1018,8 +992,6 @@ export async function syncSuggestionsWithPublishDetection({
   // Publish detection params
   isIssueFixedWithAISuggestion,
   buildFixEntityPayload,
-  isReconcileCandidate,
-  resolveFixEntities,
   isIssueResolvedOnProduction,
 }) {
   if (!context) {
@@ -1040,12 +1012,9 @@ export async function syncSuggestionsWithPublishDetection({
     buildKey,
   );
 
-  // Step 1: Reconcile disappeared suggestions (skip for TBYB sites). A caller drives
-  // the FixEntity write either by creating new ones (buildFixEntityPayload) or by
-  // promoting existing ones in place (resolveFixEntities); either enables reconcile.
+  // Step 1: Reconcile disappeared suggestions (skip for TBYB sites)
   if (typeof isIssueFixedWithAISuggestion === 'function'
-      && (typeof buildFixEntityPayload === 'function'
-        || typeof resolveFixEntities === 'function')) {
+      && typeof buildFixEntityPayload === 'function') {
     if (await checkIsTBYBSite(context)) {
       log.debug('[syncSuggestionsWithPublishDetection] Skipping reconcile for TBYB site');
     } else {
@@ -1055,8 +1024,6 @@ export async function syncSuggestionsWithPublishDetection({
         log,
         isIssueFixedWithAISuggestion,
         buildFixEntityPayload,
-        isReconcileCandidate,
-        resolveFixEntities,
         isAuthorOnly,
         Suggestion: context.dataAccess?.Suggestion,
       });
