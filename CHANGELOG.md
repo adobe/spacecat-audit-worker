@@ -1,3 +1,10 @@
+## [1.532.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.2...v1.532.3) (2026-09-03)
+
+
+### Bug Fixes
+
+* **cwv:** gate CWV suggestions on a minimum RUM sample count (SITES-50756) ([#2935](https://github.com/adobe/spacecat-audit-worker/issues/2935)) ([4f8362e](https://github.com/adobe/spacecat-audit-worker/commit/4f8362e89a3388ce49711a655d49332703c8ffaf))
+
 ## [1.532.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.1...v1.532.2) (2026-09-03)
 
 
