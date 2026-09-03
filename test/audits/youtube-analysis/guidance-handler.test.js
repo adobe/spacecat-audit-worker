@@ -15,6 +15,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 // Use the REAL applyScopeToOpportunity (see cited-analysis test for rationale).
 import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
 import { MockContextBuilder } from '../../shared.js';
@@ -32,6 +33,7 @@ describe('YouTube Analysis Guidance Handler', () => {
   let mockFetchAnalysis;
   let mockConvertToOpportunity;
   let mockSyncSuggestions;
+  let syncOffsiteUrlIndexStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
   let supersededRunSnapshotCreationStub;
@@ -98,6 +100,7 @@ describe('YouTube Analysis Guidance Handler', () => {
     mockFetchAnalysis = sandbox.stub();
     mockConvertToOpportunity = sandbox.stub().resolves(mockOpportunity);
     mockSyncSuggestions = sandbox.stub().resolves();
+    syncOffsiteUrlIndexStub = sandbox.stub().resolves();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
     supersededRunSnapshotCreationStub = sandbox.stub().resolves(null);
@@ -170,6 +173,9 @@ describe('YouTube Analysis Guidance Handler', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: mockSyncSuggestions,
+      },
+      '../../../src/common/offsite-url-index.js': {
+        syncOffsiteUrlIndex: syncOffsiteUrlIndexStub,
       },
       '../../../src/common/offsite-refresh.js': {
         persistOffsiteOpportunity: mockConvertToOpportunity,
@@ -514,6 +520,14 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('NEW');
       expect(mockOpportunity.save).to.have.been.calledOnce;
       expect(response.status).to.equal(200);
+
+      // The forward-only URL index is wired in after persist with this audit's type.
+      expect(syncOffsiteUrlIndexStub).to.have.been.calledOnce;
+      const urlIndexArg = syncOffsiteUrlIndexStub.firstCall.args[0];
+      expect(urlIndexArg.context).to.equal(context);
+      expect(urlIndexArg.opportunity).to.equal(mockOpportunity);
+      expect(urlIndexArg.auditType).to.equal(Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS);
+      expect(urlIndexArg.olog).to.be.an('object');
     });
 
     it('should set status from opportunityData when provided by Mystique', async () => {
