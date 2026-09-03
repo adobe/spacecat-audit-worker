@@ -129,6 +129,77 @@ export function hasReliableSamples(entry) {
 }
 
 /**
+ * The set of metrics (lcp/cls/inp) that were RELIABLY measured for a page this run — each
+ * backed by at least MIN_METRIC_SAMPLES measurements on some device. When the floor is waived
+ * (the always-reported homepage) every metric counts as reliable. This is the per-metric
+ * refinement of hasReliableSamples: hasReliableSamples answers "was the page observed at all?",
+ * this answers "which of its metrics carry trustworthy signal?".
+ * @param {Object} entry - CWV audit entry with a metrics array
+ * @param {boolean} [waiveFloor=false] - when true (homepage) all metrics count as reliable
+ * @returns {Set<string>} subset of METRICS reliably measured this run
+ */
+export function reliableMetricsForEntry(entry, waiveFloor = false) {
+  const deviceRows = Array.isArray(entry?.metrics) ? entry.metrics : [];
+  const clearsFloor = (metric) => deviceRows.some(
+    (deviceMetrics) => metricSampleCount(deviceMetrics, metric) >= MIN_METRIC_SAMPLES,
+  );
+  return new Set(METRICS.filter((metric) => waiveFloor || clearsFloor(metric)));
+}
+
+/**
+ * Builds the OUTDATE coverage predicate for CWV syncSuggestions. A suggestion may be aged out to
+ * OUTDATED only when its page was reliably re-examined this run AND every metric its own issues
+ * concern was itself reliably measured. This mirrors the SITES-48436 per-metric preservation intent
+ * one level up: the page-level check alone (any metric over the floor) would let a page reliable on
+ * LCP but sparse on INP age out a prior INP suggestion on an n=2 non-signal (SITES-50756 review
+ * follow-up). Behaviour by row:
+ *   - group/pattern rows (no `url`): never OUTDATE via coverage — unchanged;
+ *   - page absent this run or all-metrics sub-floor (not homepage): preserved — unchanged;
+ *   - homepage: floor waived, all metrics count as reliable — page-level behaviour;
+ *   - legacy suggestion with no per-metric `issues[]`: falls back to page-level behaviour;
+ *   - otherwise: OUTDATE only if all of the suggestion's issue metrics were reliable this run.
+ * @param {Object[]} cwvEntries - the full audit `cwv` array (before the failing-metrics filter)
+ * @param {string} baseURL - site base URL (trailing slash removed) for the homepage check
+ * @returns {(data: object) => boolean} predicate over an existing suggestion's `data`
+ */
+export function buildCwvOutdateCoverage(cwvEntries, baseURL) {
+  const urlEntries = (Array.isArray(cwvEntries) ? cwvEntries : [])
+    .filter((entry) => entry.type === 'url');
+  const scrapedUrlsSet = new Set(
+    urlEntries
+      .filter((entry) => isHomepage(entry, baseURL) || hasReliableSamples(entry))
+      .map((entry) => entry.url),
+  );
+  const reliableMetricsByUrl = new Map(
+    urlEntries.map(
+      (entry) => [entry.url, reliableMetricsForEntry(entry, isHomepage(entry, baseURL))],
+    ),
+  );
+  return (data) => {
+    const url = data?.url;
+    // group/pattern row: no scraped-URL identity → never OUTDATE via coverage
+    if (!url) {
+      return false;
+    }
+    // page not reliably observed at all this run → preserve the prior suggestion
+    if (!scrapedUrlsSet.has(url)) {
+      return false;
+    }
+    const priorIssueMetrics = Array.isArray(data?.issues)
+      ? data.issues.map((issue) => issue?.type).filter((type) => METRICS.includes(type))
+      : [];
+    // legacy suggestion with no per-metric issues → page-level behaviour
+    if (priorIssueMetrics.length === 0) {
+      return true;
+    }
+    // url is in scrapedUrlsSet, so it is necessarily a key in reliableMetricsByUrl (both are
+    // built from the same url entries) — the lookup is always a Set here.
+    const reliable = reliableMetricsByUrl.get(url);
+    return priorIssueMetrics.every((metric) => reliable.has(metric));
+  };
+}
+
+/**
  * Returns true if the named metric (lcp/cls/inp) exceeds threshold on any device
  * in the entry. Null/undefined values are treated as passing.
  * @param {Object} entry - CWV audit entry with a metrics array
@@ -295,21 +366,13 @@ export async function syncOpportunitiesAndSuggestions(context) {
     .map((entry) => filterToFailingDeviceMetrics(entry, enforceMinSamplesFor(entry)));
   log.info(`[syncOpportunitiesAndSuggestions] site ${site.getId()} - ${cwvData.length} of ${auditResult.cwv.length} CWV entries have failing metrics`);
 
-  // Set of page URLs RELIABLY observed in THIS run's RUM data (the full reported set,
-  // before the failing-metrics filter). Passed to syncSuggestions so a suggestion is only
-  // aged out to OUTDATED when its page was measured this run and dropped from the failing
-  // set because it now passes. A URL absent from this set — bot/WAF-blocked HEAD, dropped
-  // from the top-N/threshold selection, or sparse/empty RUM — is NOT evidence the issue is
-  // resolved, so it must not be marked OUTDATED (SITES-48436). A page seen only through too
-  // few samples is likewise no reliable signal, so it is excluded here to preserve a prior
-  // issue across a sparse week (SITES-50756); the always-reported homepage is kept. Group/
-  // pattern rows carry no scraped-URL identity and are unaffected by this guard.
-  const scrapedUrlsSet = new Set(
-    auditResult.cwv
-      .filter((entry) => entry.type === 'url')
-      .filter((entry) => isHomepage(entry, baseURL) || hasReliableSamples(entry))
-      .map((entry) => entry.url),
-  );
+  // Coverage predicate passed to syncSuggestions: a suggestion is aged out to OUTDATED only when
+  // its page was RELIABLY re-examined this run and dropped from the failing set because it now
+  // passes — and, per-metric, only when the specific metrics its own issues concern were reliably
+  // measured. A page absent from this run (bot/WAF-blocked HEAD, dropped from top-N/threshold, or
+  // sparse RUM) is NOT evidence of resolution (SITES-48436), and neither is a metric that went
+  // sub-floor this week (SITES-50756). See buildCwvOutdateCoverage.
+  const isWithinCoverage = buildCwvOutdateCoverage(auditResult.cwv, baseURL);
 
   // Build minimal audit data object for opportunity creation
   const auditData = {
@@ -371,7 +434,10 @@ export async function syncOpportunitiesAndSuggestions(context) {
     newData: cwvData,
     context,
     buildKey,
-    scrapedUrlsSet,
+    // Per-metric coverage predicate refines the page-level scrapedUrlsSet: a suggestion is
+    // OUTDATE-eligible only when its own failing metrics were all reliably measured this run
+    // (takes precedence over scrapedUrlsSet in syncSuggestions). See isWithinCoverage above.
+    isWithinCoverage,
     bypassValidationForPlg: true,
     // On re-audit: shallow-merge new fields onto existing data, then mark issues
     // OUTDATED for any metric whose failure has resolved (skip list preserves

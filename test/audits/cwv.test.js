@@ -1651,6 +1651,8 @@ describe('CWV min-sample floor helpers (SITES-50756)', () => {
   let hasFailingMetrics;
   let filterToFailingDeviceMetrics;
   let hasReliableSamples;
+  let reliableMetricsForEntry;
+  let buildCwvOutdateCoverage;
   let MIN_METRIC_SAMPLES;
 
   before(async () => {
@@ -1658,6 +1660,8 @@ describe('CWV min-sample floor helpers (SITES-50756)', () => {
       hasFailingMetrics,
       filterToFailingDeviceMetrics,
       hasReliableSamples,
+      reliableMetricsForEntry,
+      buildCwvOutdateCoverage,
       MIN_METRIC_SAMPLES,
     } = await import('../../src/cwv/opportunity-sync.js'));
   });
@@ -1732,6 +1736,109 @@ describe('CWV min-sample floor helpers (SITES-50756)', () => {
       expect(hasReliableSamples({
         metrics: [{ deviceType: 'desktop', lcp: 9000 }],
       })).to.be.false;
+    });
+  });
+
+  describe('reliableMetricsForEntry', () => {
+    // lcp well-sampled (40), cls sub-floor (1), inp absent.
+    const entry = {
+      type: 'url',
+      url: 'https://x.com/a',
+      metrics: [{
+        deviceType: 'desktop', lcp: 31000, lcpCount: 40, cls: 0.3, clsCount: 1,
+      }],
+    };
+
+    it('includes only metrics that clear the floor', () => {
+      const reliable = reliableMetricsForEntry(entry);
+      expect(reliable.has('lcp')).to.be.true;
+      expect(reliable.has('cls')).to.be.false; // n=1 < floor
+      expect(reliable.has('inp')).to.be.false; // no count
+    });
+
+    it('includes every metric when the floor is waived (homepage)', () => {
+      const reliable = reliableMetricsForEntry(entry, true);
+      expect([...reliable].sort()).to.deep.equal(['cls', 'inp', 'lcp']);
+    });
+
+    it('returns an empty set for an entry with no metrics array', () => {
+      expect(reliableMetricsForEntry({}).size).to.equal(0);
+    });
+  });
+
+  describe('buildCwvOutdateCoverage (per-metric OUTDATE fidelity, SITES-50756 review)', () => {
+    const baseURL = 'https://x.com';
+    // A non-homepage page: LCP reliable (n=40), INP sub-floor (n=2).
+    const cwv = [
+      {
+        type: 'url',
+        url: 'https://x.com/a',
+        metrics: [{
+          deviceType: 'desktop', lcp: 9000, lcpCount: 40, inp: 800, inpCount: 2,
+        }],
+      },
+      // A page seen only through a handful of samples on every metric.
+      {
+        type: 'url',
+        url: 'https://x.com/sparse',
+        metrics: [{ deviceType: 'desktop', lcp: 9000, lcpCount: 2 }],
+      },
+      // The homepage — floor waived, so every metric counts as reliable.
+      {
+        type: 'url',
+        url: 'https://x.com',
+        metrics: [{ deviceType: 'desktop', inp: 800, inpCount: 2 }],
+      },
+      { type: 'group', pattern: 'https://x.com/blog/*', metrics: [] },
+    ];
+    let isWithinCoverage;
+    before(() => {
+      isWithinCoverage = buildCwvOutdateCoverage(cwv, baseURL);
+    });
+
+    it('does NOT age out a suggestion whose issue is on a sub-floor metric (the fix)', () => {
+      // /a is reliable on LCP but INP went sub-floor this run; a prior INP suggestion must survive.
+      expect(isWithinCoverage({ url: 'https://x.com/a', issues: [{ type: 'inp' }] })).to.be.false;
+    });
+
+    it('ages out a suggestion whose issue metric was reliably measured', () => {
+      expect(isWithinCoverage({ url: 'https://x.com/a', issues: [{ type: 'lcp' }] })).to.be.true;
+    });
+
+    it('requires ALL of a multi-metric suggestion\'s metrics to be reliable', () => {
+      expect(isWithinCoverage({
+        url: 'https://x.com/a', issues: [{ type: 'lcp' }, { type: 'inp' }],
+      })).to.be.false;
+    });
+
+    it('falls back to page-level coverage for a legacy suggestion with no per-metric issues', () => {
+      expect(isWithinCoverage({ url: 'https://x.com/a' })).to.be.true;
+      expect(isWithinCoverage({ url: 'https://x.com/a', issues: [] })).to.be.true;
+    });
+
+    it('ignores unrecognized issue types (treated as no per-metric issues)', () => {
+      expect(isWithinCoverage({ url: 'https://x.com/a', issues: [{ type: 'ttfb' }] })).to.be.true;
+    });
+
+    it('preserves a page not reliably observed at all this run', () => {
+      expect(isWithinCoverage({ url: 'https://x.com/sparse', issues: [{ type: 'lcp' }] })).to.be.false;
+    });
+
+    it('preserves a page absent from this run entirely', () => {
+      expect(isWithinCoverage({ url: 'https://x.com/gone', issues: [{ type: 'lcp' }] })).to.be.false;
+    });
+
+    it('waives the floor for the homepage — a sub-floor metric still ages out', () => {
+      expect(isWithinCoverage({ url: 'https://x.com', issues: [{ type: 'inp' }] })).to.be.true;
+    });
+
+    it('never ages out a group/pattern row (no url identity)', () => {
+      expect(isWithinCoverage({ pattern: 'https://x.com/blog/*', issues: [{ type: 'lcp' }] })).to.be.false;
+    });
+
+    it('is defensive against a missing cwv array', () => {
+      const predicate = buildCwvOutdateCoverage(undefined, baseURL);
+      expect(predicate({ url: 'https://x.com/a', issues: [{ type: 'lcp' }] })).to.be.false;
     });
   });
 });
