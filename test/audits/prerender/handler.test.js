@@ -5366,8 +5366,9 @@ describe('Prerender Audit', () => {
       const res = await mockHandler.submitForScraping(ctx);
 
       expect(res.urls).to.deep.equal([{ url: 'http://[invalid' }]);
-      // Four calls: one per source (organic, included, agentic) + one cross-source dedup
-      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.callCount(4);
+      // Five calls: one per source (organic, included, agentic) + one cross-source dedup
+      // + one merge with the (empty) domain-wide reconciliation batch (LLMO-7052).
+      expect(mergeAndGetUniqueHtmlUrlsStub).to.have.callCount(5);
     });
 
     it('should use catch-path sheet fallback and hit toPath catch in fallback', async () => {
@@ -9175,7 +9176,7 @@ describe('Prerender Audit', () => {
     });
   });
 
-  describe('skipNewSuggestionsWhenDomainDeployed / markDeployedUrlSuggestionsAsCovered', () => {
+  describe('LLMO-7052: syncCoveredByDomainWide (add + remove, merged)', () => {
     // HTML pair that produces contentGainRatio > CONTENT_GAIN_THRESHOLD (1.1) so prerender is detected
     const serverHtml = '<html><body><p>Short</p></body></html>';
     const clientHtml = '<html><body><p>Short</p><p>Much more dynamic content loaded by JavaScript making the page significantly longer than the server-side render and pushing the content gain ratio well above the threshold</p></body></html>';
@@ -9218,8 +9219,10 @@ describe('Prerender Audit', () => {
       let currentData = { ...data };
       return {
         getId: () => id,
+        getStatus: () => 'NEW',
         getData: () => currentData,
         setData: (newData) => { currentData = newData; },
+        setUpdatedBy: () => {},
       };
     };
 
@@ -9230,20 +9233,21 @@ describe('Prerender Audit', () => {
       const pathSuggestion = buildSuggestionWithSetData('ps1', { allowedRegexPatterns: ['/products/*'], pathScore: 2.5 });
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion1, newSuggestion2, pathSuggestion]);
 
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const mockHandler = await buildMockHandler(
+        sandbox,
+        [domainWideSuggestion, newSuggestion1, newSuggestion2, pathSuggestion],
+      );
       const context = buildContext(sandbox, {
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+          Suggestion: { saveMany: saveManyStub },
         },
       });
 
       await mockHandler.processContentAndGenerateOpportunities(context);
 
-      expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
       expect(saveManyStub).to.have.been.calledOnce;
       expect(newSuggestion1.getData().coveredByDomainWide).to.equal('dw-1');
       expect(newSuggestion2.getData().coveredByDomainWide).to.equal('dw-1');
@@ -9252,26 +9256,26 @@ describe('Prerender Audit', () => {
       expect(context.log.info).to.have.been.calledWith(sinon.match(/All domain deployed: marking.*per-URL and.*path suggestions as coveredByDomainWide/));
     });
 
-    it('should skip saveMany when no NEW suggestions exist', async () => {
+    it('should skip saveMany when there are no other NEW suggestions to cover', async () => {
+      // The domain-wide suggestion itself is always NEW but is never a coverage candidate
+      // (no url, and isPathSuggestionData excludes anything with isDomainWide=true).
       const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([]);
 
       const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
       const context = buildContext(sandbox, {
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+          Suggestion: { saveMany: saveManyStub },
         },
       });
 
       await mockHandler.processContentAndGenerateOpportunities(context);
 
-      expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
       expect(saveManyStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/markDeployedUrlSuggestionsAsCovered: no NEW suggestions found/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions to cover/));
     });
 
     it('should only set coveredByDomainWide on the deployed-URL suggestion, preserving the non-deployed one', async () => {
@@ -9282,14 +9286,16 @@ describe('Prerender Audit', () => {
       const nonDeployedSuggestion = buildSuggestionWithSetData('s-not-deployed', { url: 'https://example.com/other-page' });
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([deployedSuggestion, nonDeployedSuggestion]);
 
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const mockHandler = await buildMockHandler(
+        sandbox,
+        [domainWideSuggestion, deployedSuggestion, nonDeployedSuggestion],
+      );
       const context = buildContext(sandbox, {
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+          Suggestion: { saveMany: saveManyStub },
         },
       });
 
@@ -9309,14 +9315,16 @@ describe('Prerender Audit', () => {
       const normalSuggestion = buildSuggestionWithSetData('s-normal', { url: 'https://example.com/page1' });
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([alreadyDeployedSuggestion, normalSuggestion]);
 
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const mockHandler = await buildMockHandler(
+        sandbox,
+        [domainWideSuggestion, alreadyDeployedSuggestion, normalSuggestion],
+      );
       const context = buildContext(sandbox, {
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+          Suggestion: { saveMany: saveManyStub },
         },
       });
 
@@ -9333,20 +9341,18 @@ describe('Prerender Audit', () => {
       const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://other.com/page' });
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
 
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion, newSuggestion]);
       const context = buildContext(sandbox, {
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+          Suggestion: { saveMany: saveManyStub },
         },
       });
 
       await mockHandler.processContentAndGenerateOpportunities(context);
 
-      expect(allByOpportunityIdAndStatusStub).to.have.been.calledOnce;
       expect(saveManyStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(sinon.match(/no NEW suggestions to cover/));
     });
@@ -9358,7 +9364,6 @@ describe('Prerender Audit', () => {
       const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
 
       const s3ClientNoEdge = {
         send: sandbox.stub().callsFake((command) => {
@@ -9371,13 +9376,13 @@ describe('Prerender Audit', () => {
         }),
       };
 
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion, newSuggestion]);
       const context = buildContext(sandbox, {
         s3Client: s3ClientNoEdge,
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+          Suggestion: { saveMany: saveManyStub },
         },
       });
 
@@ -9417,18 +9422,17 @@ describe('Prerender Audit', () => {
       const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
 
       // OUTDATED suggestions appear before the deployed one — this is the real-world order
       const mockHandler = await buildMockHandler(
         sandbox,
-        [outdatedDomainWide1, outdatedDomainWide2, deployedDomainWide],
+        [outdatedDomainWide1, outdatedDomainWide2, deployedDomainWide, newSuggestion],
       );
       const context = buildContext(sandbox, {
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+          Suggestion: { saveMany: saveManyStub },
         },
       });
 
@@ -9485,7 +9489,7 @@ describe('Prerender Audit', () => {
       expect(saveManyStub).to.not.have.been.called;
     });
 
-    it('should skip when SuggestionDA methods are missing', async () => {
+    it('should skip when SuggestionDA.saveMany is missing', async () => {
       const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
 
       const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
@@ -9493,7 +9497,7 @@ describe('Prerender Audit', () => {
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: {}, // methods intentionally absent
+          Suggestion: {}, // saveMany intentionally absent
         },
       });
 
@@ -9504,18 +9508,17 @@ describe('Prerender Audit', () => {
 
     it('should handle invalid suggestion URLs gracefully in coveredByDomainWide matching', async () => {
       const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
-      // Suggestion with an unparseable URL — triggers the catch branch in markDeployedUrlSuggestionsAsCovered
+      // Suggestion with an unparseable URL — triggers the catch branch in the add-side filter
       const invalidUrlSuggestion = buildSuggestionWithSetData('s-invalid', { url: 'not-a-valid-url' });
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([invalidUrlSuggestion]);
 
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion, invalidUrlSuggestion]);
       const context = buildContext(sandbox, {
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+          Suggestion: { saveMany: saveManyStub },
         },
       });
 
@@ -9536,18 +9539,18 @@ describe('Prerender Audit', () => {
       const pathUncovered = buildSuggestionWithSetData('ps-plain', { allowedRegexPatterns: ['/news/*'], pathScore: 2 });
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([
+
+      const mockHandler = await buildMockHandler(sandbox, [
+        domainWideSuggestion,
         pathWithEdgeDeployed,
         pathAlreadyCovered,
         pathUncovered,
       ]);
-
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
       const context = buildContext(sandbox, {
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+          Suggestion: { saveMany: saveManyStub },
         },
       });
 
@@ -9561,22 +9564,20 @@ describe('Prerender Audit', () => {
     });
 
     it('should use empty string fallback for baseUrl/siteId when site getBaseURL/getId return empty', async () => {
-      // Covers the || '' branches on lines 98-99 and 126
       const domainWideSuggestion = { getStatus: () => 'NEW', getId: () => 'dw-1', getData: () => ({ isDomainWide: true, edgeDeployed: 1234567890 }) };
       // scrapeResultPaths has 'https://example.com/page1' — suggestion URL must match
       const newSuggestion = buildSuggestionWithSetData('s1', { url: 'https://example.com/page1' });
 
       const saveManyStub = sandbox.stub().resolves();
-      const allByOpportunityIdAndStatusStub = sandbox.stub().resolves([newSuggestion]);
 
-      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion]);
+      const mockHandler = await buildMockHandler(sandbox, [domainWideSuggestion, newSuggestion]);
       const context = buildContext(sandbox, {
-        // getBaseURL and getId return '' — triggers the || '' fallback on lines 98-99 and 126
+        // getBaseURL and getId return '' — triggers the || '' fallback
         site: { getId: () => '', getBaseURL: () => '' },
         dataAccess: {
           SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]) },
           LatestAudit: { updateByKeys: sandbox.stub().resolves() },
-          Suggestion: { allByOpportunityIdAndStatus: allByOpportunityIdAndStatusStub, saveMany: saveManyStub },
+          Suggestion: { saveMany: saveManyStub },
         },
       });
 
