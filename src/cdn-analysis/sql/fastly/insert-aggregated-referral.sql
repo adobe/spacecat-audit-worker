@@ -7,6 +7,10 @@ WITH hosts AS (
     AND month = '{{month}}'
     AND day   = '{{day}}'
     {{hourFilter}}
+    -- scope known-first-party hosts to this site; the raw path can be shared
+    -- across sites, so an unscoped list would treat another site's host as
+    -- first-party and wrongly drop real referral traffic from it.
+    AND REGEXP_LIKE(host, '{{hostPattern}}')
 ),
 
 referrals_raw AS (
@@ -49,6 +53,11 @@ referrals_raw AS (
     AND month = '{{month}}'
     AND day   = '{{day}}'
     {{hourFilter}}
+
+    -- restrict to this site's own traffic; the raw path can be shared by
+    -- multiple sites under the same org/CDN, so without this every site
+    -- sharing the path would aggregate every other site's rows too.
+    AND REGEXP_LIKE(host, '{{hostPattern}}')
 
     -- referral traffic definition
     AND (

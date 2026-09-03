@@ -294,6 +294,12 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
 
   const { year, month, day, hour } = getHourParts(auditContext);
   const { host } = new URL(site.getBaseURL());
+  // Multiple sites can share one org-level CDN bucket/raw-log path (bucket naming is
+  // per-org, not per-site - see resolveCdnBucketName). Without a positive host match,
+  // aggregation for this site would ingest every site's traffic sharing that path.
+  // Mirrors the (www.)? tolerance used by buildSiteFilters at the report layer.
+  const rootHost = escapeForAthenaRegexLiteral(host.replace(/^www\./, ''));
+  const hostPattern = `(?i)^(www\\.)?${rootHost}$`;
   const siteId = site.getId();
   const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
@@ -514,12 +520,16 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           // pattern in insert-aggregated.sql; escape it so a crafted base URL
           // cannot break out of the string literal or broaden the match (VULN-37491).
           host: escapeForAthenaRegexLiteral(host),
+          // hostPattern restricts aggregation to rows whose CDN-reported host
+          // actually belongs to this site - see comment at hostPattern definition.
+          hostPattern,
           serviceProvider,
         }),
         loadSql(cdnType, 'insert-aggregated-referral', {
           database,
           rawTable,
           aggregatedTable: aggregatedReferralTable,
+          hostPattern,
           year,
           month,
           day,

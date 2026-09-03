@@ -24,6 +24,11 @@ WHERE date = '{{year}}{{month}}{{day}}'
   -- This avoids scanning daily files 24 times while maintaining downstream compatibility
   -- The 'hour' column in output provides hourly breakdown within the daily aggregation
 
+  -- restrict to this site's own traffic; the raw path can be shared by multiple
+  -- sites under the same org/CDN, so without this every site sharing the path
+  -- would aggregate every other site's rows too.
+  AND REGEXP_LIKE(ClientRequestHost, '{{hostPattern}}')
+
   -- match known LLM-related user-agents
   AND REGEXP_LIKE(ClientRequestUserAgent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-?Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 

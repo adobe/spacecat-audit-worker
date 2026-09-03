@@ -4,6 +4,10 @@ WITH hosts AS (
   SELECT DISTINCT s_computername AS host
   FROM {{database}}.{{rawTable}}
   WHERE date = '{{year}}-{{month}}-{{day}}'
+    -- scope known-first-party hosts to this site; the raw path can be shared
+    -- across sites, so an unscoped list would treat another site's host as
+    -- first-party and wrongly drop real referral traffic from it.
+    AND REGEXP_LIKE(s_computername, '{{hostPattern}}')
 ),
 
 base AS (
@@ -19,6 +23,10 @@ base AS (
     cs_user_agent AS user_agent
   FROM {{database}}.{{rawTable}}
   WHERE date = '{{year}}-{{month}}-{{day}}'
+    -- restrict to this site's own traffic; the raw path can be shared by
+    -- multiple sites under the same org/CDN, so without this every site
+    -- sharing the path would aggregate every other site's rows too.
+    AND REGEXP_LIKE(s_computername, '{{hostPattern}}')
 ),
 
 referrals_raw AS (

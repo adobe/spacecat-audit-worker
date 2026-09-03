@@ -20,7 +20,12 @@ WHERE year  = '{{year}}'
   AND month = '{{month}}'
   AND day   = '{{day}}'
   {{hourFilter}}
-  
+
+  -- restrict to this site's own traffic; the raw path can be shared by multiple
+  -- sites under the same org/CDN, so without this every site sharing the path
+  -- would aggregate every other site's rows too.
+  AND REGEXP_LIKE(COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)), '{{hostPattern}}')
+
    -- match known LLM-related user-agents
   AND REGEXP_LIKE(properties.userAgent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot|Perplexity|Claude|Anthropic|Gemini|Copilot|MistralAI-User|Google-NotebookLM|Google-?Agent|Google-Extended|Googlebot|bingbot|Amzn-User|^Google$)')
 
