@@ -179,6 +179,10 @@ export async function resolveEvergreenOffsiteOpportunity({
     throw e;
   }
 
+  olog.success('audit_persistence_evergreen_opportunity_read', 'Fetched opportunities', {
+    peer: PEER.POSTGRES, direction: 'inbound', count: (opportunities || []).length,
+  });
+
   const matchingOpportunities = (opportunities || [])
     .filter((opportunity) => opportunity.getType() === auditType);
   if (matchingOpportunities.length === 0) {
