@@ -19,8 +19,9 @@ use(sinonChai);
 
 const WIKI_URL = 'https://en.wikipedia.org/wiki/Adobe_Inc.';
 
-describe('url-index', () => {
+describe('url-index (generic core)', () => {
   const sandbox = sinon.createSandbox();
+  const context = { dataAccess: { services: { postgrestClient: { id: 'pg-client' } } } };
   let syncUrlIndexStub;
   let syncUrlIndexManyStub;
   let syncOpportunityUrlIndex;
@@ -32,11 +33,6 @@ describe('url-index', () => {
     getSiteId: () => 'site-1',
     getData: () => data,
     getSuggestions: sandbox.stub().resolves(suggestions),
-  });
-
-  const makeContext = () => ({
-    dataAccess: { services: { postgrestClient: { id: 'pg-client' } } },
-    log: { debug: sandbox.stub(), warn: sandbox.stub() },
   });
 
   beforeEach(async () => {
@@ -55,14 +51,16 @@ describe('url-index', () => {
   });
 
   it('indexes the opportunity singly and its suggestions in one batched call', async () => {
-    const context = makeContext();
     const opportunity = makeOpportunity({
       data: { fullAnalysis: { wikipediaUrl: WIKI_URL } },
       suggestions: [makeSuggestion('sugg-1'), makeSuggestion('sugg-2')],
     });
 
-    await syncOpportunityUrlIndex({ context, opportunity, auditType: 'wikipedia-analysis' });
+    const result = await syncOpportunityUrlIndex({
+      context, opportunity, auditType: 'wikipedia-analysis',
+    });
 
+    expect(result).to.deep.equal({ status: 'ok', urlCount: 1, suggestionCount: 2 });
     expect(syncUrlIndexStub).to.have.been.calledOnceWith(
       context.dataAccess.services.postgrestClient,
       {
@@ -85,19 +83,19 @@ describe('url-index', () => {
         ],
       },
     );
-    expect(context.log.debug).to.have.been.calledOnce;
-    expect(context.log.warn).to.not.have.been.called;
   });
 
   it('clears (empty urls) for the opportunity and suggestions when no source url is extracted', async () => {
-    const context = makeContext();
     const opportunity = makeOpportunity({
       data: {}, // no fullAnalysis at all
       suggestions: [makeSuggestion('sugg-1')],
     });
 
-    await syncOpportunityUrlIndex({ context, opportunity, auditType: 'wikipedia-analysis' });
+    const result = await syncOpportunityUrlIndex({
+      context, opportunity, auditType: 'wikipedia-analysis',
+    });
 
+    expect(result).to.deep.equal({ status: 'ok', urlCount: 0, suggestionCount: 1 });
     expect(syncUrlIndexStub.getCall(0).args[1].urls).to.deep.equal([]);
     expect(syncUrlIndexManyStub).to.have.been.calledOnceWith(
       context.dataAccess.services.postgrestClient,
@@ -111,85 +109,77 @@ describe('url-index', () => {
   });
 
   it('skips the batched suggestion call when there are no suggestions', async () => {
-    const context = makeContext();
     const opportunity = makeOpportunity({
       data: { fullAnalysis: { wikipediaUrl: WIKI_URL } },
       suggestions: [],
     });
 
-    await syncOpportunityUrlIndex({ context, opportunity, auditType: 'wikipedia-analysis' });
+    const result = await syncOpportunityUrlIndex({
+      context, opportunity, auditType: 'wikipedia-analysis',
+    });
 
+    expect(result).to.deep.equal({ status: 'ok', urlCount: 1, suggestionCount: 0 });
     expect(syncUrlIndexStub).to.have.been.calledOnce;
     expect(syncUrlIndexManyStub).to.not.have.been.called;
-    expect(context.log.debug).to.have.been.calledOnce;
-    expect(context.log.warn).to.not.have.been.called;
   });
 
   it('is a no-op for audit types without a registered extractor', async () => {
-    const context = makeContext();
     const opportunity = makeOpportunity({ data: { fullAnalysis: { wikipediaUrl: WIKI_URL } } });
 
-    await syncOpportunityUrlIndex({ context, opportunity, auditType: 'cited-analysis' });
+    const result = await syncOpportunityUrlIndex({
+      context, opportunity, auditType: 'cited-analysis',
+    });
 
+    expect(result).to.deep.equal({ status: 'skipped' });
     expect(syncUrlIndexStub).to.not.have.been.called;
     expect(syncUrlIndexManyStub).to.not.have.been.called;
     expect(opportunity.getSuggestions).to.not.have.been.called;
   });
 
-  it('swallows an opportunity-index failure and labels the phase', async () => {
-    const context = makeContext();
-    syncUrlIndexStub.rejects(new Error('postgrest boom'));
+  it('returns an opportunity-index failure with the phase and does not fetch suggestions', async () => {
+    const error = new Error('postgrest boom');
+    syncUrlIndexStub.rejects(error);
     const opportunity = makeOpportunity({
       data: { fullAnalysis: { wikipediaUrl: WIKI_URL } },
       suggestions: [makeSuggestion('sugg-1')],
     });
 
-    // Must resolve (not reject) despite the underlying failure.
-    await syncOpportunityUrlIndex({ context, opportunity, auditType: 'wikipedia-analysis' });
+    const result = await syncOpportunityUrlIndex({
+      context, opportunity, auditType: 'wikipedia-analysis',
+    });
 
-    expect(context.log.warn).to.have.been.calledOnce;
-    const line = context.log.warn.firstCall.args[0];
-    expect(line).to.include('event=url_index_sync');
-    expect(line).to.include('outcome=failure');
-    expect(line).to.include('phase=opportunity-index');
-    expect(line).to.include('postgrest boom');
-    expect(line).to.include('oppty-1');
+    expect(result).to.deep.equal({ status: 'error', phase: 'opportunity-index', error });
     // Opportunity sync threw, so suggestions are never fetched or indexed.
     expect(opportunity.getSuggestions).to.not.have.been.called;
     expect(syncUrlIndexManyStub).to.not.have.been.called;
-    expect(context.log.debug).to.not.have.been.called;
   });
 
-  it('swallows a suggestion-fetch failure and labels the phase', async () => {
-    const context = makeContext();
+  it('returns a suggestion-fetch failure with the phase', async () => {
+    const error = new Error('getSuggestions boom');
     const opportunity = makeOpportunity({ data: { fullAnalysis: { wikipediaUrl: WIKI_URL } } });
-    opportunity.getSuggestions.rejects(new Error('getSuggestions boom'));
+    opportunity.getSuggestions.rejects(error);
 
-    await syncOpportunityUrlIndex({ context, opportunity, auditType: 'wikipedia-analysis' });
+    const result = await syncOpportunityUrlIndex({
+      context, opportunity, auditType: 'wikipedia-analysis',
+    });
 
+    expect(result).to.deep.equal({ status: 'error', phase: 'suggestion-fetch', error });
     expect(syncUrlIndexStub).to.have.been.calledOnce; // opportunity indexed before the failure
     expect(syncUrlIndexManyStub).to.not.have.been.called;
-    expect(context.log.warn).to.have.been.calledOnce;
-    const line = context.log.warn.firstCall.args[0];
-    expect(line).to.include('phase=suggestion-fetch');
-    expect(line).to.include('getSuggestions boom');
-    expect(context.log.debug).to.not.have.been.called;
   });
 
-  it('swallows a suggestion-index failure and labels the phase', async () => {
-    const context = makeContext();
-    syncUrlIndexManyStub.rejects(new Error('batch boom'));
+  it('returns a suggestion-index failure with the phase', async () => {
+    const error = new Error('batch boom');
+    syncUrlIndexManyStub.rejects(error);
     const opportunity = makeOpportunity({
       data: { fullAnalysis: { wikipediaUrl: WIKI_URL } },
       suggestions: [makeSuggestion('sugg-1')],
     });
 
-    await syncOpportunityUrlIndex({ context, opportunity, auditType: 'wikipedia-analysis' });
+    const result = await syncOpportunityUrlIndex({
+      context, opportunity, auditType: 'wikipedia-analysis',
+    });
 
-    expect(context.log.warn).to.have.been.calledOnce;
-    const line = context.log.warn.firstCall.args[0];
-    expect(line).to.include('phase=suggestion-index');
-    expect(line).to.include('batch boom');
-    expect(context.log.debug).to.not.have.been.called;
+    expect(result).to.deep.equal({ status: 'error', phase: 'suggestion-index', error });
   });
 });

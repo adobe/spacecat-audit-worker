@@ -16,13 +16,15 @@ The **forward-only** and **best-effort** trade-offs are recorded in ADR
 
 ## Scope
 
-- `src/common/url-index.js`: `syncOpportunityUrlIndex({ context, opportunity, auditType })`. Runs a
-  per-type extractor, then `syncUrlIndex` for the opportunity and each persisted suggestion.
-  Best-effort (logs and swallows errors, never fails the audit). An audit type with no registered
-  extractor is a no-op.
-- Wired into the four offsite guidance-handlers (`{wikipedia,cited,reddit,youtube}-analysis`) after
-  `opportunity.save()` + `syncSuggestions`. Wikipedia's extractor is implemented
-  (`fullAnalysis.wikipediaUrl`); the others have no extractor yet, so the call is a no-op for them.
+- `src/common/url-index.js` (generic core): `syncOpportunityUrlIndex({ context, opportunity,
+  auditType })` runs the per-type extractor + `syncUrlIndex`/`syncUrlIndexMany`, swallows errors, and
+  returns `{ status, phase?, error?, urlCount, suggestionCount }`. Emits nothing and imports only
+  `spacecat-shared-data-access`, so any producer can reuse it; unknown type → `status: 'skipped'`.
+- `src/common/offsite-url-index.js` (offsite adapter): `syncOffsiteUrlIndex({ ..., olog })` calls the
+  core and renders its result into the offsite log taxonomy — keeping offsite-logging out of the core.
+- Wired into the four offsite guidance-handlers (`{wikipedia,cited,reddit,youtube}-analysis`, which
+  call `syncOffsiteUrlIndex`) after `opportunity.save()` + `syncSuggestions`. Only wikipedia has an
+  extractor (`fullAnalysis.wikipediaUrl`) today; the rest are no-ops until theirs land.
 - Forward-only: no backfill. Evergreen opportunities repopulate the index on their next run.
 
 ## Cross-repo dependency
@@ -38,12 +40,12 @@ to the first published version containing it.
 
 ## Success criteria
 
-- `syncOpportunityUrlIndex` writes `opportunity_urls` + `suggestion_urls` rows for a persisted
-  wikipedia opportunity; no-op for types with no extractor.
-- A failure at any stage never fails the audit and is logged with its `phase` under a stable
-  `event=url_index_sync outcome=failure` token.
+- Core writes `opportunity_urls` + `suggestion_urls` for a persisted wikipedia opportunity
+  (`status: 'ok'`); `status: 'skipped'` for types with no extractor.
+- A failure at any stage never fails the audit: core returns `status: 'error'` + `phase`, adapter
+  logs it as `event=url_index_sync outcome=degraded`. The core has no offsite dependency.
 - Suggestions indexed via one batched `syncUrlIndexMany` call, skipped when there are none.
-- 100% line/branch/statement coverage on `src/common/url-index.js`.
+- 100% line/branch/statement coverage on `url-index.js` + `offsite-url-index.js`.
 
 ## Out of scope / follow-up
 

@@ -2,16 +2,16 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-03
-- **Related:** spec `docs/specs/2026-08-18-url-index-producer.md` · producer `src/common/url-index.js`
+- **Related:** spec `docs/specs/2026-08-18-url-index-producer.md` · `src/common/url-index.js` + `src/common/offsite-url-index.js`
 
 ## Context
 
 The write-time shared URL index records which source URL(s) back each opportunity/suggestion so
 `spacecat-api-service` can resolve "which entity is backed by this URL?" with one indexed lookup.
 The pointer tables and the `syncUrlIndex`/`syncUrlIndexMany` writer live in
-`@adobe/spacecat-shared-data-access`; this repo owns only URL extraction and the call site
-(`syncOpportunityUrlIndex`, wired into the four offsite guidance handlers). Two of its behavior
-choices are non-obvious, long-term trade-offs, so per CLAUDE.md they are recorded here.
+`@adobe/spacecat-shared-data-access`; this repo owns only URL extraction and the persist-time call
+from the four offsite guidance handlers. Two of its behavior choices are non-obvious, long-term
+trade-offs, so per CLAUDE.md they are recorded here.
 
 ## Decision
 
@@ -23,10 +23,13 @@ choices are non-obvious, long-term trade-offs, so per CLAUDE.md they are recorde
    error. The index is a derived read-optimization; a PostgREST hiccup must not roll back a
    successful opportunity/suggestion persist.
 
-3. **The swallowed failure stays attributable and alertable.** A `phase` label
-   (`opportunity-index` / `suggestion-fetch` / `suggestion-index`) and a stable
-   `event=url_index_sync outcome=failure` token are logged via the offsite taxonomy
-   (`src/utils/offsite-logging.js`), so index drift is countable in Splunk rather than silent.
+3. **The failure stays attributable and alertable, kept out of the generic writer.** The core
+   (`src/common/url-index.js`) returns a structured result (`{ status, phase?, error?, ... }`) and
+   emits nothing, so any producer can reuse it. A thin offsite adapter
+   (`src/common/offsite-url-index.js`) renders that result into the offsite taxonomy
+   (`event=url_index_sync`, the failing `phase`, canonical `[offsite:<audit>]` prefix with
+   `audit`/`auditId`). The outcome is `degraded`, not `failure`: a best-effort write that self-heals
+   next run is recoverable, so drift stays countable without paging as terminal.
 
 ## Consequences
 

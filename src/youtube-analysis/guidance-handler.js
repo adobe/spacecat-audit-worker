@@ -14,7 +14,7 @@ import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
 import { syncSuggestions } from '../utils/data-access.js';
-import { syncOpportunityUrlIndex } from '../common/url-index.js';
+import { syncOffsiteUrlIndex } from '../common/offsite-url-index.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { postMessageOptional, buildAnalysisVisibilityMessage } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
@@ -226,7 +226,9 @@ export default async function handler(message, context) {
     }
 
     // Forward-only source-URL index (best-effort; never fails the audit).
-    await syncOpportunityUrlIndex({ context, opportunity, auditType: AUDIT_TYPE });
+    await syncOffsiteUrlIndex({
+      context, opportunity, auditType: AUDIT_TYPE, olog: ologOpp,
+    });
 
     ologOpp.success('audit_persistence_end', 'Run processed successfully', {
       count: suggestions.length, companyName,

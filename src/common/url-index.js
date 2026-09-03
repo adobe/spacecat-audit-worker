@@ -11,9 +11,6 @@
  */
 
 import { syncUrlIndex, syncUrlIndexMany } from '@adobe/spacecat-shared-data-access';
-import {
-  appendFields, errorField, OFFSITE_DOMAIN, OUTCOME, PEER,
-} from '../utils/offsite-logging.js';
 
 /**
  * Writes an opportunity's (and its suggestions') source URLs into the shared URL index at
@@ -24,10 +21,7 @@ import {
 const OPPORTUNITY_URLS_TABLE = 'opportunity_urls';
 const SUGGESTION_URLS_TABLE = 'suggestion_urls';
 
-// Stable event token so index-sync outcomes are alertable via the offsite log taxonomy.
-const URL_INDEX_EVENT = 'url_index_sync';
-
-// Set before each awaited step so a swallowed error names the stage that threw.
+// Returned in the result so a swallowed error names the stage that threw.
 const PHASE = {
   OPPORTUNITY_INDEX: 'opportunity-index',
   SUGGESTION_FETCH: 'suggestion-fetch',
@@ -49,29 +43,31 @@ const URL_EXTRACTORS = {
 };
 
 /**
- * Sync the URL index for a persisted opportunity and its suggestions. Best-effort: swallows
- * errors so a failed sync never fails the audit.
+ * Sync the URL index for a persisted opportunity and its suggestions. Best-effort: swallows errors
+ * so a failed sync never fails the audit, and returns a structured result describing the outcome.
  *
  * @param {object} params
- * @param {object} params.context - audit context (`dataAccess` + `log`)
+ * @param {object} params.context - audit context (`dataAccess`)
  * @param {object} params.opportunity - the persisted Opportunity entity
  * @param {string} params.auditType - the opportunity type (e.g. `wikipedia-analysis`)
- * @returns {Promise<void>}
+ * @returns {Promise<{status: ('ok'|'skipped'|'error'), urlCount?: number,
+ *   suggestionCount?: number, phase?: string, error?: Error}>} `skipped` when no extractor is
+ *   registered, `ok` (with counts) on success, `error` (with the failing `phase` + `error`) on
+ *   failure.
  */
 export async function syncOpportunityUrlIndex({ context, opportunity, auditType }) {
-  const { dataAccess, log } = context;
+  const { dataAccess } = context;
 
   const extractUrls = URL_EXTRACTORS[auditType];
   if (!extractUrls) {
-    return;
+    return { status: 'skipped' };
   }
 
   const entityId = opportunity.getId();
-  let siteId;
   let phase = PHASE.OPPORTUNITY_INDEX;
   try {
     const { postgrestClient } = dataAccess.services;
-    siteId = opportunity.getSiteId();
+    const siteId = opportunity.getSiteId();
     const urls = extractUrls(opportunity);
 
     await syncUrlIndex(postgrestClient, {
@@ -98,28 +94,8 @@ export async function syncOpportunityUrlIndex({ context, opportunity, auditType 
       });
     }
 
-    log.debug(appendFields('[url-index] synced source urls', {
-      domain: OFFSITE_DOMAIN,
-      event: URL_INDEX_EVENT,
-      outcome: OUTCOME.SUCCESS,
-      peer: PEER.POSTGRES,
-      siteId,
-      opportunityId: entityId,
-      entityType: auditType,
-      urlCount: urls.length,
-      suggestionCount: suggestions.length,
-    }));
+    return { status: 'ok', urlCount: urls.length, suggestionCount: suggestions.length };
   } catch (error) {
-    log.warn(appendFields(`[url-index] failed to sync url index (${phase})`, {
-      domain: OFFSITE_DOMAIN,
-      event: URL_INDEX_EVENT,
-      outcome: OUTCOME.FAILURE,
-      peer: PEER.POSTGRES,
-      siteId,
-      opportunityId: entityId,
-      entityType: auditType,
-      phase,
-      ...errorField(error),
-    }));
+    return { status: 'error', phase, error };
   }
 }
