@@ -21,6 +21,7 @@ import {
   sortErrorsByTrafficVolume,
   categorizeErrorsByStatusCode,
   groupErrorsByUrl,
+  getSiteCountryIgnoreList,
   parsePeriodIdentifier,
   toPathOnly,
 } from './utils.js';
@@ -329,7 +330,7 @@ async function publishObservationLlmBrokenUrls({
         avgTtfb: String(v.avgTtfb),
         category: v.category || '',
         product: v.product ?? null,
-        countryCode: v.countryCode || 'GLOBAL',
+        countryCode: v.countryCode,
       }));
 
     // NOTE: `observationUrls` is guaranteed non-empty here.
@@ -472,6 +473,9 @@ export async function runAuditAndSendToMystique(context) {
           });
         }
 
+        // Per-site country codes to force to 'GLOBAL'.
+        const siteCountryIgnoreList = getSiteCountryIgnoreList(site);
+
         await Promise.allSettled(STATUS_BUCKETS.map(async ({ code, auditType, suggestionType }) => {
           try {
             const rawAll = categorizedResults[code] || [];
@@ -480,7 +484,7 @@ export async function runAuditAndSendToMystique(context) {
             let scrapedUrls = new Set();
 
             if (rawErrors.length > 0) {
-              const groupedErrors = groupErrorsByUrl(rawErrors);
+              const groupedErrors = groupErrorsByUrl(rawErrors, siteCountryIgnoreList);
               scrapedUrls = new Set(groupedErrors.map((e) => e.url));
 
               const opportunity = await convertToOpportunity(
@@ -675,7 +679,7 @@ export async function runAuditAndSendToMystique(context) {
               // keyed by the raw `url` so the helper can look them up while it
               // re-groups sorted404 into the observation wire shape.
               const facetsByUrl = new Map(
-                groupErrorsByUrl(errors404).map((r) => [r.url, r]),
+                groupErrorsByUrl(errors404, siteCountryIgnoreList).map((r) => [r.url, r]),
               );
               await publishObservationLlmBrokenUrls({
                 sorted404,
