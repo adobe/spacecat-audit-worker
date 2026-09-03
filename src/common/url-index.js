@@ -11,6 +11,9 @@
  */
 
 import { syncUrlIndex, syncUrlIndexMany } from '@adobe/spacecat-shared-data-access';
+import {
+  appendFields, errorField, OFFSITE_DOMAIN, OUTCOME, PEER,
+} from '../utils/offsite-logging.js';
 
 /**
  * Writes an opportunity's (and its suggestions') source URLs into the shared URL index at
@@ -21,10 +24,21 @@ import { syncUrlIndex, syncUrlIndexMany } from '@adobe/spacecat-shared-data-acce
 const OPPORTUNITY_URLS_TABLE = 'opportunity_urls';
 const SUGGESTION_URLS_TABLE = 'suggestion_urls';
 
+// Stable event token so index-sync outcomes are alertable via the offsite log taxonomy.
+const URL_INDEX_EVENT = 'url_index_sync';
+
+// Set before each awaited step so a swallowed error names the stage that threw.
+const PHASE = {
+  OPPORTUNITY_INDEX: 'opportunity-index',
+  SUGGESTION_FETCH: 'suggestion-fetch',
+  SUGGESTION_INDEX: 'suggestion-index',
+};
+
 /**
- * Per opportunity-type extractor of an opportunity's source URLs. A type absent from this map
- * is a no-op. For wikipedia the opportunity and its suggestions share one source (the analysed
- * page), so the same URLs are indexed for both.
+ * Per opportunity-type extractor of source URLs; a type absent from this map is a no-op.
+ * Wikipedia's opportunity and suggestions share one source, so the same URLs are indexed for both.
+ * Adding cited/reddit/youtube (a distinct source per suggestion) needs a per-suggestion extractor
+ * seam — see ADR `docs/decisions/006-url-index-forward-only-best-effort.md`.
  * @type {Object<string, (opportunity: object) => string[]>}
  */
 const URL_EXTRACTORS = {
@@ -53,9 +67,11 @@ export async function syncOpportunityUrlIndex({ context, opportunity, auditType 
   }
 
   const entityId = opportunity.getId();
+  let siteId;
+  let phase = PHASE.OPPORTUNITY_INDEX;
   try {
     const { postgrestClient } = dataAccess.services;
-    const siteId = opportunity.getSiteId();
+    siteId = opportunity.getSiteId();
     const urls = extractUrls(opportunity);
 
     await syncUrlIndex(postgrestClient, {
@@ -66,20 +82,44 @@ export async function syncOpportunityUrlIndex({ context, opportunity, auditType 
       urls,
     });
 
-    // One batched call for all suggestions instead of a per-suggestion fan-out.
+    phase = PHASE.SUGGESTION_FETCH;
     const suggestions = await opportunity.getSuggestions();
-    await syncUrlIndexMany(postgrestClient, {
-      table: SUGGESTION_URLS_TABLE,
-      siteId,
-      entityType: auditType,
-      entries: suggestions.map((suggestion) => ({
-        entityId: suggestion.getId(),
-        urls,
-      })),
-    });
 
-    log.debug(`[url-index] synced ${urls.length} url(s) for opportunity ${entityId}`);
+    if (suggestions.length > 0) {
+      phase = PHASE.SUGGESTION_INDEX;
+      await syncUrlIndexMany(postgrestClient, {
+        table: SUGGESTION_URLS_TABLE,
+        siteId,
+        entityType: auditType,
+        entries: suggestions.map((suggestion) => ({
+          entityId: suggestion.getId(),
+          urls,
+        })),
+      });
+    }
+
+    log.debug(appendFields('[url-index] synced source urls', {
+      domain: OFFSITE_DOMAIN,
+      event: URL_INDEX_EVENT,
+      outcome: OUTCOME.SUCCESS,
+      peer: PEER.POSTGRES,
+      siteId,
+      opportunityId: entityId,
+      entityType: auditType,
+      urlCount: urls.length,
+      suggestionCount: suggestions.length,
+    }));
   } catch (error) {
-    log.warn(`[url-index] failed to sync url index for opportunity ${entityId}: ${error.message}`);
+    log.warn(appendFields(`[url-index] failed to sync url index (${phase})`, {
+      domain: OFFSITE_DOMAIN,
+      event: URL_INDEX_EVENT,
+      outcome: OUTCOME.FAILURE,
+      peer: PEER.POSTGRES,
+      siteId,
+      opportunityId: entityId,
+      entityType: auditType,
+      phase,
+      ...errorField(error),
+    }));
   }
 }

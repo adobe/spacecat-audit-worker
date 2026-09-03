@@ -9,6 +9,9 @@ Two pointer tables (`opportunity_urls`, `suggestion_urls`, in `mysticat-data-ser
 source URL to the row it backs. The shared writer/reader lives in `@adobe/spacecat-shared-data-access`
 (`syncUrlIndex` / `lookupEntityIdsByUrl`); producers own only URL extraction.
 
+The **forward-only** and **best-effort** trade-offs are recorded in ADR
+`docs/decisions/006-url-index-forward-only-best-effort.md`.
+
 **Tech:** Node.js 24, ESM, Mocha + Chai + Sinon + esmock, 100% coverage.
 
 ## Scope
@@ -27,8 +30,27 @@ source URL to the row it backs. The shared writer/reader lives in `@adobe/spacec
 `syncUrlIndex` ships in `@adobe/spacecat-shared-data-access`. Bump the dependency in `package.json`
 to the first published version containing it.
 
+## Alternatives
+
+- **Read-time fan-out (no index).** Ask each producer "do you back this URL?" at query time.
+  Rejected: O(producers) per lookup, couples the reader to producer internals — what this index removes.
+- **Backfill on ship / fail-audit-on-error / silent swallow.** See ADR 006.
+
+## Success criteria
+
+- `syncOpportunityUrlIndex` writes `opportunity_urls` + `suggestion_urls` rows for a persisted
+  wikipedia opportunity; no-op for types with no extractor.
+- A failure at any stage never fails the audit and is logged with its `phase` under a stable
+  `event=url_index_sync outcome=failure` token.
+- Suggestions indexed via one batched `syncUrlIndexMany` call, skipped when there are none.
+- 100% line/branch/statement coverage on `src/common/url-index.js`.
+
 ## Out of scope / follow-up
 
-- Extractors for cited/reddit/youtube (their URLs live in Mystique's nested payload, and each
-  suggestion cites a distinct source, so they introduce a per-suggestion extractor).
-- Semantic (claim/topic) matching: separate later phase, needs pgvector.
+- Extractors for cited/reddit/youtube. Each suggestion cites a *distinct* source, so they need a
+  per-suggestion extractor seam (a `(suggestion) => string[]` entry), not wikipedia's shared-URL one;
+  deferred until the first lands.
+- URL validation/normalization at the extractor boundary for less-trusted (scraped) sources — not
+  actionable while only the trusted Wikipedia URL flows; canonicalization is owned by `syncUrlIndex`.
+- A reconciliation sweep for index↔source divergence (ADR 006) — detection exists, correction does not.
+- Semantic (claim/topic) matching: later phase, needs pgvector.
