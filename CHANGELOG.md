@@ -1,3 +1,10 @@
+## [1.532.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.1...v1.532.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** normalize country codes in 5xx/4xx opportunities (LLMO-7230 pt2) ([#2934](https://github.com/adobe/spacecat-audit-worker/issues/2934)) ([51a99fb](https://github.com/adobe/spacecat-audit-worker/commit/51a99fb1123a43af765b50348ba9b38d33a6b2df)), closes [#2927](https://github.com/adobe/spacecat-audit-worker/issues/2927)
+
 ## [1.532.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.0...v1.532.1) (2026-09-03)
 
 
