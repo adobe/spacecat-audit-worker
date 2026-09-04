@@ -1,3 +1,10 @@
+## [1.533.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.0...v1.533.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** resolve real LLMO entitlement tier before creating brand-presence schedule (LLMO-7366) ([#2942](https://github.com/adobe/spacecat-audit-worker/issues/2942)) ([1d4963e](https://github.com/adobe/spacecat-audit-worker/commit/1d4963e38f5ce74682244145eb61ca827e0e7595)), closes [#3178](https://github.com/adobe/spacecat-audit-worker/issues/3178)
+
 # [1.533.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.4...v1.533.0) (2026-09-04)
 
 
