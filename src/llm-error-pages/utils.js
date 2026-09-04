@@ -386,12 +386,102 @@ export function isValidUrlPath(url) {
   return true;
 }
 
+/**
+ * Denylist of well-formed paths that are never legitimate site content.
+ * Automated vulnerability scanners and secret-harvesting bots spoof an LLM
+ * user-agent while probing these paths, slip past the user-agent filter, and
+ * land a (correct) 4xx — most often 403. They are real security value on the
+ * customer's edge but pure noise in the LLM error-pages opportunity, so we drop
+ * them before building suggestions. Companion to the UA / IP-fingerprint
+ * hardening tracked in LLMO-5282; `isValidUrlPath` only rejects *malformed*
+ * URLs, whereas these are syntactically valid and need a content denylist.
+ *
+ * Each pattern is anchored to a path *segment* or filename (not a bare
+ * substring) so legitimate pages survive: `/environment` !~ `.env`,
+ * `/gitane-bikes` !~ `.git`, `/inventory` !~ `.env`, `/manager-specials`
+ * !~ `manager/html`. Patterns run against the decoded pathname (see
+ * `isLikelyScannerPath`), so encoded-separator traversal (`..%2f`) is caught.
+ * (A fully-encoded double-dot segment such as `%2e%2e` is resolved away by the
+ * URL parser before we ever see it, so it needs no pattern.) All patterns are
+ * case-insensitive; none carry the `g` flag (which would make `.test()`
+ * stateful across calls).
+ *
+ * Trade-off: on CMS-backed sites `wp-content` / `wp-includes` can host real
+ * media, but (a) only error rows reach this boundary — a 200 asset never
+ * appears — and (b) a spoofed-UA 403 to those paths is not an actionable LLM
+ * finding. Named groups exist so Coralogix telemetry can report *what class* of
+ * probe was suppressed.
+ */
+export const SCANNER_PROBE_PATTERNS = [
+  // Version-control metadata (source tree & history exfiltration).
+  { name: 'vcs-metadata', regex: /(^|\/)\.(git|svn|hg|bzr)(ignore|config|attributes|modules)?($|\/)/i },
+
+  // Environment / secret / credential files.
+  { name: 'secret-file', regex: /(^|\/)\.env(\.[a-z0-9]+)?($|\/)|(^|\/)(id_rsa|id_dsa|id_ecdsa|id_ed25519|\.htpasswd|\.htaccess|\.netrc|\.npmrc|\.pgpass|\.dockercfg)($|\/)/i },
+
+  // Cloud / IaC state & config (AWS, SSH, Terraform, Kubernetes, Docker, CI, IDE).
+  { name: 'cloud-iac', regex: /(^|\/)\.(aws|ssh|kube|docker|terraform|circleci|github|gitlab|vscode|idea)($|\/)|\.tf(vars|state)(\.[a-z0-9]+)?($|\/)/i },
+
+  // Front-end dev-server / bundler internals — never served in production.
+  { name: 'dev-server-internal', regex: /(^|\/)@(fs|vite|id|react-refresh)($|\/)|(^|\/)(\.vite|node_modules|__webpack_hmr|webpack-dev-server)($|\/)/i },
+
+  // CMS / admin-panel probes (WordPress, Joomla, phpMyAdmin, Adminer, Typo3).
+  { name: 'cms-admin-probe', regex: /(^|\/)(wp-admin|wp-includes|wp-content|wp-json|xmlrpc\.php|phpmyadmin|adminer|administrator|typo3)($|\/)|wp-(login|config)\.php/i },
+
+  // Server / framework introspection & webshell probes.
+  { name: 'server-probe', regex: /(^|\/)(cgi-bin|actuator|jmx-console|server-status|server-info|_profiler)($|\/)|(^|\/)(phpinfo|info|test|shell|cmd|eval-stdin)\.php($|\/)|(^|\/)manager\/(html|status|text)($|\/)/i },
+
+  // Path traversal / local-file-inclusion (decoded, so %2e%2e is covered).
+  { name: 'path-traversal', regex: /\.\.[/\\]|(^|\/)(etc\/passwd|etc\/shadow|proc\/self|windows\/win\.ini|boot\.ini)($|\/)/i },
+
+  // Cloud instance-metadata SSRF targets.
+  { name: 'metadata-ssrf', regex: /(^|\/)(latest\/meta-data|computeMetadata)($|\/)|169\.254\.169\.254/i },
+
+  // Database dumps / backup archives at common probe names, plus editor swap files.
+  { name: 'backup-dump', regex: /(^|\/)(backup|backups|dump|database|db|www|web|site|public_html|htdocs)\.(sql|zip|tar\.gz|tgz|gz|rar|7z|bak)($|\/)|\.(swp|swo|swn)($|\/)/i },
+];
+
+/**
+ * Returns true when a URL's path matches a known scanner / vulnerability-probe
+ * signature (see `SCANNER_PROBE_PATTERNS`). Assumes the input already passed
+ * `isValidUrlPath`; unparseable input returns false so the malformed-URL filter
+ * remains the single owner of that rejection.
+ *
+ * @param {string} url - Absolute URL or path from a CDN log row.
+ * @returns {boolean} True if the path looks like an automated probe.
+ */
+export function isLikelyScannerPath(url) {
+  if (typeof url !== 'string' || !url.trim()) {
+    return false;
+  }
+
+  let pathname;
+  try {
+    pathname = new URL(url.trim(), 'https://example.com').pathname;
+  } catch {
+    return false;
+  }
+
+  // Decode so percent-encoded traversal / separators (`%2e%2e`, `%2f`) match the
+  // same patterns as their literal forms. Malformed escapes (`%ZZ`) throw — fall
+  // back to the raw pathname rather than crash the whole audit row.
+  let decoded = pathname;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    decoded = pathname;
+  }
+
+  return SCANNER_PROBE_PATTERNS.some(({ regex }) => regex.test(decoded));
+}
+
 export function processErrorPagesResults(results) {
   if (!results || results.length === 0) {
     return {
       totalErrors: 0,
       errorPages: [],
       droppedUrls: [],
+      scannerUrls: [],
       summary: {
         uniqueUrls: 0,
         uniqueUserAgents: 0,
@@ -400,16 +490,21 @@ export function processErrorPagesResults(results) {
     };
   }
 
-  // Filter malformed URLs at the data boundary so `errorPages`, the per-status
-  // categorization, the Excel export, the opportunity sync, and the Mystique
-  // payload all share one consistent view.
+  // Filter malformed URLs and scanner/probe noise at the data boundary so
+  // `errorPages`, the per-status categorization, the Excel export, the
+  // opportunity sync, and the Mystique payload all share one consistent view.
+  // `droppedUrls` (malformed) and `scannerUrls` (well-formed probes) are tracked
+  // separately so telemetry can attribute each class of exclusion.
   const errorPages = [];
   const droppedUrls = [];
+  const scannerUrls = [];
   results.forEach((row) => {
-    if (isValidUrlPath(row.url)) {
-      errorPages.push(row);
-    } else {
+    if (!isValidUrlPath(row.url)) {
       droppedUrls.push(row.url);
+    } else if (isLikelyScannerPath(row.url)) {
+      scannerUrls.push(row.url);
+    } else {
+      errorPages.push(row);
     }
   });
 
@@ -433,6 +528,7 @@ export function processErrorPagesResults(results) {
     totalErrors,
     errorPages,
     droppedUrls,
+    scannerUrls,
     summary: {
       uniqueUrls: uniqueUrls.size,
       uniqueUserAgents: uniqueUserAgents.size,

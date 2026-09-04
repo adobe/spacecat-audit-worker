@@ -454,6 +454,15 @@ export async function runAuditAndSendToMystique(context) {
           log.info(`[LLM-ERROR-PAGES] Filtered ${processedResults.droppedUrls.length} malformed URL(s); sample: ${JSON.stringify(sample)}`);
         }
 
+        // Scanner / vulnerability-probe paths (e.g. '/.github/.env',
+        // '/@fs/app/terraform.tfvars') are well-formed but never legitimate
+        // content; they are dropped in processErrorPagesResults. Log a sample so
+        // the suppressed volume stays diagnosable from Coralogix.
+        if (processedResults.scannerUrls?.length > 0) {
+          const sample = processedResults.scannerUrls.slice(0, 5);
+          log.info(`[LLM-ERROR-PAGES] Filtered ${processedResults.scannerUrls.length} scanner/probe URL(s); sample: ${JSON.stringify(sample)}`);
+        }
+
         log.info(`[LLM-ERROR-PAGES] Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
         const opportunityMap = {};
