@@ -282,8 +282,11 @@ const reopenStatusForSite = (site) => (
  * transitions so the (Suggestion, FixEntity) pair stays consistent. Joins each suggestion
  * to its FixEntity so the decision is FixEntity-aware:
  *
- * - open (NEW/PENDING_VALIDATION) + no fix, vuln gone → customer self-fix: suggestion
- *   FIXED + create a DEPLOYED FixEntity stamped origin CUSTOMER_SELF_FIX.
+ * - NEW, vuln gone                 → customer self-fix: suggestion FIXED, backed by a
+ *   DEPLOYED FixEntity (promote an existing PENDING fix, else create one stamped
+ *   origin CUSTOMER_SELF_FIX).
+ * - PENDING_VALIDATION, vuln gone  → never validated, so not a confirmed fix: archive the
+ *   suggestion OUTDATED and leave the fix entity untouched.
  * - FIXED + PENDING, vuln gone     → asserted fix confirmed: promote PENDING → DEPLOYED
  *   (+ stamp deployedAt), keep FIXED.
  * - FIXED + PENDING, vuln present  → wait: the fix is asserted but not yet scan-confirmed,
@@ -316,17 +319,18 @@ export async function reconcileVulnSuggestions(opportunity, newData, context, lo
   const suggestions = await opportunity.getSuggestions();
 
   // Candidates needing FixEntity-aware reconciliation: every FIXED suggestion, plus any
-  // open finding (NEW/PENDING_VALIDATION) that DISAPPEARED from the scan (a self-fix).
-  // Present open findings and every other status are left to the base sync.
+  // open finding (NEW/PENDING_VALIDATION) that DISAPPEARED from the scan. A disappeared NEW
+  // is a customer self-fix (→ FIXED); a disappeared PENDING_VALIDATION was never validated
+  // (→ OUTDATED). Present open findings and every other status are left to the base sync.
   const isOpen = (s) => s.getStatus() === SuggestionDataAccess.STATUSES.NEW
     || s.getStatus() === SuggestionDataAccess.STATUSES.PENDING_VALIDATION;
   const fixedSuggestions = suggestions.filter(
     (s) => s.getStatus() === SuggestionDataAccess.STATUSES.FIXED,
   );
-  const selfFixedSuggestions = suggestions.filter(
+  const disappearedOpenSuggestions = suggestions.filter(
     (s) => isOpen(s) && !presentKeys.has(buildKey(s.getData())),
   );
-  if (fixedSuggestions.length === 0 && selfFixedSuggestions.length === 0) {
+  if (fixedSuggestions.length === 0 && disappearedOpenSuggestions.length === 0) {
     return;
   }
 
@@ -397,23 +401,32 @@ export async function reconcileVulnSuggestions(opportunity, newData, context, lo
     // fix, or a regression already restarted → leave the pair untouched.
   }
 
-  for (const suggestion of selfFixedSuggestions) {
-    const id = suggestion.getId();
-    const pending = pendingBySuggestionId.get(id);
-    suggestion.setStatus(SuggestionDataAccess.STATUSES.FIXED);
+  for (const suggestion of disappearedOpenSuggestions) {
     suggestion.setUpdatedBy('system');
     suggestionsToSave.push(suggestion);
-    if (pending) {
-      // Edge: the open finding already had a PENDING fix → promote it, don't create one.
-      pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
-      pending.setDeployedAt(new Date().toISOString());
-      fixesToSave.push(pending);
-    } else if (!linkedFixSuggestionIds.has(id)) {
-      // No fix at all → the customer fixed it themselves; synthesize a DEPLOYED FixEntity
-      // stamped with the customer-self-fix origin.
-      newFixPayloads.push(buildVulnFixEntityPayload(suggestion, opportunity, site));
+
+    if (suggestion.getStatus() === SuggestionDataAccess.STATUSES.PENDING_VALIDATION) {
+      // A finding still awaiting validation that drops out of the scan was never confirmed
+      // as a real, actionable vuln → archive it OUTDATED and make NO fix-entity change.
+      suggestion.setStatus(SuggestionDataAccess.STATUSES.OUTDATED);
+    } else {
+      // A NEW finding that disappears → the customer upgraded the dependency themselves
+      // (self-fix): mark it FIXED and back it with a DEPLOYED fix so a FIXED is never left
+      // without one.
+      suggestion.setStatus(SuggestionDataAccess.STATUSES.FIXED);
+      const id = suggestion.getId();
+      const pending = pendingBySuggestionId.get(id);
+      if (pending) {
+        // Edge: the finding already had a PENDING fix → promote it, don't create one.
+        pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
+        pending.setDeployedAt(new Date().toISOString());
+        fixesToSave.push(pending);
+      } else if (!linkedFixSuggestionIds.has(id)) {
+        // No fix at all → synthesize a DEPLOYED FixEntity stamped customer-self-fix.
+        newFixPayloads.push(buildVulnFixEntityPayload(suggestion, opportunity, site));
+      }
+      // else: an existing non-PENDING fix already backs it → just mark FIXED (idempotent).
     }
-    // else: an existing non-PENDING fix already backs it → just mark FIXED (idempotent).
   }
 
   // Create self-fix FixEntities BEFORE flipping their suggestions FIXED, so a FIXED is never
@@ -444,8 +457,9 @@ export async function reconcileVulnSuggestions(opportunity, newData, context, lo
  * Runs the vulns suggestion sync for a scan, shared by the normal (vulns-present) path and
  * the all-clear (empty newData) path. Two steps, reconcile first:
  *
- * 1. reconcileVulnSuggestions owns the FIXED-side reconciliation (self-fix, rescan-confirm,
- *    and opening a fresh finding to restart a regressed vuln) — see its doc for the table.
+ * 1. reconcileVulnSuggestions owns the FIXED-side reconciliation and the disappeared-open
+ *    transitions (NEW self-fix → FIXED, PENDING_VALIDATION → OUTDATED, rescan-confirm,
+ *    regression restart) — see its doc for the table.
  * 2. syncSuggestions then only creates brand-new findings and refreshes data on present
  *    ones. mergeStatusFunction returns null so it makes NO status decisions — reconcile is
  *    the single owner of vuln status transitions, and a still-present FIXED suggestion

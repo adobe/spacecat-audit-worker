@@ -1610,7 +1610,7 @@ describe('reconcileVulnSuggestions', () => {
 
   afterEach(() => sandbox.restore());
 
-  // --- customer self-fix (disappeared open finding with no fix) ---
+  // --- disappeared open findings: NEW → self-fix FIXED, PENDING_VALIDATION → OUTDATED ---
 
   it('self-fix: a disappeared NEW finding with no fix becomes FIXED with a customer-self-fix DEPLOYED fix', async () => {
     const s = makeSuggestion('s1', 'NEW', 'lib@1.0.0');
@@ -1630,15 +1630,34 @@ describe('reconcileVulnSuggestions', () => {
     expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([s]);
   });
 
-  it('self-fix: also resolves a disappeared PENDING_VALIDATION finding (paid site)', async () => {
+  it('resolves a disappeared PENDING_VALIDATION finding to OUTDATED with no fix-entity change', async () => {
     const s = makeSuggestion('s1', 'PENDING_VALIDATION', 'lib@1.0.0');
     const opportunity = makeOpportunity([s]);
     const context = makeContext({ fixes: [] });
 
     await reconcileVulnSuggestions(opportunity, [], context, context.log);
 
-    expect(s.setStatus).to.have.been.calledWith('FIXED');
-    expect(opportunity.addFixEntities).to.have.been.calledOnce;
+    expect(s.setStatus).to.have.been.calledWith('OUTDATED');
+    expect(s.setStatus).to.not.have.been.calledWith('FIXED');
+    expect(s.setUpdatedBy).to.have.been.calledWith('system');
+    expect(context.dataAccess.Suggestion.saveMany).to.have.been.calledWith([s]);
+    // Never validated → not a real fix: no fix entity is created or touched.
+    expect(opportunity.addFixEntities).to.not.have.been.called;
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
+  });
+
+  it('leaves the fix entity untouched when a disappeared PENDING_VALIDATION finding has a PENDING fix', async () => {
+    const s = makeSuggestion('s1', 'PENDING_VALIDATION', 'lib@1.0.0');
+    const pending = makeFixEntity('fe1', 'PENDING', { executedAt: new Date().toISOString() });
+    const opportunity = makeOpportunity([s]);
+    const context = makeContext({ fixes: [{ fixEntity: pending, suggestions: [s] }] });
+
+    await reconcileVulnSuggestions(opportunity, [], context, context.log);
+
+    expect(s.setStatus).to.have.been.calledWith('OUTDATED');
+    expect(pending.setStatus).to.not.have.been.called;
+    expect(pending.setDeployedAt).to.not.have.been.called;
+    expect(context.dataAccess.FixEntity.saveMany).to.not.have.been.called;
   });
 
   it('self-fix: creates the fix entity before flipping the suggestion FIXED', async () => {
