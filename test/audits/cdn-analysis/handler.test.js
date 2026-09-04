@@ -164,6 +164,7 @@ describe('CDN Analysis Handler', () => {
       getBaseURL: sandbox.stub().returns('https://example.com'),
       getConfig: sandbox.stub().returns({
         getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-adobe-dev' }),
+        getLlmoCdnlogsFilter: () => undefined,
       }),
       getOrganizationId: sandbox.stub().returns('test-org-id'),
       getId: sandbox.stub().returns('test-site-id'),
@@ -224,6 +225,7 @@ describe('CDN Analysis Handler', () => {
     it('returns error when no CDN bucket found', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => null,
+        getLlmoCdnlogsFilter: () => undefined,
       });
 
       context.env = {};
@@ -753,12 +755,12 @@ describe('CDN Analysis Handler', () => {
       const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data for byocdn-other'));
       const referralCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated referral data for byocdn-other'));
 
-      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NOT NULL");
-      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
-      expect(aggregatedCall.args[0]).to.include("NOT REGEXP_LIKE(url_extract_path(COALESCE(url, ''))");
-      expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|llms(-full)?\\.txt|sitemap)')");
+      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(content_type), '') IS NOT NULL");
+      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(content_type), '') IS NULL");
+      expect(aggregatedCall.args[0]).to.include("NOT REGEXP_LIKE(COALESCE(url, '')");
+      expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(COALESCE(url, ''), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|llms(-full)?\\.txt|sitemap)')");
       // Adobe internal/proxied user agents must be filtered out at ingestion
-      expect(aggregatedCall.args[0]).to.include("AND NOT REGEXP_LIKE(request_user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
+      expect(aggregatedCall.args[0]).to.include("AND NOT REGEXP_LIKE(user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
 
       expect(referralCall.args[0]).to.include("lower(response_content_type) LIKE 'text/html%'");
       expect(referralCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
@@ -1073,6 +1075,7 @@ describe('CDN Analysis Handler', () => {
           bucketName: 'cdn-logs-adobe-dev',
           region: 'eu-west-1',
         }),
+        getLlmoCdnlogsFilter: () => undefined,
       });
 
       const auditContext = {
@@ -1090,6 +1093,7 @@ describe('CDN Analysis Handler', () => {
     it('handles both orgId and imsOrgId being empty', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-test', orgId: '' }),
+        getLlmoCdnlogsFilter: () => undefined,
       });
       site.getOrganizationId.returns(null);
 
@@ -1102,6 +1106,7 @@ describe('CDN Analysis Handler', () => {
     it('handles empty getLlmoCdnBucketConfig config', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => null,
+        getLlmoCdnlogsFilter: () => undefined,
       });
 
       const result = await cdnLogsAnalysisRunner('https://example.com', context, site);

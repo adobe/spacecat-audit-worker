@@ -1,16 +1,22 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
 -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
 WITH hosts AS (
-  SELECT DISTINCT COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)) AS host
-  FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
-    {{hourFilter}}
+  SELECT DISTINCT host
+  FROM (
+    SELECT
+      COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)) AS host,
+      COALESCE(COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)), '') AS x_forwarded_host
+    FROM {{database}}.{{rawTable}}
+    WHERE year  = '{{year}}'
+      AND month = '{{month}}'
+      AND day   = '{{day}}'
+      {{hourFilter}}
+  )
+  WHERE
     -- scope known-first-party hosts to this site; the raw path can be shared
     -- across sites, so an unscoped list would treat another site's host as
     -- first-party and wrongly drop real referral traffic from it.
-    AND REGEXP_LIKE(COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)), '{{hostPattern}}')
+    {{siteFilterClause}}
 ),
 
 referrals_raw AS (
@@ -47,16 +53,22 @@ referrals_raw AS (
     '{{serviceProvider}}' AS cdn_provider,
     CONCAT('{{year}}', '-', '{{month}}', '-', '{{day}}') as date
 
-  FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
-    {{hourFilter}}
-
+  FROM (
+    SELECT
+      *,
+      COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)) AS host,
+      COALESCE(COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)), '') AS x_forwarded_host
+    FROM {{database}}.{{rawTable}}
+    WHERE year  = '{{year}}'
+      AND month = '{{month}}'
+      AND day   = '{{day}}'
+      {{hourFilter}}
+  )
+  WHERE
     -- restrict to this site's own traffic; the raw path can be shared by
     -- multiple sites under the same org/CDN, so without this every site
     -- sharing the path would aggregate every other site's rows too.
-    AND REGEXP_LIKE(COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)), '{{hostPattern}}')
+    {{siteFilterClause}}
 
     -- referral traffic definition
     AND (

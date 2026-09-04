@@ -1,28 +1,44 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
 WITH hosts AS (
   -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
-  SELECT DISTINCT ClientRequestHost AS host
-  FROM {{database}}.{{rawTable}}
-  WHERE date = '{{year}}{{month}}{{day}}'
+  SELECT DISTINCT host
+  FROM (
+    SELECT
+      ClientRequestHost AS host,
+      COALESCE(ClientRequestHost, '') AS x_forwarded_host
+    FROM {{database}}.{{rawTable}}
+    WHERE date = '{{year}}{{month}}{{day}}'
+  )
+  WHERE
     -- scope known-first-party hosts to this site; the raw path can be shared
     -- across sites, so an unscoped list would treat another site's host as
     -- first-party and wrongly drop real referral traffic from it.
-    AND REGEXP_LIKE(ClientRequestHost, '{{hostPattern}}')
+    {{siteFilterClause}}
 ),
 
 base AS (
   SELECT
-    ClientRequestURI            AS url,
-    ClientRequestHost           AS host,
-    ClientRequestReferer        AS referer_raw,
-    ClientRequestUserAgent      AS user_agent,
-    EdgeResponseContentType     AS content_type
-  FROM {{database}}.{{rawTable}}
-  WHERE date = '{{year}}{{month}}{{day}}'
+    url,
+    host,
+    referer_raw,
+    user_agent,
+    content_type
+  FROM (
+    SELECT
+      ClientRequestURI            AS url,
+      ClientRequestHost           AS host,
+      ClientRequestReferer        AS referer_raw,
+      ClientRequestUserAgent      AS user_agent,
+      EdgeResponseContentType     AS content_type,
+      COALESCE(ClientRequestHost, '') AS x_forwarded_host
+    FROM {{database}}.{{rawTable}}
+    WHERE date = '{{year}}{{month}}{{day}}'
+  )
+  WHERE
     -- restrict to this site's own traffic; the raw path can be shared by
     -- multiple sites under the same org/CDN, so without this every site
     -- sharing the path would aggregate every other site's rows too.
-    AND REGEXP_LIKE(ClientRequestHost, '{{hostPattern}}')
+    {{siteFilterClause}}
 ),
 
 referrals_raw AS (

@@ -1,39 +1,55 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
 WITH hosts AS (
   -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
-  SELECT DISTINCT reqHost AS host
-  FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
-    {{hourFilter}}
+  SELECT DISTINCT host
+  FROM (
+    SELECT
+      reqHost AS host,
+      COALESCE(reqHost, '') AS x_forwarded_host
+    FROM {{database}}.{{rawTable}}
+    WHERE year  = '{{year}}'
+      AND month = '{{month}}'
+      AND day   = '{{day}}'
+      {{hourFilter}}
+  )
+  WHERE
     -- scope known-first-party hosts to this site; the raw path can be shared
     -- across sites, so an unscoped list would treat another site's host as
     -- first-party and wrongly drop real referral traffic from it.
-    AND REGEXP_LIKE(reqHost, '{{hostPattern}}')
+    {{siteFilterClause}}
 ),
 
 base AS (
   -- normalize key fields and construct a full URL from path + query
   SELECT
-    CASE
-      WHEN queryStr IS NOT NULL AND trim(queryStr) NOT IN ('', '-')
-        THEN concat(reqPath, '?', queryStr)
-      ELSE reqPath
-    END AS url,
-    reqHost AS host,
-    referer AS referer_raw,
-    ua AS user_agent,
-    rspContentType AS content_type
-  FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
-    {{hourFilter}}
+    url,
+    host,
+    referer_raw,
+    user_agent,
+    content_type
+  FROM (
+    SELECT
+      CASE
+        WHEN queryStr IS NOT NULL AND trim(queryStr) NOT IN ('', '-')
+          THEN concat(reqPath, '?', queryStr)
+        ELSE reqPath
+      END AS url,
+      reqHost AS host,
+      referer AS referer_raw,
+      ua AS user_agent,
+      rspContentType AS content_type,
+      COALESCE(reqHost, '') AS x_forwarded_host
+    FROM {{database}}.{{rawTable}}
+    WHERE year  = '{{year}}'
+      AND month = '{{month}}'
+      AND day   = '{{day}}'
+      {{hourFilter}}
+  )
+  WHERE
     -- restrict to this site's own traffic; the raw path can be shared by
     -- multiple sites under the same org/CDN, so without this every site
     -- sharing the path would aggregate every other site's rows too.
-    AND REGEXP_LIKE(reqHost, '{{hostPattern}}')
+    {{siteFilterClause}}
 ),
 
 referrals_raw AS (
@@ -58,7 +74,7 @@ referrals_raw AS (
       ) THEN 'email'
       ELSE NULL
     END AS tracking_param,
-    
+
     -- device bucket from User-Agent
     CASE
       WHEN regexp_like(coalesce(user_agent, ''),
@@ -68,7 +84,7 @@ referrals_raw AS (
       ELSE 'desktop'
     END AS device,
     '{{serviceProvider}}' AS cdn_provider,
-    
+
     CONCAT('{{year}}', '-', '{{month}}', '-', '{{day}}') as date
 
   FROM base
@@ -115,7 +131,7 @@ referrals_raw AS (
     )
 )
 
-SELECT 
+SELECT
   url_extract_path(url) as url,
   host,
   referrer,
@@ -126,7 +142,7 @@ SELECT
   date,
   cdn_provider,
   COALESCE(host, '') as x_forwarded_host,
-  
+
   -- Add partition columns as regular columns
   '{{year}}' AS year,
   '{{month}}' AS month,

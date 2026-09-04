@@ -1,34 +1,50 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
 WITH hosts AS (
   -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
-  SELECT DISTINCT "x-host-header" AS host
-  FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
-    {{hourFilter}}
+  SELECT DISTINCT host
+  FROM (
+    SELECT
+      "x-host-header" AS host,
+      COALESCE("x-host-header", '') AS x_forwarded_host
+    FROM {{database}}.{{rawTable}}
+    WHERE year  = '{{year}}'
+      AND month = '{{month}}'
+      AND day   = '{{day}}'
+      {{hourFilter}}
+  )
+  WHERE
     -- scope known-first-party hosts to this site; the raw path can be shared
     -- across sites, so an unscoped list would treat another site's host as
     -- first-party and wrongly drop real referral traffic from it.
-    AND REGEXP_LIKE("x-host-header", '{{hostPattern}}')
+    {{siteFilterClause}}
 ),
 
 base AS (
   SELECT
-    "cs-uri-stem"             AS url,
-    "x-host-header"           AS host,
-    "cs(referer)"             AS referer_raw,
-    "cs(user-agent)"          AS user_agent,
-    "sc-content-type"         AS content_type
-  FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
-    {{hourFilter}}
+    url,
+    host,
+    referer_raw,
+    user_agent,
+    content_type
+  FROM (
+    SELECT
+      "cs-uri-stem"             AS url,
+      "x-host-header"           AS host,
+      "cs(referer)"             AS referer_raw,
+      "cs(user-agent)"          AS user_agent,
+      "sc-content-type"         AS content_type,
+      COALESCE("x-host-header", '') AS x_forwarded_host
+    FROM {{database}}.{{rawTable}}
+    WHERE year  = '{{year}}'
+      AND month = '{{month}}'
+      AND day   = '{{day}}'
+      {{hourFilter}}
+  )
+  WHERE
     -- restrict to this site's own traffic; the raw path can be shared by
     -- multiple sites under the same org/CDN, so without this every site
     -- sharing the path would aggregate every other site's rows too.
-    AND REGEXP_LIKE("x-host-header", '{{hostPattern}}')
+    {{siteFilterClause}}
 ),
 
 referrals_raw AS (

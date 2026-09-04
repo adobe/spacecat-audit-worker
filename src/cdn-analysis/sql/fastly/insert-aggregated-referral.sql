@@ -2,15 +2,21 @@ INSERT INTO {{database}}.{{aggregatedTable}}
 -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
 WITH hosts AS (
   SELECT DISTINCT host
-  FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
-    {{hourFilter}}
+  FROM (
+    SELECT
+      host,
+      COALESCE(request_x_forwarded_host, '') AS x_forwarded_host
+    FROM {{database}}.{{rawTable}}
+    WHERE year  = '{{year}}'
+      AND month = '{{month}}'
+      AND day   = '{{day}}'
+      {{hourFilter}}
+  )
+  WHERE
     -- scope known-first-party hosts to this site; the raw path can be shared
     -- across sites, so an unscoped list would treat another site's host as
     -- first-party and wrongly drop real referral traffic from it.
-    AND REGEXP_LIKE(host, '{{hostPattern}}')
+    {{siteFilterClause}}
 ),
 
 referrals_raw AS (
@@ -44,20 +50,25 @@ referrals_raw AS (
         THEN 'mobile'
       ELSE 'desktop'
     END AS device,
-    COALESCE(request_x_forwarded_host, '') as x_forwarded_host,
+    x_forwarded_host,
     '{{serviceProvider}}' AS cdn_provider,
     CONCAT('{{year}}', '-', '{{month}}', '-', '{{day}}') as date
 
-  FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
-    {{hourFilter}}
-
+  FROM (
+    SELECT
+      *,
+      COALESCE(request_x_forwarded_host, '') AS x_forwarded_host
+    FROM {{database}}.{{rawTable}}
+    WHERE year  = '{{year}}'
+      AND month = '{{month}}'
+      AND day   = '{{day}}'
+      {{hourFilter}}
+  )
+  WHERE
     -- restrict to this site's own traffic; the raw path can be shared by
     -- multiple sites under the same org/CDN, so without this every site
     -- sharing the path would aggregate every other site's rows too.
-    AND REGEXP_LIKE(host, '{{hostPattern}}')
+    {{siteFilterClause}}
 
     -- referral traffic definition
     AND (
