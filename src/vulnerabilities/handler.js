@@ -265,15 +265,7 @@ export function buildVulnFixEntityPayload(suggestion, opportunity, site) {
 }
 
 /**
- * Staleness window for an asserted-but-unconfirmed fix (§10.5). When a FIXED suggestion's
- * fix is still PENDING (never scan-confirmed) and the vuln keeps reappearing past this
- * window (measured from the fix's executedAt), the assertion is treated as stale and the
- * suggestion is reopened so an unverified claim can't mask a live vuln forever.
- */
-const STALE_ASSERTED_FIX_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-
-/**
- * Reopen target for a re-detected or aged-out FIXED suggestion: PENDING_VALIDATION on
+ * Reopen target for a vuln finding restarted after a regression: PENDING_VALIDATION on
  * validation-required (paid) sites, else NEW — mirrors the regression rule in
  * data-access.js `defaultMergeStatusFunction`.
  * @param {Object} site - The site.
@@ -286,40 +278,28 @@ const reopenStatusForSite = (site) => (
 );
 
 /**
- * True when an asserted (PENDING) fix has gone unconfirmed past the staleness window.
- * @param {Object} fix - The PENDING FixEntity.
- * @returns {boolean}
- */
-const isAssertedFixStale = (fix) => {
-  const executedAt = fix.getExecutedAt();
-  return Boolean(executedAt)
-    && (Date.now() - new Date(executedAt).getTime() > STALE_ASSERTED_FIX_MS);
-};
-
-/**
- * Reconciles vuln suggestions against the current scan, owning EVERY status transition so
- * the (Suggestion, FixEntity) pair stays consistent (spec:
- * docs/specs/2026-09-02-security-vulnerabilities-fixed-lifecycle-reconcile.md). Joins each
- * suggestion to its FixEntity so the decision is FixEntity-aware:
+ * Reconciles vuln suggestions against the current scan, owning the FIXED-side status
+ * transitions so the (Suggestion, FixEntity) pair stays consistent. Joins each suggestion
+ * to its FixEntity so the decision is FixEntity-aware:
  *
  * - open (NEW/PENDING_VALIDATION) + no fix, vuln gone → customer self-fix: suggestion
  *   FIXED + create a DEPLOYED FixEntity stamped origin CUSTOMER_SELF_FIX.
  * - FIXED + PENDING, vuln gone     → asserted fix confirmed: promote PENDING → DEPLOYED
  *   (+ stamp deployedAt), keep FIXED.
- * - FIXED + DEPLOYED, vuln back    → regression: archive the old suggestion to OUTDATED,
- *   open a fresh NEW/PENDING_VALIDATION suggestion, roll the fix DEPLOYED → ROLLED_BACK.
- * - FIXED + PENDING, vuln present, fix fresh → wait, no change.
- * - FIXED + PENDING, vuln present, fix stale → archive old to OUTDATED, open a fresh
- *   suggestion, fail the fix PENDING → FAILED.
+ * - FIXED + PENDING, vuln present  → wait: the fix is asserted but not yet scan-confirmed,
+ *   leave the pair untouched.
+ * - FIXED + DEPLOYED, vuln back    → regression: leave the FIXED suggestion and its DEPLOYED
+ *   fix untouched (history), and open ONE fresh NEW/PENDING_VALIDATION finding to restart
+ *   the lifecycle. Idempotent: never opens a second finding while the vuln persists.
  *
  * Runs BEFORE the base syncSuggestions (which then only creates brand-new findings and
- * refreshes present ones). Regression/stale never mutate the FIXED record in place — the
- * old record is archived and a fresh finding opened — so history stays clean.
+ * refreshes present ones). Existing FIXED records are never mutated in place; a regression
+ * adds a fresh finding rather than reopening the old one.
  *
  * Safety: any error fetching the fix entities skips the whole pass for this run rather
  * than acting on incomplete data; a self-fix FixEntity is created BEFORE its suggestion is
  * flipped FIXED (never FIXED without a backing fix); suggestion writes are persisted before
- * the fix-entity transitions so a trailing fix-save failure can't strand a reopen.
+ * the fix-entity transitions.
  *
  * @param {Object} opportunity - The vulnerabilities opportunity.
  * @param {Array} newData - Canonical data for currently-reported vulns ([] on all-clear).
@@ -375,51 +355,46 @@ export async function reconcileVulnSuggestions(opportunity, newData, context, lo
     }
   }
 
+  // Keys that already have a non-FIXED suggestion → an active (or already-decided) finding
+  // for that vuln exists, so a regression must not open yet another duplicate for it.
+  const keysWithActiveSuggestion = new Set(
+    suggestions
+      .filter((s) => s.getStatus() !== SuggestionDataAccess.STATUSES.FIXED)
+      .map((s) => buildKey(s.getData())),
+  );
   const reopenStatus = reopenStatusForSite(site);
-  const suggestionsToSave = []; // existing suggestions whose status changed
-  const newSuggestionPayloads = []; // fresh findings opened for regressions / stale reopens
-  const newFixPayloads = []; // self-fix DEPLOYED FixEntities to create
-  const fixesToSave = []; // existing fixes promoted / rolled-back / failed
 
-  // Regression/stale reopen: archive the old FIXED record to OUTDATED and open a fresh
-  // finding for the still-present vuln, rather than mutating the FIXED record in place.
-  const archiveAndReopen = (suggestion) => {
-    suggestion.setStatus(SuggestionDataAccess.STATUSES.OUTDATED);
-    suggestion.setUpdatedBy('system');
-    suggestionsToSave.push(suggestion);
-    const entry = newDataByKey.get(buildKey(suggestion.getData()));
-    newSuggestionPayloads.push({
-      ...mapVulnerabilityToSuggestion(opportunity, entry),
-      status: reopenStatus,
-    });
-  };
+  const suggestionsToSave = []; // existing suggestions whose status changed
+  const newSuggestionPayloads = []; // fresh findings opened to restart a regressed vuln
+  const newFixPayloads = []; // self-fix DEPLOYED FixEntities to create
+  const fixesToSave = []; // existing fixes promoted to DEPLOYED
 
   for (const suggestion of fixedSuggestions) {
     const id = suggestion.getId();
-    const present = presentKeys.has(buildKey(suggestion.getData()));
+    const key = buildKey(suggestion.getData());
+    const present = presentKeys.has(key);
     const deployed = deployedBySuggestionId.get(id);
     const pending = pendingBySuggestionId.get(id);
 
-    if (!present) {
-      // Vuln gone. A still-PENDING asserted fix is now scan-confirmed → promote it; a
-      // DEPLOYED fix is already the correct terminal state.
-      if (!deployed && pending) {
-        pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
-        pending.setDeployedAt(new Date().toISOString());
-        fixesToSave.push(pending);
-      }
-    } else if (deployed) {
-      // Regression: a verified-fixed vuln reappeared → archive + reopen, roll the fix back.
-      archiveAndReopen(suggestion);
-      deployed.setStatus(FixEntityDataAccess.STATUSES.ROLLED_BACK);
-      fixesToSave.push(deployed);
-    } else if (pending && isAssertedFixStale(pending)) {
-      // Asserted fix never confirmed past the staleness window → archive + reopen, fail it.
-      archiveAndReopen(suggestion);
-      pending.setStatus(FixEntityDataAccess.STATUSES.FAILED);
+    if (!present && !deployed && pending) {
+      // Vuln gone + a still-PENDING asserted fix not already superseded by a DEPLOYED one →
+      // the assertion is now scan-confirmed, so promote PENDING → DEPLOYED.
+      pending.setStatus(FixEntityDataAccess.STATUSES.DEPLOYED);
+      pending.setDeployedAt(new Date().toISOString());
       fixesToSave.push(pending);
+    } else if (present && deployed && !keysWithActiveSuggestion.has(key)) {
+      // Regression: a verified-fixed vuln reappeared. Leave the FIXED suggestion and its
+      // DEPLOYED fix exactly as-is (history) and open ONE fresh finding to restart the
+      // lifecycle. The guard keeps this idempotent — once a restarted finding exists we
+      // never open another while the vuln persists.
+      newSuggestionPayloads.push({
+        ...mapVulnerabilityToSuggestion(opportunity, newDataByKey.get(key)),
+        status: reopenStatus,
+      });
+      keysWithActiveSuggestion.add(key);
     }
-    // else: present + fresh PENDING (wait) or present + no active fix → no change.
+    // else: vuln gone + DEPLOYED (terminal), present + PENDING (wait), present + no active
+    // fix, or a regression already restarted → leave the pair untouched.
   }
 
   for (const suggestion of selfFixedSuggestions) {
@@ -451,8 +426,9 @@ export async function reconcileVulnSuggestions(opportunity, newData, context, lo
       return;
     }
   }
-  // Persist suggestion status changes (incl. archived OUTDATED) and the fresh findings
-  // BEFORE the fix-entity transitions, so a trailing fix-save failure can't strand a reopen.
+  // Persist suggestion status changes and the fresh restarted findings BEFORE the fix-entity
+  // transitions, so a trailing fix-save failure can't leave a suggestion flipped without its
+  // fix promoted.
   if (suggestionsToSave.length > 0) {
     await Suggestion.saveMany(suggestionsToSave);
   }
@@ -468,14 +444,14 @@ export async function reconcileVulnSuggestions(opportunity, newData, context, lo
  * Runs the vulns suggestion sync for a scan, shared by the normal (vulns-present) path and
  * the all-clear (empty newData) path. Two steps, reconcile first:
  *
- * 1. reconcileVulnSuggestions owns EVERY status transition (self-fix, rescan-confirm,
- *    regression, stale) — see its doc for the decision table.
+ * 1. reconcileVulnSuggestions owns the FIXED-side reconciliation (self-fix, rescan-confirm,
+ *    and opening a fresh finding to restart a regressed vuln) — see its doc for the table.
  * 2. syncSuggestions then only creates brand-new findings and refreshes data on present
- *    ones. mergeStatusFunction returns null so it makes NO status decisions: the default
- *    merge would flip an archived OUTDATED record whose vuln is still present back to NEW
- *    (data-access.js defaultMergeStatusFunction), resurrecting the record reconcile just
- *    archived in a regression. Its OUTDATED sweep is a no-op because reconcile has already
- *    transitioned every disappeared open finding.
+ *    ones. mergeStatusFunction returns null so it makes NO status decisions — reconcile is
+ *    the single owner of vuln status transitions, and a still-present FIXED suggestion
+ *    (a regressed vuln) is deliberately left as-is rather than re-touched by the base merge.
+ *    Its OUTDATED sweep is a no-op because reconcile has already transitioned every
+ *    disappeared open finding.
  *
  * @param {Object} opportunity - The vulnerabilities opportunity.
  * @param {Array} newData - Canonical data for currently-reported vulns ([] on all-clear).
