@@ -164,6 +164,7 @@ describe('CDN Analysis Handler', () => {
       getBaseURL: sandbox.stub().returns('https://example.com'),
       getConfig: sandbox.stub().returns({
         getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-adobe-dev' }),
+        getLlmoCdnlogsFilter: () => undefined,
       }),
       getOrganizationId: sandbox.stub().returns('test-org-id'),
       getId: sandbox.stub().returns('test-site-id'),
@@ -183,7 +184,10 @@ describe('CDN Analysis Handler', () => {
         },
         athenaClient: {
           execute: sandbox.stub().resolves(),
-          query: sandbox.stub().rejects(new Error('Table does not exist')),
+          // Defaults to "site filter confirmed" (a matching row exists) so existing
+          // tests exercise the filtered aggregation path; override per-test to
+          // resolve([]) to exercise the unfiltered fallback (see check-site-filter).
+          query: sandbox.stub().resolves([{ host: 'example.com' }]),
         },
         dataAccess: {
           Organization: {
@@ -221,9 +225,47 @@ describe('CDN Analysis Handler', () => {
       expect(deleteWasCalled).to.be.false;
     });
 
+    it('applies the site host filter at aggregation time once the probe confirms a match', async () => {
+      context.athenaClient.query.resolves([{ host: 'example.com' }]);
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site);
+
+      const executeCalls = context.athenaClient.execute.getCalls();
+      const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data'));
+
+      expect(context.athenaClient.query).to.have.been.calledWithMatch(
+        sinon.match.string,
+        sinon.match.any,
+        sinon.match(/Check site filter match/),
+      );
+      expect(aggregatedCall.args[0]).to.include('REGEXP_LIKE(host,');
+    });
+
+    it('falls back to unfiltered aggregation when the probe finds no matching host (site not yet confirmed)', async () => {
+      context.athenaClient.query.resolves([]);
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site);
+
+      const executeCalls = context.athenaClient.execute.getCalls();
+      const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data'));
+      const referralCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated referral data'));
+
+      // The real per-site REGEXP_LIKE filter must not be baked into the query -
+      // instead the tautology keeps every row, preserving the old host-agnostic
+      // aggregation behavior until the host is confirmed by a future probe.
+      expect(aggregatedCall.args[0]).to.not.include('REGEXP_LIKE(host,');
+      expect(aggregatedCall.args[0]).to.include('  TRUE');
+      expect(referralCall.args[0]).to.include('TRUE');
+
+      expect(context.log.info).to.have.been.calledWithMatch(
+        /site filter matched no raw rows.*aggregating without host filter/,
+      );
+    });
+
     it('returns error when no CDN bucket found', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => null,
+        getLlmoCdnlogsFilter: () => undefined,
       });
 
       context.env = {};
@@ -753,12 +795,12 @@ describe('CDN Analysis Handler', () => {
       const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data for byocdn-other'));
       const referralCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated referral data for byocdn-other'));
 
-      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NOT NULL");
-      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
-      expect(aggregatedCall.args[0]).to.include("NOT REGEXP_LIKE(url_extract_path(COALESCE(url, ''))");
-      expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|llms(-full)?\\.txt|sitemap)')");
+      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(content_type), '') IS NOT NULL");
+      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(content_type), '') IS NULL");
+      expect(aggregatedCall.args[0]).to.include("NOT REGEXP_LIKE(COALESCE(url, '')");
+      expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(COALESCE(url, ''), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|llms(-full)?\\.txt|sitemap)')");
       // Adobe internal/proxied user agents must be filtered out at ingestion
-      expect(aggregatedCall.args[0]).to.include("AND NOT REGEXP_LIKE(request_user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
+      expect(aggregatedCall.args[0]).to.include("AND NOT REGEXP_LIKE(user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
 
       expect(referralCall.args[0]).to.include("lower(response_content_type) LIKE 'text/html%'");
       expect(referralCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
@@ -1073,6 +1115,7 @@ describe('CDN Analysis Handler', () => {
           bucketName: 'cdn-logs-adobe-dev',
           region: 'eu-west-1',
         }),
+        getLlmoCdnlogsFilter: () => undefined,
       });
 
       const auditContext = {
@@ -1090,6 +1133,7 @@ describe('CDN Analysis Handler', () => {
     it('handles both orgId and imsOrgId being empty', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-test', orgId: '' }),
+        getLlmoCdnlogsFilter: () => undefined,
       });
       site.getOrganizationId.returns(null);
 
@@ -1102,6 +1146,7 @@ describe('CDN Analysis Handler', () => {
     it('handles empty getLlmoCdnBucketConfig config', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => null,
+        getLlmoCdnlogsFilter: () => undefined,
       });
 
       const result = await cdnLogsAnalysisRunner('https://example.com', context, site);

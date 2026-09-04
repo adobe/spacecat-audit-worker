@@ -27,6 +27,7 @@ import {
   pathHasData,
   shouldRecreateTable,
   escapeForAthenaRegexLiteral,
+  buildSiteFilters,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { weekClosingSundayKey } from '../utils/date-utils.js';
@@ -294,6 +295,13 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
 
   const { year, month, day, hour } = getHourParts(auditContext);
   const { host } = new URL(site.getBaseURL());
+  // Multiple sites can share one org-level CDN bucket/raw-log path (bucket naming is
+  // per-org, not per-site - see resolveCdnBucketName). Without a positive host match,
+  // aggregation for this site would ingest every site's traffic sharing that path.
+  // Reuse buildSiteFilters - the same host-matching logic the report layer already
+  // uses - so aggregation honors per-site cdnlogsFilter overrides instead of assuming
+  // raw host always equals the base URL (raw host values are not predictable upfront).
+  const siteFilterClause = buildSiteFilters(site.getConfig()?.getLlmoCdnlogsFilter(), site);
   const siteId = site.getId();
   const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
@@ -497,6 +505,30 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
       // Generate hour filter based on processing mode
       const hourFilter = (hasDailyPartitioningOnly || auditContext?.processFullDay) ? '' : `AND hour = '${hour}'`;
 
+      // Only lock in the aggregation-time host filter once it's confirmed to match
+      // this site's actual raw data. Filtering at report time (the original design)
+      // is recoverable - a wrong/stale filter can be fixed and the report simply
+      // rerun, since the aggregated bucket still holds everything. Filtering at
+      // aggregation time is not recoverable past the raw-log retention window, so
+      // for a site whose host isn't confirmed yet (newly onboarded, filter still
+      // being debugged), fall back to unfiltered aggregation rather than risk
+      // silently locking real data out of the aggregated bucket.
+      // eslint-disable-next-line no-await-in-loop
+      const probeSql = await loadSql(cdnType, 'check-site-filter', {
+        database, rawTable, year, month, day, hour, hourFilter, siteFilterClause,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      const probeRows = await athenaClient.query(
+        probeSql,
+        database,
+        `[Athena Query] Check site filter match for ${serviceProvider}`,
+      );
+      const filterConfirmed = Array.isArray(probeRows) && probeRows.length > 0;
+      if (!filterConfirmed) {
+        log.info(`${auditType} site filter matched no raw rows for siteId=${siteId}, serviceProvider=${serviceProvider} - aggregating without host filter until a matching host is confirmed`);
+      }
+      const effectiveSiteFilterClause = filterConfirmed ? siteFilterClause : 'TRUE';
+
       // Load SQL queries in parallel
       // eslint-disable-next-line no-await-in-loop
       const [sqlInsert, sqlInsertReferral] = await Promise.all([
@@ -514,12 +546,16 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
           // pattern in insert-aggregated.sql; escape it so a crafted base URL
           // cannot break out of the string literal or broaden the match (VULN-37491).
           host: escapeForAthenaRegexLiteral(host),
+          // siteFilterClause restricts aggregation to rows whose CDN-reported host
+          // actually belongs to this site - see comment at its definition above.
+          siteFilterClause: effectiveSiteFilterClause,
           serviceProvider,
         }),
         loadSql(cdnType, 'insert-aggregated-referral', {
           database,
           rawTable,
           aggregatedTable: aggregatedReferralTable,
+          siteFilterClause: effectiveSiteFilterClause,
           year,
           month,
           day,
