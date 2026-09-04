@@ -138,44 +138,6 @@ describe('CDN Logs Report Utils', () => {
     });
   });
 
-  describe('validateCountryCode', () => {
-    it('validates valid country codes', () => {
-      expect(reportUtils.validateCountryCode('US')).to.equal('US');
-      expect(reportUtils.validateCountryCode('us')).to.equal('US');
-      expect(reportUtils.validateCountryCode('GB')).to.equal('GB');
-      expect(reportUtils.validateCountryCode('UK')).to.equal('UK');
-    });
-
-    it('returns GLOBAL for invalid codes', () => {
-      expect(reportUtils.validateCountryCode('ABC')).to.equal('GLOBAL');
-      expect(reportUtils.validateCountryCode('EU')).to.equal('GLOBAL');
-      expect(reportUtils.validateCountryCode('EZ')).to.equal('GLOBAL');
-      expect(reportUtils.validateCountryCode('XA')).to.equal('GLOBAL');
-      expect(reportUtils.validateCountryCode(null)).to.equal('GLOBAL');
-      expect(reportUtils.validateCountryCode('')).to.equal('GLOBAL');
-    });
-
-    it('handles GLOBAL country code correctly', () => {
-      expect(reportUtils.validateCountryCode('GLOBAL')).to.equal('GLOBAL');
-      expect(reportUtils.validateCountryCode('global')).to.equal('GLOBAL');
-    });
-
-    it('returns GLOBAL for codes in per-site ignore list', () => {
-      expect(reportUtils.validateCountryCode('PS', ['PS'])).to.equal('GLOBAL');
-      expect(reportUtils.validateCountryCode('ps', ['PS'])).to.equal('GLOBAL');
-      expect(reportUtils.validateCountryCode('AD', ['ad', 'ps'])).to.equal('GLOBAL');
-    });
-
-    it('returns valid code when not in per-site ignore list', () => {
-      expect(reportUtils.validateCountryCode('US', ['PS'])).to.equal('US');
-      expect(reportUtils.validateCountryCode('DE', ['PS', 'AD'])).to.equal('DE');
-    });
-
-    it('handles empty per-site ignore list', () => {
-      expect(reportUtils.validateCountryCode('US', [])).to.equal('US');
-    });
-  });
-
   describe('loadSql', () => {
     it('loads SQL templates with variables', async () => {
       const sql = await reportUtils.loadSql('create-database', { database: 'test_db' });

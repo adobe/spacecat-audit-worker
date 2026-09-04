@@ -1,3 +1,66 @@
+## [1.532.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.3...v1.532.4) (2026-09-04)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2938](https://github.com/adobe/spacecat-audit-worker/issues/2938)) ([c4a1208](https://github.com/adobe/spacecat-audit-worker/commit/c4a1208f9a9f5c38c03694198f728e7e980f41a7))
+
+## [1.532.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.2...v1.532.3) (2026-09-03)
+
+
+### Bug Fixes
+
+* **cwv:** gate CWV suggestions on a minimum RUM sample count (SITES-50756) ([#2935](https://github.com/adobe/spacecat-audit-worker/issues/2935)) ([4f8362e](https://github.com/adobe/spacecat-audit-worker/commit/4f8362e89a3388ce49711a655d49332703c8ffaf))
+
+## [1.532.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.1...v1.532.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** normalize country codes in 5xx/4xx opportunities (LLMO-7230 pt2) ([#2934](https://github.com/adobe/spacecat-audit-worker/issues/2934)) ([51a99fb](https://github.com/adobe/spacecat-audit-worker/commit/51a99fb1123a43af765b50348ba9b38d33a6b2df)), closes [#2927](https://github.com/adobe/spacecat-audit-worker/issues/2927)
+
+## [1.532.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.0...v1.532.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2936](https://github.com/adobe/spacecat-audit-worker/issues/2936)) ([eadae22](https://github.com/adobe/spacecat-audit-worker/commit/eadae22c1f5bddd39e5f3b9d4be21e76801f1336))
+
+# [1.532.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.531.0...v1.532.0) (2026-09-02)
+
+
+### Features
+
+* **brand-claims:** forward enrichment mode on the ready-signal (LLMO-7312) ([#2937](https://github.com/adobe/spacecat-audit-worker/issues/2937)) ([75b982c](https://github.com/adobe/spacecat-audit-worker/commit/75b982c4c8fac8121611dbc94615f65620c2aa9c)), closes [experience-platform/mystique#4804](https://github.com/experience-platform/mystique/issues/4804)
+
+# [1.531.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.530.1...v1.531.0) (2026-09-02)
+
+
+### Features
+
+* **brand-claims:** on-demand one-shot trial runs (LLMO-7263) ([#2932](https://github.com/adobe/spacecat-audit-worker/issues/2932)) ([aebc00a](https://github.com/adobe/spacecat-audit-worker/commit/aebc00a561c50fe2c3ce96c488976bb1fc36943d))
+
+## [1.530.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.530.0...v1.530.1) (2026-09-01)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2931](https://github.com/adobe/spacecat-audit-worker/issues/2931)) ([3a34cc8](https://github.com/adobe/spacecat-audit-worker/commit/3a34cc8eec0815af66f528f0f84db506ddd8f297))
+
+# [1.530.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.529.5...v1.530.0) (2026-08-31)
+
+
+### Features
+
+* **LLMO-6973:** add success logging to four DB read events in offsite pipeline ([#2930](https://github.com/adobe/spacecat-audit-worker/issues/2930)) ([34d22da](https://github.com/adobe/spacecat-audit-worker/commit/34d22da53b5ab12bc975159ead83f0465fb29820))
+
+## [1.529.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.529.4...v1.529.5) (2026-08-31)
+
+
+### Bug Fixes
+
+* **agentic-traffic:** ignore-list language codes that collide with real countries ([#2927](https://github.com/adobe/spacecat-audit-worker/issues/2927)) ([10fa753](https://github.com/adobe/spacecat-audit-worker/commit/10fa753867a0f37d06b65de52798daefa87f08ce))
+
 ## [1.529.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.529.3...v1.529.4) (2026-08-29)
 
 

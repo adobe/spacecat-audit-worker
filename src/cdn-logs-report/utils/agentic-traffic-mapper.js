@@ -11,7 +11,7 @@
  */
 
 import { joinBaseAndPath } from '../../utils/url-utils.js';
-import { validateCountryCode } from './report-utils.js';
+import { validateCountryCode } from '../../common/country-codes.js';
 import { inferProviderFromUserAgent } from '../../common/user-agent-classification.js';
 
 const MAX_AVG_TTFB_MS = 999999.99;
