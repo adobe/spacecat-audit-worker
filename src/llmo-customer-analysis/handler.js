@@ -15,6 +15,8 @@ import {
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import DrsClient from '@adobe/spacecat-shared-drs-client';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import { Entitlement } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
@@ -93,6 +95,36 @@ async function checkOptelData(domain, context) {
 }
 
 /**
+ * Resolves the org's LLMO entitlement tier for a site, so the brand-presence schedule
+ * can be built with the right (tier-appropriate) platform set (LLMO-7366: PLG/free-trial
+ * orgs must not get ChatGPT Paid / Copilot). Fails CLOSED (returns FREE_TRIAL, the most
+ * restrictive tier `createBrandPresenceSchedule` recognizes) on any lookup error — DRS's
+ * own create_schedule.py guard is a backstop either way, but the failure direction here
+ * should never accidentally grant a paid-only surface to an org whose tier is unknown.
+ *
+ * @param {object} context - Universal context with dataAccess and log
+ * @param {object} site - Site model instance
+ * @param {string} siteId - Site id, for the warn log only (avoids depending on
+ *   site.getId() succeeding on the SAME error path that's already handling a failure).
+ * @returns {Promise<string>} One of Entitlement.TIERS
+ */
+async function resolveLlmoEntitlementTier(context, site, siteId) {
+  const { log } = context;
+  try {
+    const tierClient = await TierClient.createForSite(
+      context,
+      site,
+      Entitlement.PRODUCT_CODES.LLMO,
+    );
+    const { entitlement } = await tierClient.checkValidEntitlement();
+    return entitlement?.getTier() ?? Entitlement.TIERS.FREE_TRIAL;
+  } catch (error) {
+    log.warn(`Failed to resolve LLMO entitlement tier for site ${siteId}: ${error.message}`);
+    return Entitlement.TIERS.FREE_TRIAL;
+  }
+}
+
+/**
  * Creates and triggers the recurring brand-presence schedule for a first-time
  * onboarded site, via the shared `createBrandPresenceSchedule` drs-client helper
  * (LLMO-5605). That helper is the single definition of the brand-presence schedule:
@@ -107,10 +139,12 @@ async function checkOptelData(domain, context) {
  * @param {object} [opts]
  * @param {string} [opts.brandId] - Brand UUID for v2 schedules (required for v2 dedup)
  * @param {string} [opts.organizationId] - SpaceCat org UUID for v2 schedules
+ * @param {object} [opts.site] - Site model instance, used to resolve the LLMO entitlement
+ *   tier. Omitted only by tests that stub tier resolution directly.
  * @returns {Promise<string>} The created (or existing) schedule id
  */
 export async function createAndTriggerBrandPresenceSchedule(context, siteId, domain, opts = {}) {
-  const { brandId, organizationId } = opts;
+  const { brandId, organizationId, site } = opts;
   const { log } = context;
 
   const drsClient = DrsClient.createFrom(context);
@@ -118,13 +152,18 @@ export async function createAndTriggerBrandPresenceSchedule(context, siteId, dom
     throw new Error('DRS API URL or key not configured; skipping brand presence schedule creation');
   }
 
-  log.info(`Creating brand presence schedule for site ${siteId}`);
+  const tier = site
+    ? await resolveLlmoEntitlementTier(context, site, siteId)
+    : Entitlement.TIERS.FREE_TRIAL;
+
+  log.info(`Creating brand presence schedule for site ${siteId} (tier=${tier})`);
   const { scheduleId, alreadyExisted } = await drsClient.createBrandPresenceSchedule({
     siteId,
     brandId,
     orgId: organizationId,
     description: `Onboarding brand presence: ${domain} (${siteId})`,
     triggerImmediately: true,
+    tier,
   });
 
   log.info(
@@ -258,7 +297,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
     // Create and trigger brand presence schedule via DRS API (non-fatal)
     try {
-      const bpOpts = { brandId, organizationId };
+      const bpOpts = { brandId, organizationId, site };
       bpScheduleId = await createAndTriggerBrandPresenceSchedule(context, siteId, domain, bpOpts);
       triggeredSteps.push('brand-presence-schedule');
     } catch (error) {
