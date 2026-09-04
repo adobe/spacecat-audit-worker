@@ -1217,6 +1217,22 @@ describe('LLMO Customer Analysis Handler', () => {
       );
     });
 
+    it('defaults to FREE_TRIAL and skips entitlement resolution entirely when opts.site is omitted', async () => {
+      // The one production caller (runLlmoCustomerAnalysis) always supplies opts.site --
+      // this exercises the direct call site's own defensive fallback, which had no test
+      // coverage before (caught in review).
+      const scheduleId = await mockHandler.createAndTriggerBrandPresenceSchedule(
+        context,
+        'site-123',
+        'example.com',
+        {},
+      );
+
+      expect(scheduleId).to.equal('sched-001');
+      expect(createBrandPresenceScheduleStub).to.have.been.calledWithMatch({ tier: 'FREE_TRIAL' });
+      expect(tierClientCreateForSiteStub).to.not.have.been.called;
+    });
+
     it('should log "already existed" when schedule already existed', async () => {
       const auditContext = { configVersion: 'v1' };
 

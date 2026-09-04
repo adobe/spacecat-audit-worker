@@ -140,7 +140,9 @@ async function resolveLlmoEntitlementTier(context, site, siteId) {
  * @param {string} [opts.brandId] - Brand UUID for v2 schedules (required for v2 dedup)
  * @param {string} [opts.organizationId] - SpaceCat org UUID for v2 schedules
  * @param {object} [opts.site] - Site model instance, used to resolve the LLMO entitlement
- *   tier. Omitted only by tests that stub tier resolution directly.
+ *   tier. The one production caller (runLlmoCustomerAnalysis) always provides it; if
+ *   omitted for any reason this defensively fails to the restrictive FREE_TRIAL tier
+ *   rather than skip tier resolution silently (LLMO-7366).
  * @returns {Promise<string>} The created (or existing) schedule id
  */
 export async function createAndTriggerBrandPresenceSchedule(context, siteId, domain, opts = {}) {
