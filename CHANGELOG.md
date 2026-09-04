@@ -1,3 +1,10 @@
+# [1.533.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.4...v1.533.0) (2026-09-04)
+
+
+### Features
+
+* **vulnerabilities:** FixEntity-aware vuln lifecycle reconcile (self-fix + regression restart) ([#2939](https://github.com/adobe/spacecat-audit-worker/issues/2939)) ([5a92b5b](https://github.com/adobe/spacecat-audit-worker/commit/5a92b5b75fb7fb07faac01f2aa71c1bf36e7f847)), closes [#1911](https://github.com/adobe/spacecat-audit-worker/issues/1911) [#2929](https://github.com/adobe/spacecat-audit-worker/issues/2929)
+
 ## [1.532.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.3...v1.532.4) (2026-09-04)
 
 
