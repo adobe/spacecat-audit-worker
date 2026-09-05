@@ -15,6 +15,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 // Use the REAL applyScopeToOpportunity (see cited-analysis test for rationale).
 import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
 import { MockContextBuilder } from '../../shared.js';
@@ -31,6 +32,7 @@ describe('Reddit Analysis Guidance Handler', () => {
   let handler;
   let syncSuggestionsStub;
   let convertToOpportunityStub;
+  let syncOffsiteUrlIndexStub;
   let fetchAnalysisStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
@@ -74,6 +76,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
     syncSuggestionsStub = sandbox.stub().resolves();
     convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
+    syncOffsiteUrlIndexStub = sandbox.stub().resolves();
     fetchAnalysisStub = sandbox.stub();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
@@ -144,6 +147,9 @@ describe('Reddit Analysis Guidance Handler', () => {
     handler = await esmock('../../../src/reddit-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
         syncSuggestions: syncSuggestionsStub,
+      },
+      '../../../src/common/offsite-url-index.js': {
+        syncOffsiteUrlIndex: syncOffsiteUrlIndexStub,
       },
       '../../../src/common/offsite-refresh.js': {
         persistOffsiteOpportunity: convertToOpportunityStub,
@@ -229,6 +235,14 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Run processed successfully/));
+
+      // The forward-only URL index is wired in after persist with this audit's type.
+      expect(syncOffsiteUrlIndexStub).to.have.been.calledOnce;
+      const urlIndexArg = syncOffsiteUrlIndexStub.firstCall.args[0];
+      expect(urlIndexArg.context).to.equal(context);
+      expect(urlIndexArg.opportunity).to.equal(mockOpportunity);
+      expect(urlIndexArg.auditType).to.equal(Audit.AUDIT_TYPES.REDDIT_ANALYSIS);
+      expect(urlIndexArg.olog).to.be.an('object');
     });
 
     it('should pass opportunityData from BO JSON to persistOffsiteOpportunity', async () => {
