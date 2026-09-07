@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "full",
+  "commit_sha": "544316255aa10d5fdaac19aef0de77464d7a58f4",
+  "author": "miculuis1@email.com",
+  "timestamp": "2026-09-07T15:57:00+03:00",
+  "detection": {
+    "ai_assisted": true,
+    "method": "editor_hook",
+    "tool": "claude-code",
+    "model": "",
+    "confidence": 1.0
+  },
+  "stats": {
+    "total_additions": 59,
+    "total_deletions": 0,
+    "ai_additions": 59,
+    "ai_deletions": 0,
+    "human_additions": 0,
+    "human_deletions": 0
+  },
+  "files": {
+    "src/common/user-agent-classification.js": {
+      "ai_additions": 27,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "34,40-42,83-88,126,139-144,167,188-196",
+      "human_lines": ""
+    },
+    "src/utils/cdn-utils.js": {
+      "ai_additions": 7,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "621-623,632-635",
+      "human_lines": ""
+    },
+    "test/audits/cdn-logs-report/user-agent-patterns.test.js": {
+      "ai_additions": 25,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "119-121,152-170,217-219",
+      "human_lines": ""
+    }
+  }
+}
