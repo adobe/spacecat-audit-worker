@@ -101,6 +101,10 @@ referrals_raw AS (
          java|go-http-client|php|ruby|perl|axios|node|synthetics|probe|ahc
       )'
     )
+
+    -- exclude favicon requests: never a real content page view, but they return an
+    -- HTML error page so they pass the text/html gate and get counted as referral traffic
+    AND NOT REGEXP_LIKE(url_extract_path(url), '(?i)^/favicon\.ico(\.html)?$')
 )
 
 SELECT 
