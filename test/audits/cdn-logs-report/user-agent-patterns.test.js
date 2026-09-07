@@ -41,7 +41,6 @@ describe('User Agent Patterns', () => {
       // Google AI agents
       expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('googleai');
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google$');
-      expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Gemini-Deep-Research');
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google-NotebookLM');
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google-?Agent');
 
@@ -115,9 +114,11 @@ describe('User Agent Patterns', () => {
       expect(filter).to.include('ChatGPT');
       expect(filter).to.include('Perplexity');
       expect(filter).to.include('Google-?Agent');
-      expect(filter).to.include('Gemini-Deep-Research');
       expect(filter).to.include('Google-NotebookLM');
       expect(filter).to.include('Claude');
+      expect(filter).to.include('Shap-User');
+      expect(filter).to.include('Manus-User');
+      expect(filter).to.include('Keenable-User');
     });
   });
 
@@ -147,6 +148,25 @@ describe('User Agent Patterns', () => {
 
       expect(sql).to.include("LIKE '%com.anthropic.claude%' THEN 'Media fetchers'");
       expect(sql).to.include("LIKE '%claude/%' THEN 'Media fetchers'");
+    });
+
+    it('classifies Google-NotebookLM as Chatbots (Research merged into Chatbots)', () => {
+      const { buildAgentTypeClassificationSQL } = userAgentPatterns;
+      const sql = buildAgentTypeClassificationSQL();
+
+      expect(sql).to.include("LIKE '%google-notebooklm%' THEN 'Chatbots'");
+      expect(sql).to.not.include('Research');
+      expect(sql).to.not.include('gemini-deep-research');
+      expect(sql).to.not.include('googleagent-mariner');
+    });
+
+    it('classifies new agentic search/user bots', () => {
+      const { buildAgentTypeClassificationSQL } = userAgentPatterns;
+      const sql = buildAgentTypeClassificationSQL();
+
+      expect(sql).to.include("LIKE '%shap-user%' THEN 'Web search crawlers'");
+      expect(sql).to.include("LIKE '%manus-user%' THEN 'Chatbots'");
+      expect(sql).to.include("LIKE '%keenable-user%' THEN 'Web search crawlers'");
     });
   });
 
@@ -184,9 +204,7 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('PerplexityBot')).to.equal('Perplexity');
       expect(inferProviderFromUserAgent('ClaudeBot')).to.equal('Anthropic');
       expect(inferProviderFromUserAgent('Anthropic-SearchBot')).to.equal('Anthropic');
-      expect(inferProviderFromUserAgent('Gemini-Deep-Research')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('Gemini');
-      expect(inferProviderFromUserAgent('GoogleAgent-Mariner')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('GoogleAgent-URLContext')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('GoogleAgent-Shopping')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('Google-Agent')).to.equal('Gemini');
@@ -196,6 +214,9 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('BingBot')).to.equal('Bing');
       expect(inferProviderFromUserAgent('MistralAI-Search')).to.equal('MistralAI');
       expect(inferProviderFromUserAgent('Amazonbot/0.1')).to.equal('Amazon');
+      expect(inferProviderFromUserAgent('Shap-User/0.1.0')).to.equal('Parallel.ai');
+      expect(inferProviderFromUserAgent('Manus-User/1.0')).to.equal('Manus');
+      expect(inferProviderFromUserAgent('Keenable-User/1.0')).to.equal('Keenable.ai');
       expect(inferProviderFromUserAgent('something-unknown')).to.equal('Other');
     });
   });

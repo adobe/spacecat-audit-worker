@@ -31,12 +31,15 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude(?!-web)',
-  googleai: '(?i)(^Google$|Gemini-Deep-Research|Google-NotebookLM|Google-?Agent)',
+  googleai: '(?i)(^Google$|Google-NotebookLM|Google-?Agent)',
   google: '(?i)(Google-Extended|Googlebot)',
   mistralai: '(?i)MistralAI-User',
   copilot: '(?i)Copilot',
   bing: '(?i)Bingbot',
   amazon: '(?i)Amzn-User',
+  parallel: '(?i)Shap-User',
+  manus: '(?i)Manus-User',
+  keenable: '(?i)Keenable-User',
 };
 
 /**
@@ -58,12 +61,10 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%perplexity/%', displayName: 'Perplexity Clients' },
 
   // Google
-  { pattern: '%gemini-deep-research%', displayName: 'Gemini-Deep-Research' },
   { pattern: 'google', displayName: 'Google-ai-mode' },
   { pattern: '%googleagent-urlcontext%', displayName: 'GoogleAgent-URLContext' },
   { pattern: '%googleagent-chrome%', displayName: 'GoogleAgent-Chrome' },
   { pattern: '%googleagent-shopping%', displayName: 'GoogleAgent-Shopping' },
-  { pattern: '%googleagent-mariner%', displayName: 'GoogleAgent-Mariner' },
   { pattern: '%google-agent%', displayName: 'Google-Agent' },
   { pattern: '%google-notebooklm%', displayName: 'Google-NotebookLM' },
   { pattern: '%googlebot%', displayName: 'GoogleBot' },
@@ -79,6 +80,12 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%mistralai-user%', displayName: 'MistralAI-User' },
   // Amazon
   { pattern: '%amzn-user%', displayName: 'Amzn-User' },
+  // Parallel.ai
+  { pattern: '%shap-user%', displayName: 'Shap-User' },
+  // Manus
+  { pattern: '%manus-user%', displayName: 'Manus-User' },
+  // Keenable.ai
+  { pattern: '%keenable-user%', displayName: 'Keenable-User' },
 ];
 
 /**
@@ -111,14 +118,12 @@ export function buildAgentTypeClassificationSQL() {
     // Google
     { pattern: '%googlebot%', result: 'Search Bots' },
     { pattern: '%google-extended%', result: 'Search Bots' },
-    { pattern: '%gemini-deep-research%', result: 'Research' },
     { pattern: 'google', result: 'Chatbots' },
     { pattern: '%googleagent-urlcontext%', result: 'Chatbots' },
     { pattern: '%googleagent-chrome%', result: 'Action agents' },
     { pattern: '%googleagent-shopping%', result: 'Shopping agents' },
-    { pattern: '%googleagent-mariner%', result: 'Action agents' },
     { pattern: '%google-agent%', result: 'Action agents' },
-    { pattern: '%google-notebooklm%', result: 'Research' },
+    { pattern: '%google-notebooklm%', result: 'Chatbots' },
     // Bing
     { pattern: '%bingbot%', result: 'Search Bots' },
     // Claude
@@ -131,6 +136,12 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%mistralai-user%', result: 'Chatbots' },
     // Amazon
     { pattern: '%amzn-user%', result: 'Chatbots' },
+    // Parallel.ai
+    { pattern: '%shap-user%', result: 'Web search crawlers' },
+    // Manus
+    { pattern: '%manus-user%', result: 'Chatbots' },
+    // Keenable.ai
+    { pattern: '%keenable-user%', result: 'Web search crawlers' },
   ];
 
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');
@@ -153,7 +164,7 @@ export function inferProviderFromUserAgent(userAgent = '') {
   if (/(anthropic|claude)/.test(ua)) {
     return 'Anthropic';
   }
-  if (/(gemini-deep-research|google-?agent)/.test(ua)) {
+  if (/google-?agent/.test(ua)) {
     return 'Gemini';
   }
   if (/google-ai-mode/.test(ua)) {
@@ -173,6 +184,15 @@ export function inferProviderFromUserAgent(userAgent = '') {
   }
   if (/(amzn|amazon)/.test(ua)) {
     return 'Amazon';
+  }
+  if (/shap-user/.test(ua)) {
+    return 'Parallel.ai';
+  }
+  if (/manus/.test(ua)) {
+    return 'Manus';
+  }
+  if (/keenable/.test(ua)) {
+    return 'Keenable.ai';
   }
 
   return 'Other';
