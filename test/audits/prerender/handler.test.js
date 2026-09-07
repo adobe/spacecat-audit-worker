@@ -8879,7 +8879,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats(null, [], 5, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, missingPages: [], submittedUrlSet: null,
+        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, missingPages: [], submittedUrlSet: null, redirectedUrls: [],
       });
       expect(context.dataAccess.ScrapeUrl.allByScrapeJobId).to.not.have.been.called;
     });
@@ -8893,7 +8893,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats('job-1', [], 5, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, missingPages: [], submittedUrlSet: null,
+        urlsSubmittedForScraping: 5, scrapeForbiddenCount: 0, missingPages: [], submittedUrlSet: null, redirectedUrls: [],
       });
     });
 
@@ -9051,7 +9051,7 @@ describe('Prerender Audit', () => {
       };
       const result = await getScrapeJobStats('job-1', [], 3, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 3, scrapeForbiddenCount: 0, missingPages: [], submittedUrlSet: null,
+        urlsSubmittedForScraping: 3, scrapeForbiddenCount: 0, missingPages: [], submittedUrlSet: null, redirectedUrls: [],
       });
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });
@@ -9070,7 +9070,7 @@ describe('Prerender Audit', () => {
       ];
       const result = await getScrapeJobStats('job-1', comparisonResults, 2, context);
       expect(result).to.deep.equal({
-        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 2, missingPages: [], submittedUrlSet: null,
+        urlsSubmittedForScraping: 2, scrapeForbiddenCount: 2, missingPages: [], submittedUrlSet: null, redirectedUrls: [],
       });
       expect(context.log.warn).to.have.been.calledWith(sinon.match('Failed to fetch ScrapeUrl stats'));
     });
