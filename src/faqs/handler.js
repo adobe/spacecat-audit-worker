@@ -161,18 +161,14 @@ async function runFaqsAudit(url, context, site) {
   try {
     const contentAIStatus = await validateContentAI(site, context);
 
-    // Check if Content AI is properly configured and working
-    if (!contentAIStatus.uid || !contentAIStatus.genSearchEnabled || !contentAIStatus.isWorking) {
+    if (!contentAIStatus.contentSourceName || !contentAIStatus.isSearchWorking) {
       let errorMessage;
-      if (!contentAIStatus.uid) {
-        errorMessage = 'Content AI configuration not found';
-        log.warn('[FAQ] Content AI configuration does not exist for this site, skipping audit');
-      } else if (!contentAIStatus.genSearchEnabled) {
-        errorMessage = 'Content AI generative search not enabled';
-        log.warn(`[FAQ] Content AI generative search not enabled for index ${contentAIStatus.indexName}, skipping audit`);
+      if (!contentAIStatus.contentSourceName) {
+        errorMessage = 'Content AI source not found';
+        log.warn('[FAQ] Content AI source does not exist for this site, skipping audit');
       } else {
         errorMessage = 'Content AI search endpoint validation failed';
-        log.warn(`[FAQ] Content AI search endpoint is not working for index ${contentAIStatus.indexName}, skipping audit`);
+        log.warn(`[FAQ] Content AI search endpoint is not working for source ${contentAIStatus.contentSourceName}, skipping audit`);
       }
 
       return {
@@ -185,7 +181,7 @@ async function runFaqsAudit(url, context, site) {
       };
     }
 
-    log.info(`[FAQ] Content AI validation successful - UID: ${contentAIStatus.uid}, Index: ${contentAIStatus.indexName}, GenSearch: ${contentAIStatus.genSearchEnabled}`);
+    log.info(`[FAQ] Content AI validation successful - source: ${contentAIStatus.contentSourceName}`);
 
     // Prepare SharePoint client and file location
     const sharepointClient = await createLLMOSharepointClient(context);

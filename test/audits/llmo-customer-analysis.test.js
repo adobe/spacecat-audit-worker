@@ -202,12 +202,6 @@ describe('LLMO Customer Analysis Handler', () => {
             return Promise.resolve();
           }),
         },
-        '../../src/utils/content-ai.js': {
-          ContentAIClient: class {
-            async initialize() { return this; }
-            async createConfiguration() { return; }
-          },
-        },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
         },

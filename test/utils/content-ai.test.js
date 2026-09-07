@@ -15,62 +15,40 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { calculateWeeklyCronSchedule } from '../../src/utils/content-ai.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
+const jsonResponse = (sandbox, body, overrides = {}) => ({
+  ok: true,
+  status: 200,
+  statusText: 'OK',
+  json: sandbox.stub().resolves(body),
+  ...overrides,
+});
+
 describe('Content AI Utils', () => {
   describe('calculateWeeklyCronSchedule', () => {
-    let sandbox;
     let clock;
-    let calculateWeeklyCronSchedule;
-
-    beforeEach(async () => {
-      sandbox = sinon.createSandbox();
-      const contentAiModule = await esmock('../../src/utils/content-ai.js');
-      calculateWeeklyCronSchedule = contentAiModule.calculateWeeklyCronSchedule;
-    });
 
     afterEach(() => {
-      sandbox.restore();
-      if (clock) {
-        clock.restore();
-      }
+      clock?.restore();
     });
 
-    it('should increment day when hour is 23 (wraps to midnight)', () => {
-      // Set time to 11:30 PM on Tuesday - next hour will be 0 (midnight),
-      // day should increment to Wednesday
-      const fixedDate = new Date('2025-01-14T23:30:00'); // Local time
-      clock = sinon.useFakeTimers(fixedDate.getTime());
-
-      const result = calculateWeeklyCronSchedule();
-
-      // Hour 23 + 1 = 0 (midnight), Tuesday (2) + 1 = Wednesday (3)
-      expect(result).to.equal('0 0 * * 3');
+    it('increments the day when the next hour is midnight', () => {
+      clock = sinon.useFakeTimers(new Date('2025-01-14T23:30:00').getTime());
+      expect(calculateWeeklyCronSchedule()).to.equal('0 0 * * 3');
     });
 
-    it('should increment day when hour is 23 on Saturday (wraps to Sunday)', () => {
-      // Set time to 11:30 PM on Saturday - next hour will be 0 (midnight),
-      // day should wrap to Sunday
-      const fixedDate = new Date('2025-01-18T23:30:00'); // Saturday local time
-      clock = sinon.useFakeTimers(fixedDate.getTime());
-
-      const result = calculateWeeklyCronSchedule();
-
-      // Hour 23 + 1 = 0 (midnight), Saturday (6) + 1 = Sunday (0)
-      expect(result).to.equal('0 0 * * 0');
+    it('wraps Saturday to Sunday', () => {
+      clock = sinon.useFakeTimers(new Date('2025-01-18T23:30:00').getTime());
+      expect(calculateWeeklyCronSchedule()).to.equal('0 0 * * 0');
     });
 
-    it('should not increment day when hour does not wrap to midnight', () => {
-      // Set time to 3:30 PM on Tuesday
-      const fixedDate = new Date('2025-01-14T15:30:00'); // Local time
-      clock = sinon.useFakeTimers(fixedDate.getTime());
-
-      const result = calculateWeeklyCronSchedule();
-
-      // Hour 15 + 1 = 16, day stays Tuesday (2)
-      expect(result).to.equal('0 16 * * 2');
+    it('keeps the day when the next hour is not midnight', () => {
+      clock = sinon.useFakeTimers(new Date('2025-01-14T15:30:00').getTime());
+      expect(calculateWeeklyCronSchedule()).to.equal('0 16 * * 2');
     });
   });
 
@@ -78,45 +56,46 @@ describe('Content AI Utils', () => {
     let sandbox;
     let context;
     let site;
+    let siteConfig;
     let mockFetch;
-    let ContentAIClient;
-    let clock;
     let mockImsClient;
+    let toDynamoItem;
+    let ContentAIClient;
 
     beforeEach(async () => {
       sandbox = sinon.createSandbox();
       mockFetch = sandbox.stub(globalThis, 'fetch');
-
-      // Mock Date to control timestamp and time calculations
-      // Tuesday, 3:30 PM UTC - January 14, 2025
-      const fixedDate = new Date('2025-01-14T15:30:00Z');
-      clock = sinon.useFakeTimers(fixedDate.getTime());
-
-      // Mock ImsClient with v3 token response
       mockImsClient = {
         getServiceAccessTokenV3: sandbox.stub().resolves({
           access_token: 'test-access-token',
           token_type: 'Bearer',
         }),
       };
+      toDynamoItem = sandbox.stub().returns({ contentAiConfig: { name: 'example-source' } });
 
-      const contentAiModule = await esmock('../../src/utils/content-ai.js', {
+      ({ ContentAIClient } = await esmock('../../src/utils/content-ai.js', {
         '@adobe/spacecat-shared-ims-client': {
           ImsClient: {
             createFrom: sandbox.stub().returns(mockImsClient),
           },
         },
-      });
-      ContentAIClient = contentAiModule.ContentAIClient;
+        '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
+          Config: { toDynamoItem },
+        },
+      }));
 
+      siteConfig = {
+        getContentAiConfig: sandbox.stub().returns(undefined),
+        getFetchConfig: sandbox.stub().returns({}),
+        updateContentAiConfig: sandbox.stub(),
+      };
       site = {
         getId: sandbox.stub().returns('site-123'),
         getBaseURL: sandbox.stub().returns('https://example.com'),
-        getConfig: sandbox.stub().returns({
-          getFetchConfig: sandbox.stub().returns({}),
-        }),
+        getConfig: sandbox.stub().returns(siteConfig),
+        setConfig: sandbox.stub(),
+        save: sandbox.stub().resolves(),
       };
-
       context = {
         env: {
           CONTENTAI_CLIENT_ID: 'test-client-id',
@@ -134,452 +113,325 @@ describe('Content AI Utils', () => {
 
     afterEach(() => {
       sandbox.restore();
-      clock.restore();
     });
+
+    async function createClient() {
+      const client = new ContentAIClient(context);
+      await client.initialize();
+      return client;
+    }
 
     describe('initialization', () => {
-      it('should initialize and fetch IMS token', async () => {
-        const client = new ContentAIClient(context);
-        await client.initialize();
-
+      it('fetches an IMS token', async () => {
+        await createClient();
         expect(mockImsClient.getServiceAccessTokenV3).to.have.been.calledOnce;
       });
 
-      it('should throw error when IMS token request fails', async () => {
+      it('returns itself after initialization', async () => {
+        const client = new ContentAIClient(context);
+        expect(await client.initialize()).to.equal(client);
+      });
+
+      it('propagates IMS failures', async () => {
         mockImsClient.getServiceAccessTokenV3.rejects(new Error('IMS error'));
-
-        const client = new ContentAIClient(context);
-
-        await expect(client.initialize()).to.be.rejectedWith('IMS error');
+        await expect(new ContentAIClient(context).initialize()).to.be.rejectedWith('IMS error');
       });
 
-      it('should throw error when calling methods before initialization', async () => {
+      it('rejects requests before initialization', async () => {
         const client = new ContentAIClient(context);
-
-        // Try to call getConfigurations without initializing
-        await expect(client.getConfigurations()).to.be.rejectedWith('ContentAIClient not initialized');
+        await expect(client.listAcquisitionContentSources())
+          .to.be.rejectedWith('ContentAIClient not initialized');
       });
     });
 
-    describe('createConfiguration', () => {
-      it('should create ContentAI configuration with correct cron schedule', async () => {
-        // Mock configurations endpoint - no existing config
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [],
-          }),
-        });
+    describe('listAcquisitionContentSources', () => {
+      it('collects pages and URL-encodes cursors', async () => {
+        mockFetch.onFirstCall().resolves(jsonResponse(sandbox, {
+          items: [{ name: 'one' }],
+          cursor: 'next page/+',
+        }));
+        mockFetch.onSecondCall().resolves(jsonResponse(sandbox, {
+          items: [{ name: 'two' }],
+        }));
 
-        // Mock create configuration endpoint
-        mockFetch.onSecondCall().resolves({
-          ok: true,
-        });
+        const sources = await (await createClient()).listAcquisitionContentSources();
 
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        await client.createConfiguration(site);
-
-        // Verify IMS client was called
-        expect(mockImsClient.getServiceAccessTokenV3).to.have.been.calledOnce;
-
-        // Verify configurations request
-        expect(mockFetch.firstCall.args[0]).to.equal('https://contentai.example.com/configurations');
-
-        // Verify create configuration request
-        expect(mockFetch.secondCall.args[0]).to.equal('https://contentai.example.com/configurations');
-        expect(mockFetch.secondCall.args[1].method).to.equal('POST');
-
-        const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
-
-        // Calculate expected values based on local timezone
-        const testDate = new Date('2025-01-14T15:30:00Z');
-        const currentHour = testDate.getHours();
-        const expectedHour = (currentHour + 1) % 24;
-        let expectedDay = testDate.getDay();
-        const expectedTimestamp = testDate.getTime();
-
-        // If hour wraps to midnight, increment the day
-        if (expectedHour === 0) {
-          expectedDay = (expectedDay + 1) % 7;
-        }
-
-        // Verify cron schedule
-        expect(requestBody.steps[1].schedule.cronSchedule).to.equal(`0 ${expectedHour} * * ${expectedDay}`);
-        expect(requestBody.steps[1].schedule.enabled).to.be.true;
-
-        // Verify timestamp in sourceId
-        expect(requestBody.steps[1].sourceId).to.equal(`example.com-generative-${expectedTimestamp}`);
-
-        // Verify other fields
-        expect(requestBody.steps[1].baseUrl).to.equal('https://example.com');
-        expect(requestBody.steps[1].type).to.equal('discovery');
+        expect(sources).to.deep.equal([{ name: 'one' }, { name: 'two' }]);
+        expect(mockFetch.firstCall.args[0].toString())
+          .to.equal('https://contentai.example.com/content-sources/acquisition?limit=50');
+        expect(mockFetch.secondCall.args[0].searchParams.get('cursor')).to.equal('next page/+');
+        expect(mockFetch.firstCall.args[1].headers.Authorization)
+          .to.equal('Bearer test-access-token');
       });
 
-      it('should skip creating when configuration already exists', async () => {
-        // Mock configurations endpoint - existing config
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [{
-              steps: [{
-                baseUrl: 'https://example.com',
-                type: 'generative',
-              }],
-            }],
-          }),
-        });
-
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        await client.createConfiguration(site);
-
-        // Should only call configurations endpoint (check), not create
-        expect(mockFetch).to.have.been.calledOnce;
+      it('accepts a page without items', async () => {
+        mockFetch.resolves(jsonResponse(sandbox, {}));
+        expect(await (await createClient()).listAcquisitionContentSources()).to.deep.equal([]);
       });
 
-      it('should skip creating when overrideBaseURL matches existing configuration', async () => {
-        // Mock site with overrideBaseURL
-        const siteWithOverride = {
-          getId: sandbox.stub().returns('site-123'),
-          getBaseURL: sandbox.stub().returns('https://example.com'),
-          getConfig: sandbox.stub().returns({
-            getFetchConfig: sandbox.stub().returns({
-              overrideBaseURL: 'https://override.example.com',
-            }),
-          }),
-        };
-
-        // Mock configurations endpoint - existing config with override URL
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [{
-              steps: [{
-                baseUrl: 'https://override.example.com',
-                type: 'generative',
-              }],
-            }],
-          }),
-        });
-
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        await client.createConfiguration(siteWithOverride);
-
-        // Should only call configurations endpoint (check), not create
-        expect(mockFetch).to.have.been.calledOnce;
-      });
-
-      it('should handle pagination when checking existing configurations', async () => {
-        // First page - no match, but has cursor
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [{
-              steps: [{
-                baseUrl: 'https://other-site.com',
-                type: 'generative',
-              }],
-            }],
-            cursor: 'next-page-cursor',
-          }),
-        });
-
-        // Second page - has match
-        mockFetch.onSecondCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [{
-              steps: [{
-                baseUrl: 'https://example.com',
-                type: 'generative',
-              }],
-            }],
-          }),
-        });
-
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        await client.createConfiguration(site);
-
-        // Should call configurations twice (pagination), but not create
-        expect(mockFetch).to.have.been.calledTwice;
-        expect(mockFetch.secondCall.args[0]).to.include('cursor=next-page-cursor');
-      });
-
-      it('should handle configurations without steps array', async () => {
-        // Mock configurations endpoint - config without steps
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [{
-              // No steps field
-            }],
-          }),
-        });
-
-        // Mock create endpoint
-        mockFetch.onSecondCall().resolves({
-          ok: true,
-        });
-
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        await client.createConfiguration(site);
-
-        // Should call create since no matching config was found
-        expect(mockFetch).to.have.been.calledTwice;
-      });
-
-      it('should throw error when create request fails', async () => {
-        // Mock configurations endpoint - no existing config
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [],
-          }),
-        });
-
-        // Mock create endpoint - failure
-        mockFetch.onSecondCall().resolves({
+      it('surfaces RFC 7807 details', async () => {
+        mockFetch.resolves(jsonResponse(sandbox, { detail: 'Access denied' }, {
           ok: false,
-          status: 500,
-          statusText: 'Internal Server Error',
-        });
+          status: 403,
+          statusText: 'Forbidden',
+        }));
 
-        const client = new ContentAIClient(context);
-        await client.initialize();
-
-        await expect(client.createConfiguration(site)).to.be.rejected;
+        await expect((await createClient()).listAcquisitionContentSources())
+          .to.be.rejectedWith('Failed to list Content AI acquisition sources: 403 Access denied');
       });
 
-      it('should include all required fields in request payload', async () => {
-        // Mock configurations endpoint
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({ items: [] }),
+      it('falls back to status text for non-JSON errors', async () => {
+        mockFetch.resolves({
+          ok: false,
+          status: 503,
+          statusText: 'Service Unavailable',
+          json: sandbox.stub().rejects(new Error('not json')),
         });
 
-        // Mock create endpoint
-        mockFetch.onSecondCall().resolves({
-          ok: true,
-        });
-
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        await client.createConfiguration(site);
-
-        const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
-
-        // Verify required fields
-        expect(requestBody).to.have.property('steps');
-        expect(requestBody.steps).to.be.an('array').with.lengthOf(3);
-        expect(requestBody.steps[0]).to.have.property('name');
-        expect(requestBody.steps[0]).to.have.property('type');
-        expect(requestBody.steps[0].type).to.equal('index');
-        expect(requestBody.steps[1]).to.have.property('type');
-        expect(requestBody.steps[1].type).to.equal('discovery');
-        expect(requestBody.steps[1]).to.have.property('schedule');
-        expect(requestBody.steps[2]).to.have.property('type');
-        expect(requestBody.steps[2].type).to.equal('generative');
+        await expect((await createClient()).listAcquisitionContentSources())
+          .to.be.rejectedWith('503 Service Unavailable');
       });
     });
 
-    describe('getConfigurationForSite', () => {
-      it('should find and return existing configuration for site', async () => {
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [{
-              uid: 'config-123',
-              steps: [{
-                baseUrl: 'https://example.com',
-                type: 'generative',
-                index: {
-                  name: 'example-index',
-                },
-              }],
-            }],
-          }),
+    describe('resolveContentSourceName', () => {
+      it('uses the persisted name without discovery', async () => {
+        siteConfig.getContentAiConfig.returns({ name: 'persisted-source' });
+
+        expect(await (await createClient()).resolveContentSourceName(site))
+          .to.equal('persisted-source');
+        expect(mockFetch).not.to.have.been.called;
+      });
+
+      it('discovers and persists a matching source while preserving the legacy index', async () => {
+        siteConfig.getContentAiConfig.returns({ index: 'legacy-index' });
+        siteConfig.updateContentAiConfig.callsFake(({ name }) => {
+          siteConfig.getContentAiConfig.returns({
+            index: 'legacy-index',
+            name,
+          });
         });
-
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        const config = await client.getConfigurationForSite(site);
-
-        expect(config).to.deep.equal({
-          uid: 'config-123',
-          steps: [{
-            baseUrl: 'https://example.com',
-            type: 'generative',
-            index: {
-              name: 'example-index',
-            },
+        toDynamoItem.callsFake((config) => ({
+          contentAiConfig: config.getContentAiConfig(),
+        }));
+        mockFetch.resolves(jsonResponse(sandbox, {
+          items: [{
+            name: 'example-source',
+            acquisitionConfig: { baseUrl: 'https://example.com/' },
           }],
+        }));
+
+        expect(await (await createClient()).resolveContentSourceName(site))
+          .to.equal('example-source');
+        expect(siteConfig.updateContentAiConfig).to.have.been.calledOnceWith({
+          name: 'example-source',
         });
+        expect(site.setConfig).to.have.been.calledOnceWith({
+          contentAiConfig: {
+            index: 'legacy-index',
+            name: 'example-source',
+          },
+        });
+        expect(site.save).to.have.been.calledOnce;
       });
 
-      it('should return null when no configuration exists', async () => {
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [],
-          }),
-        });
+      it('matches sources that differ only by www hostname', async () => {
+        mockFetch.resolves(jsonResponse(sandbox, {
+          items: [{
+            name: 'www-source',
+            acquisitionConfig: { baseUrl: 'https://www.example.com' },
+          }],
+        }));
 
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        const config = await client.getConfigurationForSite(site);
-
-        expect(config).to.be.null;
+        expect(await (await createClient()).resolveContentSourceName(site)).to.equal('www-source');
       });
 
-      it('should throw error when getConfigurations request fails', async () => {
-        mockFetch.onFirstCall().resolves({
-          ok: false,
-          status: 500,
-          statusText: 'Internal Server Error',
-        });
+      it('preserves explicit ports while matching source URLs', async () => {
+        site.getBaseURL.returns('https://example.com:8443');
+        mockFetch.resolves(jsonResponse(sandbox, {
+          items: [{
+            name: 'port-source',
+            acquisitionConfig: { baseUrl: 'https://www.example.com:8443/' },
+          }],
+        }));
 
-        const client = new ContentAIClient(context);
-        await client.initialize();
-
-        await expect(client.getConfigurationForSite(site)).to.be.rejectedWith('Failed to get configurations from ContentAI: 500 Internal Server Error');
+        expect(await (await createClient()).resolveContentSourceName(site)).to.equal('port-source');
       });
 
-      it('should handle response without items array', async () => {
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({}), // No items field
-        });
+      it('matches the override URL before the base URL', async () => {
+        siteConfig.getFetchConfig.returns({ overrideBaseURL: 'https://override.example.com/' });
+        mockFetch.resolves(jsonResponse(sandbox, {
+          items: [{
+            name: 'override-source',
+            acquisitionConfig: { baseUrl: 'https://override.example.com' },
+          }],
+        }));
 
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        const config = await client.getConfigurationForSite(site);
-
-        expect(config).to.be.null;
+        expect(await (await createClient()).resolveContentSourceName(site))
+          .to.equal('override-source');
       });
 
-      it('should find configuration by overrideBaseURL', async () => {
-        // Mock site with overrideBaseURL
-        const siteWithOverride = {
-          getId: sandbox.stub().returns('site-123'),
-          getBaseURL: sandbox.stub().returns('https://example.com'),
-          getConfig: sandbox.stub().returns({
-            getFetchConfig: sandbox.stub().returns({
-              overrideBaseURL: 'https://override.example.com',
-            }),
-          }),
-        };
+      it('matches non-URL override values exactly', async () => {
+        siteConfig.getFetchConfig.returns({ overrideBaseURL: 'override.example.com' });
+        mockFetch.resolves(jsonResponse(sandbox, {
+          items: [{
+            name: 'invalid-url-source',
+            acquisitionConfig: { baseUrl: 'override.example.com' },
+          }],
+        }));
 
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [{
-              uid: 'config-override',
-              steps: [{
-                baseUrl: 'https://override.example.com',
-                type: 'generative',
-                index: {
-                  name: 'override-index',
-                },
-              }],
-            }],
-          }),
-        });
-
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        const config = await client.getConfigurationForSite(siteWithOverride);
-
-        expect(config.uid).to.equal('config-override');
+        expect(await (await createClient()).resolveContentSourceName(site))
+          .to.equal('invalid-url-source');
       });
 
-      it('should handle configurations with undefined steps', async () => {
-        mockFetch.onFirstCall().resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            items: [{
-              uid: 'config-no-steps',
-              // No steps field
-            }],
-          }),
-        });
+      it('ignores sources without a base URL', async () => {
+        mockFetch.resolves(jsonResponse(sandbox, {
+          items: [{ name: 'missing-base-url', acquisitionConfig: {} }],
+        }));
 
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        const config = await client.getConfigurationForSite(site);
+        expect(await (await createClient()).resolveContentSourceName(site)).to.be.null;
+        expect(site.save).not.to.have.been.called;
+      });
 
-        expect(config).to.be.null;
+      it('returns null when no source matches', async () => {
+        mockFetch.resolves(jsonResponse(sandbox, {
+          items: [{
+            name: 'other-source',
+            acquisitionConfig: { baseUrl: 'https://other.example.com' },
+          }],
+        }));
+
+        expect(await (await createClient()).resolveContentSourceName(site)).to.be.null;
       });
     });
 
-    describe('runSemanticSearch', () => {
-      it('should execute semantic search with correct request body', async () => {
-        mockFetch.resolves({
-          ok: true,
-          json: sandbox.stub().resolves({
-            results: [{ title: 'Test Result' }],
-          }),
-        });
+    describe('createAcquisitionContentSource', () => {
+      it('returns a persisted source without making a request', async () => {
+        siteConfig.getContentAiConfig.returns({ name: 'persisted-source' });
+        const client = await createClient();
 
-        const client = new ContentAIClient(context);
-        await client.initialize();
-
-        const options = {
-          vectorSpaceSelection: { space: 'semantic' },
-          lexicalSpaceSelection: { space: 'fulltext' },
-          numCandidates: 3,
-          boost: 1,
-        };
-
-        const response = await client.runSemanticSearch('test query', 'vector', 'test-index', options, 10);
-
-        expect(response.ok).to.be.true;
-        expect(mockFetch).to.have.been.calledOnce;
-
-        const [url, fetchOptions] = mockFetch.firstCall.args;
-        expect(url).to.equal('https://contentai.example.com/search');
-        expect(fetchOptions.method).to.equal('POST');
-
-        const requestBody = JSON.parse(fetchOptions.body);
-        expect(requestBody.searchIndexConfig.indexes[0].name).to.equal('test-index');
-        expect(requestBody.query.text).to.equal('test query');
-        expect(requestBody.query.type).to.equal('vector');
-        expect(requestBody.queryOptions.pagination.limit).to.equal(10);
+        expect(await client.createAcquisitionContentSource(site)).to.equal('persisted-source');
+        expect(mockFetch).not.to.have.been.called;
       });
 
-      it('should handle search request failure', async () => {
-        mockFetch.resolves({
+      it('creates an acquisition source and persists its normalized name', async () => {
+        mockFetch.onFirstCall().resolves(jsonResponse(sandbox, { items: [] }));
+        mockFetch.onSecondCall().resolves(jsonResponse(sandbox, {
+          name: 'example-com',
+        }, { status: 201, statusText: 'Created' }));
+        const client = await createClient();
+
+        expect(await client.createAcquisitionContentSource(site)).to.equal('example-com');
+        const [url, options] = mockFetch.secondCall.args;
+        const body = JSON.parse(options.body);
+        expect(url).to.equal('https://contentai.example.com/content-sources/acquisition');
+        expect(body).to.deep.include({
+          name: 'example.com',
+          description: 'Content acquired from https://example.com',
+        });
+        expect(body.acquisitionConfig).to.deep.include({
+          baseUrl: 'https://example.com',
+          discovery: { includePdfs: true },
+        });
+        expect(body.acquisitionConfig.schedule.enabled).to.be.true;
+        expect(siteConfig.updateContentAiConfig).to.have.been.calledWith({ name: 'example-com' });
+      });
+
+      it('creates a source for the override URL', async () => {
+        siteConfig.getFetchConfig.returns({ overrideBaseURL: 'https://www.override.example.com' });
+        mockFetch.onFirstCall().resolves(jsonResponse(sandbox, { items: [] }));
+        mockFetch.onSecondCall().resolves(jsonResponse(sandbox, {
+          name: 'override-example-com',
+        }, { status: 201 }));
+
+        await (await createClient()).createAcquisitionContentSource(site);
+
+        const body = JSON.parse(mockFetch.secondCall.args[1].body);
+        expect(body.name).to.equal('override.example.com');
+        expect(body.acquisitionConfig.baseUrl).to.equal('https://www.override.example.com');
+      });
+
+      it('recovers a creation conflict by discovering and persisting the source', async () => {
+        mockFetch.onFirstCall().resolves(jsonResponse(sandbox, { items: [] }));
+        mockFetch.onSecondCall().resolves(jsonResponse(sandbox, { detail: 'Conflict' }, {
+          ok: false,
+          status: 409,
+          statusText: 'Conflict',
+        }));
+        mockFetch.onThirdCall().resolves(jsonResponse(sandbox, {
+          items: [{
+            name: 'existing-source',
+            acquisitionConfig: { baseUrl: 'https://example.com' },
+          }],
+        }));
+
+        expect(await (await createClient()).createAcquisitionContentSource(site))
+          .to.equal('existing-source');
+        expect(siteConfig.updateContentAiConfig).to.have.been.calledWith({
+          name: 'existing-source',
+        });
+      });
+
+      it('surfaces an unresolved creation conflict', async () => {
+        const conflict = jsonResponse(sandbox, { detail: 'Name already exists' }, {
+          ok: false,
+          status: 409,
+          statusText: 'Conflict',
+        });
+        mockFetch.onFirstCall().resolves(jsonResponse(sandbox, { items: [] }));
+        mockFetch.onSecondCall().resolves(conflict);
+        mockFetch.onThirdCall().resolves(jsonResponse(sandbox, { items: [] }));
+
+        await expect((await createClient()).createAcquisitionContentSource(site))
+          .to.be.rejectedWith('409 Name already exists');
+      });
+
+      it('rejects a successful response without a source name', async () => {
+        mockFetch.onFirstCall().resolves(jsonResponse(sandbox, { items: [] }));
+        mockFetch.onSecondCall().resolves(jsonResponse(sandbox, {}, { status: 201 }));
+
+        await expect((await createClient()).createAcquisitionContentSource(site))
+          .to.be.rejectedWith('did not include a name');
+      });
+    });
+
+    describe('searchContentSource', () => {
+      it('searches a named acquisition source', async () => {
+        mockFetch.resolves(jsonResponse(sandbox, {
+          totalResults: 1,
+          results: [{ id: 'document-1' }],
+        }));
+        const options = {
+          boost: 1,
+          qualityConfig: { quality: 'FAST', size: 1 },
+        };
+
+        const result = await (await createClient())
+          .searchContentSource('example-source', 'website', options, 1);
+
+        expect(result.totalResults).to.equal(1);
+        const [url, fetchOptions] = mockFetch.firstCall.args;
+        expect(url).to.equal('https://contentai.example.com/content-sources/search');
+        expect(JSON.parse(fetchOptions.body)).to.deep.equal({
+          contentSource: { name: 'example-source', type: 'ACQUISITION' },
+          query: { type: 'vector', text: 'website', options },
+          queryOptions: { pagination: { limit: 1 } },
+        });
+      });
+
+      it('returns null for a successful no-content response', async () => {
+        mockFetch.resolves({ ok: true, status: 204, statusText: 'No Content' });
+        expect(await (await createClient()).searchContentSource('source', 'query')).to.be.null;
+      });
+
+      it('surfaces search problem details', async () => {
+        mockFetch.resolves(jsonResponse(sandbox, { detail: 'Invalid query' }, {
           ok: false,
           status: 422,
           statusText: 'Unprocessable Entity',
-        });
+        }));
 
-        const client = new ContentAIClient(context);
-        await client.initialize();
-
-        const response = await client.runSemanticSearch('test query', 'vector', 'test-index', {}, 1);
-
-        expect(response.ok).to.be.false;
-        expect(response.status).to.equal(422);
-      });
-    });
-
-    describe('authorization headers', () => {
-      it('should use correct authorization header for all requests', async () => {
-        mockFetch.resolves({
-          ok: true,
-          json: sandbox.stub().resolves({ items: [] }),
-        });
-
-        const client = new ContentAIClient(context);
-        await client.initialize();
-        await client.getConfigurationForSite(site);
-
-        const authHeader = mockFetch.firstCall.args[1].headers.Authorization;
-        expect(authHeader).to.equal('Bearer test-access-token');
+        await expect((await createClient()).searchContentSource('source', 'query'))
+          .to.be.rejectedWith('Content AI search failed for source source: 422 Invalid query');
       });
     });
   });
