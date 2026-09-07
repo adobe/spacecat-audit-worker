@@ -18,6 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 import { generateReferralCategoryRules } from '../cdn-logs-report/patterns/patterns-uploader.js';
+import { validateCountryCode } from '../common/country-codes.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
 import { buildClassificationRows, serializeClassificationCsv, canonicalizeUrlPath } from './classify.js';
 
@@ -75,7 +76,7 @@ export function serializeCsv(rows) {
   return [header, ...body].join('\r\n');
 }
 
-function buildCsvRows(records, host) {
+function buildCsvRows(records, host, siteIgnoreList) {
   const grouped = new Map();
 
   for (const row of records) {
@@ -87,7 +88,7 @@ function buildCsvRows(records, host) {
       const urlPath = canonicalizeUrlPath(row.path);
       const trfPlatform = row.trf_platform || '';
       const device = row.device || '';
-      const region = extractCountryCode(urlPath);
+      const region = validateCountryCode(extractCountryCode(urlPath), siteIgnoreList);
       const consentBool = consentToBool(row.consent);
       const bounced = row.engaged > 0 ? 0 : 1;
       const pageviews = Number(row.pageviews || 0);
@@ -326,7 +327,10 @@ export async function referralTrafficDailyRunner(context) {
     throw err;
   }
 
-  const rows = buildCsvRows(records, host);
+  // Mirror the agentic path: validate URL-path-derived regions against the ISO
+  // allow-list + the site's ignore list so non-country segments collapse to GLOBAL.
+  const siteIgnoreList = site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
+  const rows = buildCsvRows(records, host, siteIgnoreList);
 
   if (rows.length === 0) {
     log.info(`[llmo-referral-traffic-daily] No LLM referral rows after filter for site ${siteId} on ${date}`);
