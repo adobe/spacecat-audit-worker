@@ -55,7 +55,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
-const HANDLER_VERSION = 2; // manually update as needed
+const HANDLER_VERSION = 3; // manually update as needed
 
 // HTTP status codes explicitly handled by this audit for suggestion generation
 const TRACKED_STATUS_CODES = Object.freeze([...REDIRECT_STATUSES, 404]);
