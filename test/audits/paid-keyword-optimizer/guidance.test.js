@@ -373,6 +373,45 @@ describe('Paid Keyword Optimizer Guidance Handler (cluster format)', () => {
 
       expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'NEW'));
     });
+
+    it('populates landingPageMetrics when auditResult has a matching predominantlyPaidPages entry', async () => {
+      Audit.findById.resolves({
+        getAuditId: () => 'auditId',
+        getAuditType: () => 'paid-keyword-optimizer',
+        getAuditResult: () => ({
+          totalPageViews: 10000,
+          averageBounceRate: 0.45,
+          predominantlyPaidPages: [{
+            url: TEST_URL,
+            bounceRate: 0.55,
+            engagedScrollRate: 0.22,
+            paidTrafficShare: 0.80,
+          }],
+        }),
+      });
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      await handler(message, context);
+
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.landingPageMetrics).to.deep.equal({
+        bounceRate: 0.55,
+        engagedScrollRate: 0.22,
+        paidTrafficShare: 0.80,
+      });
+    });
+
+    it('sets landingPageMetrics to null when auditResult has no predominantlyPaidPages', async () => {
+      // Default Audit.findById mock returns no predominantlyPaidPages (set up in beforeEach)
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage();
+
+      await handler(message, context);
+
+      const createCall = Opportunity.create.getCall(0).args[0];
+      expect(createCall.data.landingPageMetrics).to.equal(null);
+    });
   });
 
   describe('observability logging', () => {
@@ -553,6 +592,57 @@ describe('Paid Keyword Optimizer Guidance Handler (cluster format)', () => {
       expect(old2.setStatus).to.have.been.calledWith('IGNORED');
       expect(Opportunity.saveMany).to.have.been.calledOnce;
       expect(Opportunity.saveMany).to.have.been.calledWith([old1, old2]);
+    });
+  });
+
+  describe('opportunity field-population logging', () => {
+    it('should log field population booleans with has_recommended_action=true when recommendedAction is present', async () => {
+      // A cluster with overallAlignmentScore='poor' triggers buildRecommendedAction → non-null
+      const clusters = [
+        makeCluster({
+          clusterId: 'c1',
+          overallAlignmentScore: 'poor',
+          analysisStatus: 'ok',
+          keywords: [{ keyword: 'kw1', traffic: 100 }],
+        }),
+      ];
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      await handler(message, context);
+
+      const fieldPopulationCall = logStub.info.getCalls().find(
+        (c) => c.args[0] && typeof c.args[0] === 'object' && 'has_recommended_action' in c.args[0],
+      );
+      expect(fieldPopulationCall, 'field-population log call not found').to.exist;
+      expect(fieldPopulationCall.args[0].has_recommended_action).to.equal(true);
+      expect(fieldPopulationCall.args[0].recommended_action_clusters).to.be.a('number').and.to.be.above(0);
+      expect(fieldPopulationCall.args[0].site_id).to.equal('site');
+      expect(fieldPopulationCall.args[0].audit_id).to.equal('auditId');
+      expect(fieldPopulationCall.args[1]).to.equal('[ad-intent-mismatch] opportunity field population');
+    });
+
+    it('should log field population booleans with has_recommended_action=false when recommendedAction is null', async () => {
+      // A cluster with overallAlignmentScore='fair' (not in EXCLUDE_ALIGNMENT_SCORES) → null recommendedAction
+      const clusters = [
+        makeCluster({
+          clusterId: 'c1',
+          overallAlignmentScore: 'fair',
+          analysisStatus: 'ok',
+        }),
+      ];
+      Opportunity.create.resolves(opportunityInstance);
+      const message = createClusterMessage({ clusterResults: clusters });
+
+      await handler(message, context);
+
+      const fieldPopulationCall = logStub.info.getCalls().find(
+        (c) => c.args[0] && typeof c.args[0] === 'object' && 'has_recommended_action' in c.args[0],
+      );
+      expect(fieldPopulationCall, 'field-population log call not found').to.exist;
+      expect(fieldPopulationCall.args[0].has_recommended_action).to.equal(false);
+      expect(fieldPopulationCall.args[0].recommended_action_clusters).to.equal(0);
+      expect(fieldPopulationCall.args[1]).to.equal('[ad-intent-mismatch] opportunity field population');
     });
   });
 
