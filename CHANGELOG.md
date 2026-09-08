@@ -1,3 +1,10 @@
+## [1.533.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.4...v1.533.5) (2026-09-08)
+
+
+### Bug Fixes
+
+* Sitemap audit uses overrideBaseURL when present ([#2953](https://github.com/adobe/spacecat-audit-worker/issues/2953)) ([a03d27e](https://github.com/adobe/spacecat-audit-worker/commit/a03d27ecf2c152ef898897e0767f8765adc13097))
+
 ## [1.533.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.3...v1.533.4) (2026-09-08)
 
 
