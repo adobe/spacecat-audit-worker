@@ -167,6 +167,10 @@ export default async function handler(message, context) {
     const existingSuggestedUrls = Array.isArray(existingData.urlsSuggested)
       ? existingData.urlsSuggested.filter(Boolean)
       : [];
+
+    // Handle AI rationale - omit it if all URLs were filtered out or none were provided
+    // This prevents storing an empty string which fails schema validation
+    let aiRationale = brokenLink.aiRationale || undefined;
     let nextSuggestedUrls = nonRootSuggestedUrls;
     if (nextSuggestedUrls.length === 0) {
       if (existingSuggestedUrls.length > 0) {
@@ -178,6 +182,13 @@ export default async function handler(message, context) {
         if (parentFallback) {
           log.info(`[${opportunity.getType()}] Using parent path fallback: ${parentFallback} (broken: ${brokenUrl})`);
           nextSuggestedUrls = [parentFallback];
+          // Mystique suggested only the homepage but we replaced it with a parent
+          // path: Mystique's rationale was written about the homepage, not the
+          // parent path, so drop it. Scoped to this branch specifically (rather
+          // than an after-the-fact URL-membership check) so it can't also fire
+          // when we fell back to a prior run's existingSuggestedUrls above, which
+          // would otherwise wipe a still-valid existingData.aiRationale.
+          aiRationale = undefined;
         } else if (filteredSuggestedUrls.length > 0) {
           // No valid parent path exists — restore Mystique's homepage suggestion since it
           // may be intentional (e.g. the entire section was removed) and is better than
@@ -190,9 +201,6 @@ export default async function handler(message, context) {
       }
     }
 
-    // Handle AI rationale - omit it if all URLs were filtered out or none were provided
-    // This prevents storing an empty string which fails schema validation
-    let aiRationale = brokenLink.aiRationale || undefined;
     if (filteredSuggestedUrls.length === 0 && cleanedUrls.length > 0) {
       // All URLs were filtered out (likely invalid/broken):
       // fall back to base URL with no rationale, unless a previous run already stored valid URLs
@@ -205,14 +213,6 @@ export default async function handler(message, context) {
       log.info('No suggested URLs provided by Mystique');
       aiRationale = existingSuggestedUrls.length > 0
         ? existingData.aiRationale || undefined : undefined;
-    } else if (
-      nonRootSuggestedUrls.length === 0
-      && filteredSuggestedUrls.length > 0
-      && !filteredSuggestedUrls.includes(nextSuggestedUrls[0])
-    ) {
-      // Mystique suggested only the homepage but we replaced it with a parent path:
-      // Mystique's rationale was written about the homepage, not the parent path, so drop it
-      aiRationale = undefined;
     }
 
     // Preserve factId from Mystique enrichment (autofix bridge)

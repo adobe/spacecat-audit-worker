@@ -1232,6 +1232,64 @@ describe('guidance-broken-links-remediation handler', () => {
     }));
   });
 
+  it('should not clear AI rationale when falling back to existing suggested URLs from a prior run', async () => {
+    // Regression test for a PR review comment on SITES-45434: falling back to
+    // existingSuggestedUrls (a prior run already found a real, non-root suggestion)
+    // must not trip the "we replaced the homepage with a parent path, so drop the
+    // rationale" logic below it — that logic is now scoped to the parent-path-fallback
+    // branch specifically, and must not also fire here.
+    const rootDomainMessage = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          suggestedUrls: ['https://foo.com/'],
+          aiRationale: 'Could not access content, suggesting homepage',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+      getConfig: () => ({ getFetchConfig: () => ({}) }),
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    mockContext.dataAccess.Suggestion.batchGetByKeys = sandbox.stub().resolves({
+      data: [{
+        getId: () => 'test-suggestion-id-1',
+        setData: mockSetData,
+        getData: sandbox.stub().returns({
+          url_to: 'https://foo.com/products/old-product',
+          url_from: 'https://example.com/page',
+          // Prior run already found a real, non-root suggestion.
+          urlsSuggested: ['https://foo.com/products/existing'],
+          aiRationale: 'Existing rationale from a prior run',
+        }),
+      }],
+    });
+    mockContext.dataAccess.Suggestion.saveMany = sandbox.stub().resolves();
+    nock('https://foo.com').get('/').reply(200);
+
+    const response = await brokenLinksGuidanceHandler(rootDomainMessage, mockContext);
+    expect(response.status).to.equal(200);
+    // Reuses the prior run's non-root suggestion instead of the homepage fallback.
+    expect(mockSetData).to.have.been.calledWith(sinon.match({
+      urlsSuggested: ['https://foo.com/products/existing'],
+    }));
+    // The rationale must not be wiped by the parent-path-replacement logic.
+    expect(mockSetData).to.have.been.calledWith(sinon.match((data) => !!data.aiRationale));
+  });
+
   it('should keep a schema-less suggested URL that passes domain check but fails URL parsing in nonRootSuggestedUrls', async () => {
     // 'foo.com/page' has no schema. filterBrokenSuggestedUrls prepends 'https://' for the
     // fetch (returns 200) and hands back the original schema-less string. Inside
