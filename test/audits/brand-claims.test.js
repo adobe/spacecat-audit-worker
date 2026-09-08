@@ -218,9 +218,25 @@ describe('Brand Claims audit handler', function () {
       expect(res.status).to.equal(200);
       expect(log.info).to.not.have.been.calledWithMatch('not enabled for claims');
       expect(sqs.sendMessage).to.have.been.calledOnce;
-      const [, event] = sqs.sendMessage.firstCall.args;
+      const [, event, , delaySeconds] = sqs.sendMessage.firstCall.args;
       expect(event.on_demand).to.equal(true);
       expect(event.event_type).to.equal('BRAND_PRESENCE_SHEET_WRITTEN');
+      // On-demand ready-signal is delayed 850s so the prerequisite audits land first (LLMO-7263).
+      expect(delaySeconds).to.equal(850);
+    });
+
+    it('publishes the ready-signal with no delay for a weekly (non-on-demand) run', async () => {
+      selectResult = { data: [{ id: BRAND_ID, name: 'Acme Corp', brand_claims_enabled: true }], error: null };
+      const prefix = `${SITE_ID}/acmecorp/analytics/chatgpt_free`;
+      s3Client.send.resolves({
+        Contents: [{ Key: `${prefix}/2026/01/05/bp-w2-2026.xlsx`, LastModified: new Date('2026-01-05T00:00:00Z') }],
+        IsTruncated: false,
+      });
+
+      await brandClaimsHandler({ type: 'brand-claims', siteId: SITE_ID }, buildContext());
+
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      expect(sqs.sendMessage.firstCall.args[3]).to.equal(0);
     });
   });
 

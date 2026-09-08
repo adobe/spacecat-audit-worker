@@ -19,6 +19,12 @@ const BP_PLATFORM = 'chatgpt_free';
 const SHEET_FILENAME_RE = /-w(\d{1,2})-(\d{4})(?:-(\d{6}))?\.xlsx$/i;
 const KEY_DATE_RE = /\/(\d{4})\/(\d{2})\/(\d{2})\//;
 const MAX_LISTING_PAGES = 10;
+// On-demand claims runs (LLMO-7263) are fired by api-service alongside their
+// prerequisite audits (offsite-brand-presence, wikipedia-analysis). Delay the claims
+// ready-signal so those inputs land in mystique before it runs claims. The
+// mysticat-bp-sheet-ready queue is a standard (non-FIFO) queue, so per-message
+// DelaySeconds applies; 850s stays under the SQS 900s hard cap.
+const ON_DEMAND_READY_DELAY_SECONDS = 850;
 
 // Must match DRS's sanitize_path_component byte-for-byte (BP consumer re-lists on this value).
 export function sanitizePathComponent(component) {
@@ -249,7 +255,11 @@ export default async function brandClaimsHandler(message, context) {
     batch_id: null,
   };
 
-  await sqs.sendMessage(queueUrl, event);
+  // Delay only the on-demand ready-signal so the prerequisite audits complete first;
+  // weekly/enrich runs publish immediately. (sendMessage args: queue, body, msgGroupId,
+  // delaySeconds.)
+  const readyDelaySeconds = onDemand === true ? ON_DEMAND_READY_DELAY_SECONDS : 0;
+  await sqs.sendMessage(queueUrl, event, null, readyDelaySeconds);
   log.info(`brand-claims: published ready-signal for site ${resolvedSiteId} (brand "${brand.name}"), s3_key=${sheet.key}`);
 
   // Record the run as a `brand-claims` audit (LLMO-7263). This handler is a bare
