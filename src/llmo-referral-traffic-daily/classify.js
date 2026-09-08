@@ -88,7 +88,54 @@ export function canonicalizeUrlPath(path) {
 }
 
 /**
+ * Pre-compiles a site's rules once. Regex compilation is O(rules); doing it here
+ * (instead of inside the per-URL loop) keeps classification O(URLs + rules)
+ * rather than O(URLs * rules). Each entry is {name, re} where re is a compiled
+ * RegExp, or null for an unsafe/uncompilable pattern (treated as no-match, parity
+ * with the SQL _safe_regex_match). Rule order is preserved (first match wins).
+ * @param {Array<{name: string, regex: string}>} rules pre-sorted category rules
+ * @returns {Array<{name: string, re: RegExp|null}>}
+ */
+function compileRules(rules) {
+  if (!Array.isArray(rules)) {
+    return [];
+  }
+  const compiled = [];
+  for (const rule of rules) {
+    if (rule && typeof rule.regex === 'string' && rule.name) {
+      let re = null;
+      try {
+        re = compileRuleRegex(rule.regex);
+      } catch {
+        re = null; // uncompilable regex -> no match (parity with _safe_regex_match)
+      }
+      compiled.push({ name: rule.name, re });
+    }
+  }
+  return compiled;
+}
+
+/**
+ * Resolves the category for a single URL path against already-compiled rules.
+ * First match by rule order wins; null when nothing matches.
+ * @returns {string|null}
+ */
+function matchCompiledRules(compiledRules, urlPath) {
+  if (typeof urlPath !== 'string') {
+    return null;
+  }
+  for (const { name, re } of compiledRules) {
+    if (re && re.test(urlPath)) {
+      return name;
+    }
+  }
+  return null;
+}
+
+/**
  * Resolves the category for a single URL path against a site's active rules.
+ * Compiles the rule regexes on every call; when classifying many URLs prefer
+ * buildClassificationRows, which compiles once. Kept for single-URL callers/tests.
  * @param {Array<{name: string, regex: string}>} rules pre-sorted category rules
  * @param {string} urlPath the URL path to classify
  * @returns {string|null} the matching category name, or null when nothing matches
@@ -97,38 +144,27 @@ export function classifyUrlPath(rules, urlPath) {
   if (!Array.isArray(rules) || typeof urlPath !== 'string') {
     return null;
   }
-  for (const rule of rules) {
-    if (rule && typeof rule.regex === 'string' && rule.name) {
-      let compiled = null;
-      try {
-        compiled = compileRuleRegex(rule.regex);
-      } catch {
-        compiled = null; // uncompilable regex -> no match (parity with _safe_regex_match)
-      }
-      if (compiled && compiled.test(urlPath)) {
-        return rule.name;
-      }
-    }
-  }
-  return null;
+  return matchCompiledRules(compileRules(rules), urlPath);
 }
 
 /**
  * Builds the referral_url_classifications rows for a run: one row per distinct
  * (host, url_path) that matches a rule. Unmatched URLs get no row (category is
  * never empty). Category-only — mirrors the referral_url_classifications shape.
+ * Rules are compiled once up front, then matched against every distinct URL.
  * @returns {Array<{host, url_path, category_name, updated_by}>}
  */
 export function buildClassificationRows(rows, rules, updatedBy) {
   const seen = new Set();
   const classifications = [];
+  const compiledRules = compileRules(rules);
 
   for (const row of rows) {
     const { host, url_path: urlPath } = row;
     const key = `${host}\n${urlPath}`;
     if (!seen.has(key)) {
       seen.add(key);
-      const category = classifyUrlPath(rules, urlPath);
+      const category = matchCompiledRules(compiledRules, urlPath);
       if (category) {
         classifications.push({
           host,
