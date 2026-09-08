@@ -88,12 +88,16 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
     portfolioMetrics = {},
   } = guidanceBody;
   /**
-   * Page-level context fields emitted by mystique (additive, both optional).
+   * Page-level context fields emitted by mystique (additive, all optional).
    *
    * Distinct from per-cluster
    * `gapAnalysis.{keywordToPageGap,adToPageGap}.relevantExtractedTopics`,
    * which are LLM-filtered subsets of `pageTopics` filtered for cluster-
    * specific intent relevance. `pageTopics` here is the full page-level set.
+   *
+   * `pageRecommendation` is the strategist's reconciled, play-aware page-level
+   * recommendation (inferredPlay, primary + rankedActions with lever/alternatives);
+   * `null` when mystique skips/fails the strategist pass or emits an older payload.
    *
    * Use `??` (nullish coalescing) instead of ES destructure defaults so that
    * a future regression emitting `pageTopics: null` (instead of omitting the
@@ -102,6 +106,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
    */
   const resolvedPageHeading = guidanceBody.resolvedPageHeading ?? null;
   const pageTopics = guidanceBody.pageTopics ?? [];
+  const pageRecommendation = guidanceBody.pageRecommendation ?? null;
   const { langfuseTraceId, langfuseTraceUrl } = guidanceBody?.observability || {};
 
   const hasConflictingHeadlineRecommendations = clusterResults.filter(
@@ -149,6 +154,7 @@ export function mapToKeywordOptimizerOpportunity(siteId, audit, message) {
       totalMisalignedSpend,
       resolvedPageHeading,
       pageTopics,
+      pageRecommendation,
     },
     status: 'NEW',
     tags: [
