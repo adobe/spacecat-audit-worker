@@ -173,6 +173,107 @@ describe('TOC (Table of Contents) Audit', () => {
     });
   });
 
+  describe('Domain/Redirect Scope Guard (LLMO-6965)', () => {
+    it('skips a page whose scrape resolved (post-redirect) to an out-of-scope subdomain', async () => {
+      const url = 'https://example.com/careers';
+      const finalUrl = 'https://jobs.example.com/careers';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC found"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<h1 id="main">Title</h1><h2>Section 1</h2><h2>Section 2</h2>',
+                  tags: { title: 'Careers', description: 'desc', h1: ['Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command passed to s3Client.send');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site; // getBaseURL() => 'https://example.com'
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      // No suggestion should be created for a page that redirects off-domain — OAE would
+      // never be able to apply optimization there.
+      expect(result.auditResult).to.deep.equal({ toc: {} });
+    });
+
+    it('still audits a page whose redirect stays within the same registered domain', async () => {
+      const url = 'https://example.com/page';
+      const finalUrl = 'https://example.com/page/';
+
+      const mockClient = {
+        fetchChatCompletion: sinon.stub().resolves({
+          choices: [{ message: { content: '{"tocPresent":false,"confidence":8,"reasoning":"No TOC found"}' } }],
+        }),
+      };
+      AzureOpenAIClient.createFrom.restore();
+      sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'test-opp-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      s3Client.send.callsFake((command) => {
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl,
+                scrapedAt: Date.now(),
+                scrapeResult: {
+                  rawBody: '<h1 id="main">Title</h1><h2>Section 1</h2><h2>Section 2</h2>',
+                  tags: { title: 'Page', description: 'desc', h1: ['Title'] },
+                },
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+        throw new Error('Unexpected command passed to s3Client.send');
+      });
+
+      context.s3Client = s3Client;
+      context.site = site;
+      context.scrapeResultPaths = new Map([[url, 'toc/scrapes/test-job/page/scrape.json']]);
+      const result = await mockedHandler.processTocResults(context);
+
+      expect(result.auditResult.toc.toc.urls).to.have.lengthOf(1);
+      expect(result.auditResult.toc.toc.urls[0].url).to.equal(url);
+    });
+  });
+
   describe('Empty TOC Prevention', () => {
     it('skips suggestion when AI says TOC is missing but all headings are inside nav containers', async () => {
       const baseURL = 'https://example.com';
@@ -700,6 +801,69 @@ describe('TOC (Table of Contents) Audit', () => {
         isAISuggested: true,
       });
       expect(result.suggestions.toc[0].transformRules).to.exist;
+    });
+
+    it('drops a suggestion whose URL is outside the audited site\'s domain scope (LLMO-6965)', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          headings: {},
+          toc: {
+            toc: {
+              success: false,
+              explanation: 'TOC is missing',
+              urls: [
+                {
+                  url: 'https://example.com/page1',
+                  explanation: 'Table of Contents should be present on the page',
+                  suggestion: 'Add a Table of Contents to the page',
+                  transformRules: {
+                    action: 'insertAfter', selector: 'h1', value: [{ text: 'Title', level: 1 }], valueFormat: 'html',
+                  },
+                },
+                {
+                  url: 'https://jobs.example.com/careers',
+                  explanation: 'Table of Contents should be present on the page',
+                  suggestion: 'Add a Table of Contents to the page',
+                  transformRules: {
+                    action: 'insertAfter', selector: 'h1', value: [{ text: 'Title', level: 1 }], valueFormat: 'html',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, context);
+
+      expect(result.suggestions.toc).to.have.lengthOf(1);
+      expect(result.suggestions.toc[0].url).to.equal('https://example.com/page1');
+    });
+
+    it('keeps a suggestion when its URL fails to parse, treating parse errors as in-scope', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          headings: {},
+          toc: {
+            toc: {
+              success: false,
+              explanation: 'TOC is missing',
+              urls: [{
+                url: 'https://exa mple.com/page1', // space makes this unparseable by URL()
+                explanation: 'x',
+                suggestion: 'x',
+              }],
+            },
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, context);
+
+      expect(result.suggestions.toc).to.have.lengthOf(1);
+      expect(result.suggestions.toc[0].url).to.equal('https://exa mple.com/page1');
     });
 
     it('uses checkResult.explanation when urlObj.explanation is missing (line 798)', () => {
@@ -4256,8 +4420,41 @@ describe('TOC (Table of Contents) Audit', () => {
       await mockedHandler.importTopPages(context);
 
       expect(logSpy.info).to.have.been.calledWith(
-        '[TOC] URL inputs: topPages=1, agentic=1, includedURLs=1, filteredOutUrls=2, finalUrls=1',
+        '[TOC] URL inputs: topPages=1, agentic=1, includedURLs=1, filteredOutUrls=2, '
+        + 'domainFilteredUrls=0, finalUrls=1',
       );
+    });
+
+    it('drops subdomain and cross-domain URLs from the merged input set (LLMO-6965)', async () => {
+      const onDomainUrl = 'https://example.com/page1';
+      const subdomainUrl = 'https://jobs.example.com/careers';
+      const crossDomainUrl = 'https://totally-different.com/page';
+
+      const getMergedAuditInputUrlsStub = sinon.stub().resolves({
+        urls: [onDomainUrl, subdomainUrl, crossDomainUrl],
+        topPagesUrls: [onDomainUrl],
+        agenticUrls: [subdomainUrl],
+        includedURLs: [crossDomainUrl],
+        filteredCount: 0,
+      });
+
+      const mockedHandler = await esmock('../../src/toc/handler.js', {
+        '../../src/utils/audit-input-urls.js': {
+          getMergedAuditInputUrls: getMergedAuditInputUrlsStub,
+          sortTopPagesByTraffic: sinon.stub().returns([]),
+        },
+        '../../src/utils/agentic-urls.js': {
+          getTopAgenticUrlsFromAthena: sinon.stub().resolves([]),
+        },
+      });
+
+      context.site = site; // getBaseURL() => 'https://example.com'
+      context.dataAccess = {
+        SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) },
+      };
+      const result = await mockedHandler.importTopPages(context);
+
+      expect(result.auditResult.topPages).to.deep.equal([onDomainUrl]);
     });
 
     it('prioritizes customer desired URLs and passes auditType to getMergedAuditInputUrls', async () => {
