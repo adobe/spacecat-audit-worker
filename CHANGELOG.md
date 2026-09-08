@@ -1,3 +1,11 @@
+## [1.533.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.3...v1.533.4) (2026-09-08)
+
+
+### Bug Fixes
+
+* **prerender:** outdate suggestions for URLs that start redirecting ([#2947](https://github.com/adobe/spacecat-audit-worker/issues/2947)) ([ae43059](https://github.com/adobe/spacecat-audit-worker/commit/ae430595cb1cfc658069c5beba5e2663dd22b461))
+* **referral-traffic:** validate market/region against ISO allow-list (agentic parity) | LLMO-7346 ([#2948](https://github.com/adobe/spacecat-audit-worker/issues/2948)) ([b917f8b](https://github.com/adobe/spacecat-audit-worker/commit/b917f8bc5f8f2e34c44f310666c3c8adce98dd6b)), closes [Hi#level](https://github.com/Hi/issues/level)
+
 ## [1.533.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.2...v1.533.3) (2026-09-05)
 
 
