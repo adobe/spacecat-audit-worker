@@ -361,6 +361,72 @@ describe('Summarization Handler', () => {
       );
     });
 
+    it('should publish a summarization observation when enabled', async () => {
+      context.env.OBSERVATION_SUMMARIZATION_ENABLED = 'true';
+
+      const result = await sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledTwice;
+      const observation = sqs.sendMessage.secondCall.args[1];
+      expect(observation).to.include({
+        type: 'observation:summarization',
+        siteId: 'site-id-123',
+        auditId: 'audit-id-456',
+        baseURL: 'https://adobe.com',
+        deliveryType: 'aem',
+      });
+      expect(observation.time).to.be.a('string');
+      expect(observation.data).to.deep.include({ generatePrompts: false });
+      expect(observation.data.pages).to.deep.equal([
+        {
+          url: 'https://adobe.com/page1',
+          scrapeResultPath: 'scrapes/site-id-123/page1/scrape.json',
+          contentHash: null,
+        },
+        {
+          url: 'https://adobe.com/page2',
+          scrapeResultPath: 'scrapes/site-id-123/page2/scrape.json',
+          contentHash: null,
+        },
+        {
+          url: 'https://adobe.com/page3',
+          scrapeResultPath: 'scrapes/site-id-123/page3/scrape.json',
+          contentHash: null,
+        },
+      ]);
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Sent observation:summarization with 3 pages for site site-id-123',
+      );
+    });
+
+    it('should skip an oversized summarization observation', async () => {
+      context.env.OBSERVATION_SUMMARIZATION_ENABLED = 'true';
+      context.scrapeResultPaths.set('https://adobe.com/page1', 'x'.repeat(205 * 1024));
+
+      const result = await sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/observation:summarization payload size .* exceeds budget 204800/),
+      );
+    });
+
+    it('should isolate summarization observation publish failures', async () => {
+      context.env.OBSERVATION_SUMMARIZATION_ENABLED = 'true';
+      sqs.sendMessage.onFirstCall().resolves({});
+      sqs.sendMessage.onSecondCall().rejects(new Error('shadow queue failure'));
+
+      const result = await sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledTwice;
+      expect(log.error).to.have.been.calledWith(
+        '[SUMMARIZATION] Failed to publish observation:summarization shadow message: shadow queue failure',
+      );
+    });
+
     it('should propagate generatePrompts=true from auditContext into Mystique payload', async () => {
       context.auditContext = {
         ...context.auditContext,
