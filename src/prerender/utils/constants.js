@@ -25,6 +25,12 @@ export const DOMAIN_WIDE_SUGGESTION_KEY = 'domain-wide-aggregate|prerender';
 export const MYSTIQUE_SUGGESTIONS_S3_PREFIX = 'prerender/mystique-suggestions';
 export const MYSTIQUE_BATCH_SIZE = DAILY_BATCH_SIZE;
 
+/**
+ * Daily cap on how many coveredByDomainWide suggestions get appended to the scrape
+ * batch for reconciliation (LLMO-7052), additive on top of DAILY_BATCH_SIZE.
+ */
+export const DOMAIN_WIDE_RECONCILIATION_BATCH_SIZE = 200;
+
 // Path-level prerender suggestion thresholds
 export const PATH_TYPE_MIN_URLS = 10;
 export const PATH_TYPE_MIN_VALUABLE_PCT = 33;
