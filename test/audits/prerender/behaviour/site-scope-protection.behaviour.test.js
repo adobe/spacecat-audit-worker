@@ -33,7 +33,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { submitForScraping } from '../../../../src/prerender/handler.js';
+import { submitForScraping } from '../../../../src/prerender/submit-for-scraping.js';
 import { DOMAIN_WIDE_SUGGESTION_KEY } from '../../../../src/prerender/utils/constants.js';
 import {
   buildContext,
@@ -118,7 +118,7 @@ describe('Prerender behaviour — site-scope protection', () => {
 
   describe('scraping stays within site scope', () => {
     it('merges organic, included, and agentic candidates and drops every source\'s out-of-scope URLs', async () => {
-      const mockHandler = await esmock('../../../../src/prerender/handler.js', {
+      const mockHandler = await esmock('../../../../src/prerender/submit-for-scraping.js', {
         '../../../../src/utils/agentic-urls.js': {
           getTopAgenticLiveUrlsFromAthena: async () => [
             'https://bulk.com/uk/agentic-in',
