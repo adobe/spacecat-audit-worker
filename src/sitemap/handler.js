@@ -29,6 +29,7 @@
 
 import {
   isArray,
+  isValidUrl,
 } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
@@ -54,7 +55,7 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
-const HANDLER_VERSION = 2; // manually update as needed
+const HANDLER_VERSION = 3; // manually update as needed
 
 // HTTP status codes explicitly handled by this audit for suggestion generation
 const TRACKED_STATUS_CODES = Object.freeze([...REDIRECT_STATUSES, 404]);
@@ -356,13 +357,25 @@ export async function findSitemap(inputUrl, log) {
 /**
  * Main audit runner function
  */
-export async function sitemapAuditRunner(baseURL, context) {
+export async function sitemapAuditRunner(baseURL, context, site) {
   const { log } = context;
   const startTime = process.hrtime();
 
   log.info(`Starting sitemap audit v${HANDLER_VERSION}-${COMMON_VERSION} for ${baseURL}`);
 
-  const auditResult = await findSitemap(baseURL, log);
+  let urlToProbe = baseURL;
+  const overrideBaseURL = site?.getConfig?.()?.getFetchConfig?.()?.overrideBaseURL;
+  if (overrideBaseURL) {
+    if (isValidUrl(overrideBaseURL)) {
+      /* c8 ignore next */
+      log.info(`Sitemap: using overrideBaseURL ${overrideBaseURL} instead of baseURL ${baseURL} for site ${site.getId()}`);
+      urlToProbe = overrideBaseURL;
+    } else {
+      log.warn(`Sitemap: ignoring overrideBaseURL "${overrideBaseURL}" for site ${site.getId()} — missing http/https protocol; using baseURL ${baseURL} instead`);
+    }
+  }
+
+  const auditResult = await findSitemap(urlToProbe, log);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
