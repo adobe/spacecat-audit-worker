@@ -88,8 +88,12 @@ export const TOC_EXCLUDED_HEADING_PHRASES = [
  * those are legitimate evergreen headings (SaaS pricing pages, real-estate "Homes for Sale",
  * a services page's "Our Offers"). Only matches when paired with a quantity/urgency signal
  * (a %, a $ amount, a named sale event, or "ends/expires/today only/while supplies last").
+ *
+ * The "save" alternative requires a literal $ unless preceded by "up to" — "Save $50" and
+ * "Save up to 200" both match, but "Save 5 Minutes a Day" / "Save 3 Steps in Your Workflow"
+ * do not, since a bare number after "save" is not itself a quantity/urgency signal.
  */
-const TIME_SENSITIVE_PROMO_RE = /\d+%\s*off\b|\$\d+(?:\.\d{2})?\s*(?:off|savings?)\b|\bsave\s+(?:up\s+to\s+)?\$?\d+\b|\b(?:flash|clearance|blowout|closeout)\s+sale\b|\b(?:black\s*friday|cyber\s*monday)\s+(?:sale|deal)s?\b|\blimited[\s-]time\s+(?:offer|deal)\b|\b(?:offer|sale|deal|discount|promo)\s+(?:ends?|expires?)\b|\bwhile\s+supplies\s+last\b|\btoday\s+only\b|\b(?:promo|coupon|discount)\s+code\b/i;
+const TIME_SENSITIVE_PROMO_RE = /\d+%\s*off\b|\$\d+(?:\.\d{2})?\s*(?:off|savings?)\b|\bsave\s+up\s+to\s+\$?\d+\b|\bsave\s+\$\d+\b|\b(?:flash|clearance|blowout|closeout)\s+sale\b|\b(?:black\s*friday|cyber\s*monday)\s+(?:sale|deal)s?\b|\blimited[\s-]time\s+(?:offer|deal)\b|\b(?:offer|sale|deal|discount|promo)\s+(?:ends?|expires?)\b|\bwhile\s+supplies\s+last\b|\btoday\s+only\b|\b(?:promo|coupon|discount)\s+code\b/i;
 
 /**
  * Normalize heading text for phrase matching: trim, lowercase, collapse whitespace

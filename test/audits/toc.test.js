@@ -3653,7 +3653,13 @@ describe('TOC (Table of Contents) Audit', () => {
       it('returns true for dollar-off / savings headings', () => {
         expect(isTimeSensitivePromoHeadingText('$50 Off Your First Order')).to.equal(true);
         expect(isTimeSensitivePromoHeadingText('Save up to $200')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Save up to 200')).to.equal(true);
         expect(isTimeSensitivePromoHeadingText('Save $12.99 today')).to.equal(true);
+      });
+      it('does NOT match "save" followed by a bare number with no $ or "up to" prefix', () => {
+        expect(isTimeSensitivePromoHeadingText('Save 5 Minutes a Day')).to.equal(false);
+        expect(isTimeSensitivePromoHeadingText('Save 3 Steps in Your Workflow')).to.equal(false);
+        expect(isTimeSensitivePromoHeadingText('Save 100 Trees This Year')).to.equal(false);
       });
       it('returns true for named sale events', () => {
         expect(isTimeSensitivePromoHeadingText('Flash Sale Starts Now')).to.equal(true);
