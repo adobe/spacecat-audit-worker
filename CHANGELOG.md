@@ -1,3 +1,10 @@
+## [1.534.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.534.0...v1.534.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **broken-links:** prefer parent-path over homepage fallbacks and block record-ID sibling suggestions ([#2576](https://github.com/adobe/spacecat-audit-worker/issues/2576)) ([838717a](https://github.com/adobe/spacecat-audit-worker/commit/838717a5510ea6cc1e19bccf9b9852abbe91d6c6))
+
 # [1.534.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.7...v1.534.0) (2026-09-09)
 
 
