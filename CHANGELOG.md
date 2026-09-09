@@ -1,3 +1,32 @@
+## [1.533.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.6...v1.533.7) (2026-09-09)
+
+
+### Bug Fixes
+
+* **toc:** exclude time-sensitive promotional headings from TOC extraction ([#2954](https://github.com/adobe/spacecat-audit-worker/issues/2954)) ([6f7078c](https://github.com/adobe/spacecat-audit-worker/commit/6f7078c7b5aa34aab214065735a5e65909a3f1c5))
+
+## [1.533.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.5...v1.533.6) (2026-09-08)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2952](https://github.com/adobe/spacecat-audit-worker/issues/2952)) ([34e6702](https://github.com/adobe/spacecat-audit-worker/commit/34e67025b6359b8dfaf2128bedcf3dc8385282a7))
+
+## [1.533.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.4...v1.533.5) (2026-09-08)
+
+
+### Bug Fixes
+
+* Sitemap audit uses overrideBaseURL when present ([#2953](https://github.com/adobe/spacecat-audit-worker/issues/2953)) ([a03d27e](https://github.com/adobe/spacecat-audit-worker/commit/a03d27ecf2c152ef898897e0767f8765adc13097))
+
+## [1.533.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.3...v1.533.4) (2026-09-08)
+
+
+### Bug Fixes
+
+* **prerender:** outdate suggestions for URLs that start redirecting ([#2947](https://github.com/adobe/spacecat-audit-worker/issues/2947)) ([ae43059](https://github.com/adobe/spacecat-audit-worker/commit/ae430595cb1cfc658069c5beba5e2663dd22b461))
+* **referral-traffic:** validate market/region against ISO allow-list (agentic parity) | LLMO-7346 ([#2948](https://github.com/adobe/spacecat-audit-worker/issues/2948)) ([b917f8b](https://github.com/adobe/spacecat-audit-worker/commit/b917f8bc5f8f2e34c44f310666c3c8adce98dd6b)), closes [Hi#level](https://github.com/Hi/issues/level)
+
 ## [1.533.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.2...v1.533.3) (2026-09-05)
 
 
