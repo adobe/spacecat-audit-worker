@@ -116,7 +116,7 @@ describe('User Agent Patterns', () => {
       expect(filter).to.include('Google-?Agent');
       expect(filter).to.include('Google-NotebookLM');
       expect(filter).to.include('Claude');
-      expect(filter).to.include('Shap-User');
+      expect(filter).to.include('Shap(Bot|-User)');
       expect(filter).to.include('Manus-User');
       expect(filter).to.include('Keenable-User');
     });
@@ -164,7 +164,8 @@ describe('User Agent Patterns', () => {
       const { buildAgentTypeClassificationSQL } = userAgentPatterns;
       const sql = buildAgentTypeClassificationSQL();
 
-      expect(sql).to.include("LIKE '%shap-user%' THEN 'Web search crawlers'");
+      expect(sql).to.include("LIKE '%shapbot%' THEN 'Web search crawlers'");
+      expect(sql).to.include("LIKE '%shap-user%' THEN 'Chatbots'");
       expect(sql).to.include("LIKE '%manus-user%' THEN 'Chatbots'");
       expect(sql).to.include("LIKE '%keenable-user%' THEN 'Web search crawlers'");
     });
@@ -215,6 +216,7 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('MistralAI-Search')).to.equal('MistralAI');
       expect(inferProviderFromUserAgent('Amazonbot/0.1')).to.equal('Amazon');
       expect(inferProviderFromUserAgent('Shap-User/0.1.0')).to.equal('Parallel.ai');
+      expect(inferProviderFromUserAgent('ShapBot/0.1.0')).to.equal('Parallel.ai');
       expect(inferProviderFromUserAgent('Manus-User/1.0')).to.equal('Manus');
       expect(inferProviderFromUserAgent('Keenable-User/1.0')).to.equal('Keenable.ai');
       expect(inferProviderFromUserAgent('something-unknown')).to.equal('Other');

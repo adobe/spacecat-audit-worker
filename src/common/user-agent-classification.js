@@ -37,7 +37,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   copilot: '(?i)Copilot',
   bing: '(?i)Bingbot',
   amazon: '(?i)Amzn-User',
-  parallel: '(?i)Shap-User',
+  parallel: '(?i)Shap(Bot|-User)',
   manus: '(?i)Manus-User',
   keenable: '(?i)Keenable-User',
 };
@@ -81,6 +81,7 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   // Amazon
   { pattern: '%amzn-user%', displayName: 'Amzn-User' },
   // Parallel.ai
+  { pattern: '%shapbot%', displayName: 'ShapBot' },
   { pattern: '%shap-user%', displayName: 'Shap-User' },
   // Manus
   { pattern: '%manus-user%', displayName: 'Manus-User' },
@@ -136,8 +137,10 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%mistralai-user%', result: 'Chatbots' },
     // Amazon
     { pattern: '%amzn-user%', result: 'Chatbots' },
-    // Parallel.ai
-    { pattern: '%shap-user%', result: 'Web search crawlers' },
+    // Parallel.ai - ShapBot is the automated crawler; Shap-User is user-initiated only
+    // (Parallel does not use it for automatic crawling), so it's a Chatbots-style bot.
+    { pattern: '%shapbot%', result: 'Web search crawlers' },
+    { pattern: '%shap-user%', result: 'Chatbots' },
     // Manus
     { pattern: '%manus-user%', result: 'Chatbots' },
     // Keenable.ai
@@ -185,7 +188,7 @@ export function inferProviderFromUserAgent(userAgent = '') {
   if (/(amzn|amazon)/.test(ua)) {
     return 'Amazon';
   }
-  if (/shap-user/.test(ua)) {
+  if (/shap/.test(ua)) {
     return 'Parallel.ai';
   }
   if (/manus/.test(ua)) {
