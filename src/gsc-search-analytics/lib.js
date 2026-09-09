@@ -80,19 +80,30 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
   // Self-source when no explicit list is supplied: read the deploy-date range (and
   // optional filters) from the Slack/API keyword args (messageData) or auditContext,
   // and gather the site's DEPLOYED/PUBLISHED fixed URLs from the data-service.
+  // Trigger: an absent OR empty fixedUrls both self-source (empty list == not supplied).
   if (!Array.isArray(fixedUrls) || fixedUrls.length === 0) {
-    const p = auditContext.messageData ?? auditContext;
-    const derived = await deriveFixedUrls(
-      site.getId(),
-      {
-        since: p.since, // single watermark: incremental when set, backfill when absent
-        from: p.from, // low-level overrides (tests / power users)
-        to: p.to,
-        fixStatuses: p.fixStatuses,
-        fixTypes: p.fixTypes,
-      },
-      context,
-    );
+    const kwargs = auditContext.messageData ?? auditContext;
+    let derived;
+    try {
+      derived = await deriveFixedUrls(
+        site.getId(),
+        {
+          since: kwargs.since, // single watermark: incremental when set, backfill when absent
+          from: kwargs.from, // low-level overrides (tests / power users)
+          to: kwargs.to,
+          fixStatuses: kwargs.fixStatuses,
+          fixTypes: kwargs.fixTypes,
+        },
+        context,
+      );
+    } catch (e) {
+      // Mirror the createFrom handling below: a data-layer failure records a status
+      // instead of rejecting out of the whole audit.
+      log.error(`gsc-search-analytics: self-source failed for ${finalUrl}: ${e.message}`);
+      return envelope({
+        connected: null, status: 'sourcing_failed', reason: clip(e.message), fixCount: 0, measuredCount: 0, fixes: [],
+      }, finalUrl);
+    }
     fixedUrls = derived.fixedUrls;
     sourcing = derived.sourcing; // { mode, sourcedDateGroups, keptDateGroups, truncated }
   }
@@ -100,7 +111,7 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
   if (!Array.isArray(fixedUrls) || fixedUrls.length === 0) {
     log.info(`gsc-search-analytics: no fixedUrls supplied or derived for ${finalUrl}`);
     return envelope({
-      connected: null, status: 'missing_fixed_urls', fixCount: 0, measuredCount: 0, fixes: [],
+      connected: null, status: 'missing_fixed_urls', fixCount: 0, measuredCount: 0, fixes: [], ...(sourcing && { sourcing }),
     }, finalUrl);
   }
 

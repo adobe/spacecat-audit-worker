@@ -265,6 +265,20 @@ describe('runGscSearchAnalytics', () => {
     });
     const res = await run(finalUrl, context, site, {});
     expect(res.auditResult.status).to.equal('missing_fixed_urls');
+    // Fix 2: a self-sourced "found 0 fixes in band" run stays diagnosable.
+    expect(res.auditResult.sourcing).to.include({ mode: 'backfill', truncated: false });
+  });
+
+  it('records sourcing_failed (and does not throw) when derive rejects', async () => {
+    const { runGscSearchAnalytics: run } = await esmock('../../../src/gsc-search-analytics/lib.js', {
+      '../../../src/gsc-search-analytics/derive.js': {
+        deriveFixedUrls: async () => { throw new Error('db down'); },
+      },
+    });
+    const res = await run(finalUrl, context, site, { messageData: { since: '2026-05-01' } });
+    expect(res.auditResult.status).to.equal('sourcing_failed');
+    expect(res.auditResult.connected).to.equal(null);
+    expect(res.auditResult.reason).to.match(/db down/);
   });
 
   it('returns too_many_fixed_urls above the cap', async () => {
