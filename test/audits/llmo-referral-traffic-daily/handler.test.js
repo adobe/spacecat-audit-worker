@@ -462,6 +462,39 @@ describe('LLMO Referral Traffic Daily Handler', function () {
       expect(putCall.Body).to.include('GLOBAL');
     });
 
+    it('collapses non-ISO path segments to GLOBAL (validateCountryCode)', async () => {
+      // /en/ derives EN, which is a language code, not a country -> GLOBAL
+      parquetReadObjectsStub.resolves([{ ...PARQUET_ROW, path: '/en/page1' }]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .onSecondCall().resolves({});
+
+      await handlerModule.referralTrafficDailyRunner(context);
+
+      const putCall = s3ClientStub.send.secondCall.args[0];
+      expect(putCall.Body).to.include('GLOBAL');
+      expect(putCall.Body).to.not.match(/,EN,/);
+    });
+
+    it('applies the site country-code ignore list (agentic parity)', async () => {
+      site.getConfig = sandbox.stub().returns({ getLlmoCountryCodeIgnoreList: () => ['DE'] });
+      // /de/page1 derives DE (valid ISO), but DE is ignored for this site -> GLOBAL
+      parquetReadObjectsStub.resolves([{ ...PARQUET_ROW, path: '/de/page1' }]);
+      s3ClientStub.send
+        .onFirstCall().resolves({
+          Body: { transformToByteArray: sandbox.stub().resolves(new Uint8Array([0])) },
+        })
+        .onSecondCall().resolves({});
+
+      await handlerModule.referralTrafficDailyRunner(context);
+
+      const putCall = s3ClientStub.send.secondCall.args[0];
+      expect(putCall.Body).to.include('GLOBAL');
+      expect(putCall.Body).to.not.match(/,DE,/);
+    });
+
     it('should map consent=null to true (consent=true in CSV)', async () => {
       parquetReadObjectsStub.resolves([{ ...PARQUET_ROW, consent: null }]);
       s3ClientStub.send

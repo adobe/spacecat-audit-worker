@@ -1,3 +1,53 @@
+## [1.533.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.6...v1.533.7) (2026-09-09)
+
+
+### Bug Fixes
+
+* **toc:** exclude time-sensitive promotional headings from TOC extraction ([#2954](https://github.com/adobe/spacecat-audit-worker/issues/2954)) ([6f7078c](https://github.com/adobe/spacecat-audit-worker/commit/6f7078c7b5aa34aab214065735a5e65909a3f1c5))
+
+## [1.533.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.5...v1.533.6) (2026-09-08)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2952](https://github.com/adobe/spacecat-audit-worker/issues/2952)) ([34e6702](https://github.com/adobe/spacecat-audit-worker/commit/34e67025b6359b8dfaf2128bedcf3dc8385282a7))
+
+## [1.533.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.4...v1.533.5) (2026-09-08)
+
+
+### Bug Fixes
+
+* Sitemap audit uses overrideBaseURL when present ([#2953](https://github.com/adobe/spacecat-audit-worker/issues/2953)) ([a03d27e](https://github.com/adobe/spacecat-audit-worker/commit/a03d27ecf2c152ef898897e0767f8765adc13097))
+
+## [1.533.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.3...v1.533.4) (2026-09-08)
+
+
+### Bug Fixes
+
+* **prerender:** outdate suggestions for URLs that start redirecting ([#2947](https://github.com/adobe/spacecat-audit-worker/issues/2947)) ([ae43059](https://github.com/adobe/spacecat-audit-worker/commit/ae430595cb1cfc658069c5beba5e2663dd22b461))
+* **referral-traffic:** validate market/region against ISO allow-list (agentic parity) | LLMO-7346 ([#2948](https://github.com/adobe/spacecat-audit-worker/issues/2948)) ([b917f8b](https://github.com/adobe/spacecat-audit-worker/commit/b917f8bc5f8f2e34c44f310666c3c8adce98dd6b)), closes [Hi#level](https://github.com/Hi/issues/level)
+
+## [1.533.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.2...v1.533.3) (2026-09-05)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2945](https://github.com/adobe/spacecat-audit-worker/issues/2945)) ([f3710bb](https://github.com/adobe/spacecat-audit-worker/commit/f3710bbc102f6734d0b8243a1464e061f4a14102))
+
+## [1.533.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.1...v1.533.2) (2026-09-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-drs-client to v1.15.1 ([#2944](https://github.com/adobe/spacecat-audit-worker/issues/2944)) ([38b9efc](https://github.com/adobe/spacecat-audit-worker/commit/38b9efc008586cca5eeeae10fa85df0be83063c8))
+
+## [1.533.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.0...v1.533.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** resolve real LLMO entitlement tier before creating brand-presence schedule (LLMO-7366) ([#2942](https://github.com/adobe/spacecat-audit-worker/issues/2942)) ([1d4963e](https://github.com/adobe/spacecat-audit-worker/commit/1d4963e38f5ce74682244145eb61ca827e0e7595)), closes [#3178](https://github.com/adobe/spacecat-audit-worker/issues/3178)
+
 # [1.533.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.532.4...v1.533.0) (2026-09-04)
 
 
