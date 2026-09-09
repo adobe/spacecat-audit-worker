@@ -10,10 +10,17 @@
  * governing permissions and limitations under the License.
  */
 
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 
 use(sinonChai);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SQL_PROVIDERS_DIR = path.join(__dirname, '../../../src/cdn-analysis/sql');
 
 describe('User Agent Patterns', () => {
   let userAgentPatterns;
@@ -220,6 +227,50 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('Manus-User/1.0')).to.equal('Manus');
       expect(inferProviderFromUserAgent('Keenable-User/1.0')).to.equal('Keenable.ai');
       expect(inferProviderFromUserAgent('something-unknown')).to.equal('Other');
+    });
+  });
+
+  describe('CDN ingestion SQL (src/cdn-analysis/sql/*/insert-aggregated.sql)', () => {
+    // Each provider's insert-aggregated.sql independently duplicates the "match known
+    // LLM-related user-agents" REGEXP_LIKE inclusion list (different column name per
+    // CDN, same regex literal) -- a UA that isn't in *this* list never reaches the
+    // aggregated table, so Gate 1 (buildUserAgentFilter) never even sees it. This
+    // guards that every provider stays in sync and that new bots are present here too.
+    const providerDirs = fs.readdirSync(SQL_PROVIDERS_DIR)
+      .filter((name) => fs.statSync(path.join(SQL_PROVIDERS_DIR, name)).isDirectory());
+
+    function extractUaInclusionPattern(sql) {
+      const match = sql.match(/match known LLM-related user-agents\s*\n\s*AND REGEXP_LIKE\([^,]+,\s*'([^']+)'\)/);
+      return match?.[1] ?? null;
+    }
+
+    const patternsByProvider = Object.fromEntries(
+      providerDirs.map((provider) => {
+        const sql = fs.readFileSync(path.join(SQL_PROVIDERS_DIR, provider, 'insert-aggregated.sql'), 'utf8');
+        return [provider, extractUaInclusionPattern(sql)];
+      }),
+    );
+
+    it('has the UA inclusion regex in every provider file', () => {
+      providerDirs.forEach((provider) => {
+        expect(patternsByProvider[provider], `missing UA inclusion pattern in ${provider}`).to.not.be.null;
+      });
+    });
+
+    it('keeps the UA inclusion regex identical across every CDN provider', () => {
+      const [first, ...rest] = providerDirs;
+      rest.forEach((provider) => {
+        expect(patternsByProvider[provider], `${provider} drifted from ${first}`).to.equal(patternsByProvider[first]);
+      });
+    });
+
+    it('includes every new agentic bot added in LLMO-7325', () => {
+      const pattern = patternsByProvider[providerDirs[0]];
+
+      expect(pattern).to.include('Shap(Bot|-User)');
+      expect(pattern).to.include('Manus-User');
+      expect(pattern).to.include('Keenable-User');
+      expect(pattern).to.include('Google-NotebookLM');
     });
   });
 });
