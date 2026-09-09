@@ -63,9 +63,11 @@ function envelope(fields, finalUrl) {
  *
  * Result envelope (audit_result JSON): { schemaVersion, connected, status, fixCount,
  * measuredCount, fixes[] }. Each fix carries a `status` of one of:
- *   measured | not_found | incomplete | invalid_date | failed
+ *   measured | not_found | incomplete | invalid_date | out_of_scope | failed
  * plus before/after/delta/found and a dataQuality marker so a later reader can tell a
- * real signal from a data gap.
+ * real signal from a data gap. Envelope-level `status` may also be one of:
+ *   ok | not_connected | missing_fixed_urls | too_many_fixed_urls |
+ *   too_many_date_groups | sourcing_failed
  *
  * @param {string} finalUrl - resolved site base URL.
  * @param {object} context - audit context ({ log, ... }).
@@ -151,22 +153,40 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
   // krisshop that resolves (following redirects) to www.krisshop.com/en. A fixed URL
   // outside that host+path is never queried, so it must be distinguished from "queried,
   // no data" (not_found).
-  const scope = await composeAuditURL(finalUrl); // e.g. "www.krisshop.com/en"
-  const slash = scope.indexOf('/');
-  const scopeHost = stripWWW((slash >= 0 ? scope.slice(0, slash) : scope).toLowerCase());
-  const scopePath = slash >= 0 ? scope.slice(slash) : '/';
-  const inScope = (url) => {
-    try {
-      const u = new URL(normalizeUrl(url));
-      // path-boundary safe: `/en` must not match `/enterprise`; a bare-root base
-      // (scopePath === '/') treats every same-host URL as in scope.
-      const p = u.pathname;
-      const pathOk = p === scopePath || p.startsWith(`${scopePath}/`) || scopePath === '/';
-      return stripWWW(u.host) === scopeHost && pathOk;
-    } catch {
-      return false;
-    }
-  };
+  // composeAuditURL does a live HTTP GET; every other external call in this runner records
+  // a status instead of throwing. A DNS/transport error here must not reject the whole audit
+  // now that GSC is already connected — degrade to prior behavior (all URLs in scope).
+  let scope;
+  try {
+    scope = await composeAuditURL(finalUrl); // e.g. "www.krisshop.com/en"
+  } catch (e) {
+    log.warn(`gsc-search-analytics: scope resolution failed for ${finalUrl}: ${e.message}; treating all fixed URLs as in scope`);
+    scope = null;
+  }
+  let inScope;
+  if (!scope) {
+    inScope = () => true;
+  } else {
+    const slash = scope.indexOf('/');
+    const scopeHost = stripWWW((slash >= 0 ? scope.slice(0, slash) : scope).toLowerCase());
+    // composeAuditURL leaves a trailing slash on multi-segment paths ("/en/") while the
+    // fixed-URL side is normalized (match.js normalizeUrl strips it), so strip it here too
+    // to keep both sides aligned; a bare-root path ("/") is left as-is.
+    const rawPath = slash >= 0 ? scope.slice(slash) : '/';
+    const scopePath = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath;
+    inScope = (url) => {
+      try {
+        const u = new URL(normalizeUrl(url));
+        // path-boundary safe: `/en` must not match `/enterprise`; a bare-root base
+        // (scopePath === '/') treats every same-host URL as in scope.
+        const p = u.pathname;
+        const pathOk = p === scopePath || p.startsWith(`${scopePath}/`) || scopePath === '/';
+        return stripWWW(u.host) === scopeHost && pathOk;
+      } catch {
+        return false;
+      }
+    };
+  }
 
   const now = new Date();
   const fixes = [];

@@ -57,11 +57,17 @@ describe('runGscSearchAnalytics', () => {
   // and stripWWW is passed through real so the scope math is genuine.
   let runGscSearchAnalytics;
   let scopeReturn = 'krisshop.com';
+  // Opt-in flag: only the scope-resolution-failure test flips this true so the shared
+  // composeAuditURL stub rejects; every other test keeps the default resolve behavior.
+  let scopeThrows = false;
 
   before(async () => {
     ({ runGscSearchAnalytics } = await esmock('../../../src/gsc-search-analytics/lib.js', {
       '@adobe/spacecat-shared-utils': {
-        composeAuditURL: async () => scopeReturn,
+        composeAuditURL: async () => {
+          if (scopeThrows) throw new Error('dns fail');
+          return scopeReturn;
+        },
         stripWWW,
       },
     }));
@@ -69,7 +75,7 @@ describe('runGscSearchAnalytics', () => {
 
   // Default scope = bare host -> scopePath '/', so every same-host fixed URL in the
   // existing tests stays IN scope and keeps its measured/not_found/incomplete verdict.
-  beforeEach(() => { scopeReturn = 'krisshop.com'; });
+  beforeEach(() => { scopeReturn = 'krisshop.com'; scopeThrows = false; });
 
   afterEach(() => sinon.restore());
 
@@ -394,5 +400,51 @@ describe('runGscSearchAnalytics', () => {
       fixedUrls: [{ url: 'not a url', fixType: 'meta-tags', fixDate: '2026-03-01' }],
     });
     expect(res.auditResult.fixes[0].status).to.equal('out_of_scope');
+  });
+
+  it('normalizes a trailing-slash scope so in-scope URLs are measured, not out_of_scope', async () => {
+    // composeAuditURL leaves the trailing slash on a multi-segment path ("/en/"); the fixed
+    // URLs are normalized ("/en", "/en/products/x"), so without the scopePath trim they would
+    // all falsely read out_of_scope.
+    scopeReturn = 'www.krisshop.com/en/';
+    const exactUrl = 'https://www.krisshop.com/en';
+    const subUrl = 'https://www.krisshop.com/en/products/x';
+    const google = {
+      getOrganicSearchData: sinon.stub().resolves({
+        data: {
+          rows: [
+            {
+              keys: [exactUrl], clicks: 5, impressions: 50, ctr: 0.1, position: 4,
+            },
+            {
+              keys: [subUrl], clicks: 5, impressions: 50, ctr: 0.1, position: 4,
+            },
+          ],
+        },
+      }),
+    };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const res = await runGscSearchAnalytics(finalUrl, context, site, {
+      fixedUrls: [
+        { url: exactUrl, fixType: 'meta-tags', fixDate: '2026-03-01' },
+        { url: subUrl, fixType: 'meta-tags', fixDate: '2026-03-01' },
+      ],
+    });
+    const byUrl = Object.fromEntries(res.auditResult.fixes.map((f) => [f.url, f.status]));
+    expect(byUrl[exactUrl]).to.equal('measured');
+    expect(byUrl[subUrl]).to.equal('measured');
+  });
+
+  it('degrades to all-in-scope (still measures) when scope resolution throws', async () => {
+    // composeAuditURL does a live HTTP GET; a DNS/transport error must not reject the whole
+    // audit after GSC is connected — the runner treats every fixed URL as in scope.
+    scopeThrows = true;
+    const google = { getOrganicSearchData: sinon.stub().resolves(rowFor(url)) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: '2026-03-01' }];
+    const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
+    expect(auditResult.connected).to.equal(true);
+    expect(auditResult.status).to.equal('ok');
+    expect(auditResult.fixes[0].status).to.equal('measured');
   });
 });
