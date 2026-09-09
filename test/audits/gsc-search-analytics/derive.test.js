@@ -2,7 +2,9 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { deriveFixedUrls, resolveBand, pageUrlsFromSuggestion } from '../../../src/gsc-search-analytics/derive.js';
+import {
+  deriveFixedUrls, resolveBand, pageUrlsFromSuggestion, SEO_FIX_TYPES, PAGE_URL_KEYS,
+} from '../../../src/gsc-search-analytics/derive.js';
 
 use(sinonChai);
 
@@ -15,6 +17,20 @@ describe('pageUrlsFromSuggestion', () => {
       .to.deep.equal(['https://k/to']);
     expect(pageUrlsFromSuggestion('sitemap', { pageUrl: 'https://k/p', sitemapUrl: 'https://k/sm.xml' }))
       .to.deep.equal(['https://k/p']);
+  });
+
+  it('resolves the broken-internal-links snake_case url_from and the redirect-chains keys (fix 1)', () => {
+    // snake_case spelling must resolve (it was silently yielding 0 URLs before)
+    expect(pageUrlsFromSuggestion('broken-internal-links', { url_from: 'https://k/from' }))
+      .to.deep.equal(['https://k/from']);
+    // camelCase still wins when both are present (first key match)
+    expect(pageUrlsFromSuggestion('broken-internal-links', { urlFrom: 'https://k/camel', url_from: 'https://k/snake' }))
+      .to.deep.equal(['https://k/camel']);
+    // redirect-chains resolves via finalUrlFull, and via the sourceUrl fallback
+    expect(pageUrlsFromSuggestion('redirect-chains', { finalUrlFull: 'https://k/final' }))
+      .to.deep.equal(['https://k/final']);
+    expect(pageUrlsFromSuggestion('redirect-chains', { sourceUrl: 'https://k/src' }))
+      .to.deep.equal(['https://k/src']);
   });
 
   it('reads alt-text from nested recommendations[], deduped, and only for alt-text', () => {
@@ -31,11 +47,24 @@ describe('pageUrlsFromSuggestion', () => {
   });
 });
 
+describe('SEO_FIX_TYPES to PAGE_URL_KEYS contract', () => {
+  it('every SEO fix type has an explicit PAGE_URL_KEYS mapping (no silent FALLBACK)', () => {
+    for (const type of SEO_FIX_TYPES) {
+      expect(PAGE_URL_KEYS, `missing PAGE_URL_KEYS mapping for SEO type ${type}`)
+        .to.have.property(type);
+    }
+    // alt-text is intentionally NOT in PAGE_URL_KEYS (nor in SEO_FIX_TYPES): its URL is nested
+    // under recommendations[] and handled by the dedicated branch in pageUrlsFromSuggestion.
+    expect([...SEO_FIX_TYPES]).to.not.include('alt-text');
+    expect(PAGE_URL_KEYS).to.not.have.property('alt-text');
+  });
+});
+
 describe('resolveBand', () => {
   const now = new Date('2026-09-01T00:00:00Z');
 
   it('backfills the full band when no input is given', () => {
-    // ~13 months ago .. ~3 months ago
+    // ~13 months ago .. ~3 months ago (READY_LAG=87, RETENTION_FLOOR=396, tied to windows.js)
     expect(resolveBand({}, now)).to.deep.equal({ from: '2025-08-01', to: '2026-06-06' });
   });
 
@@ -56,13 +85,17 @@ describe('resolveBand', () => {
   });
 });
 
+// A fix entity as returned inside getAllFixesWithSuggestionsByOpportunityId's rows.
 const mkFe = (over) => ({
+  getStatus: () => 'DEPLOYED',
   getPublishedAt: () => null,
   getExecutedAt: () => '2026-05-04T10:00:00.000Z',
   getChangeDetails: () => ({}),
-  getSuggestions: async () => [],
   ...over,
 });
+// One { fixEntity, suggestions } row — the shape the batch data-access method returns
+// (suggestions are ALREADY attached, so derive never calls fe.getSuggestions()).
+const mkRow = (fixEntity, suggestions = []) => ({ fixEntity, suggestions });
 
 describe('deriveFixedUrls', () => {
   const sandbox = sinon.createSandbox();
@@ -73,7 +106,7 @@ describe('deriveFixedUrls', () => {
   beforeEach(() => {
     FixEntity = {
       STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
-      allByOpportunityIdAndStatus: sandbox.stub().resolves([]),
+      getAllFixesWithSuggestionsByOpportunityId: sandbox.stub().resolves([]),
     };
     Opportunity = { allBySiteId: sandbox.stub().resolves([]) };
     context = { log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() }, dataAccess: { Opportunity, FixEntity } };
@@ -83,27 +116,40 @@ describe('deriveFixedUrls', () => {
 
   it('pulls URL from changeDetails.url and type from the opportunity', async () => {
     Opportunity.allBySiteId.resolves([{ getId: () => 'op1', getType: () => 'meta-tags' }]);
-    FixEntity.allByOpportunityIdAndStatus
-      .withArgs('op1', 'DEPLOYED')
-      .resolves([mkFe({ getChangeDetails: () => ({ url: 'https://krisshop.com/en/brands/loccitane.html' }) })]);
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId
+      .withArgs('op1')
+      .resolves([mkRow(mkFe({ getChangeDetails: () => ({ url: 'https://krisshop.com/en/brands/loccitane.html' }) }))]);
 
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
 
     expect(out.fixedUrls).to.deep.equal([
       { url: 'https://krisshop.com/en/brands/loccitane.html', fixType: 'meta-tags', fixDate: '2026-05-04' },
     ]);
-    expect(out.sourcing).to.include({ mode: 'backfill', truncated: false });
+    // explicit from/to window => mode 'explicit' (a bounded pull, NOT a backfill); nothing partial
+    expect(out.sourcing).to.include({
+      mode: 'explicit', truncated: false, partial: false, opportunitiesErrored: 0,
+    });
   });
 
-  it('falls back to the linked suggestion, using the type-aware key (bbl uses urlFrom, not url)', async () => {
+  it('falls back to the linked suggestion, using the type-aware key (broken-internal-links uses urlFrom, not url)', async () => {
     Opportunity.allBySiteId.resolves([{ getId: () => 'op1', getType: () => 'broken-internal-links' }]);
-    FixEntity.allByOpportunityIdAndStatus.withArgs('op1', 'DEPLOYED').resolves([mkFe({
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').resolves([mkRow(mkFe(), [
       // broken-internal-links stores the fixed page under data.urlFrom — a plain data.url read would drop it
-      getSuggestions: async () => [{ getData: () => ({ urlFrom: 'https://krisshop.com/en/x.html', urlTo: 'https://krisshop.com/en/target' }) }],
-    })]);
+      { getData: () => ({ urlFrom: 'https://krisshop.com/en/x.html', urlTo: 'https://krisshop.com/en/target' }) },
+    ])]);
 
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
     expect(out.fixedUrls.map((f) => f.url)).to.deep.equal(['https://krisshop.com/en/x.html']);
+  });
+
+  it('resolves a redirect-chains fix via the linked suggestion key', async () => {
+    Opportunity.allBySiteId.resolves([{ getId: () => 'op1', getType: () => 'redirect-chains' }]);
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').resolves([mkRow(mkFe(), [
+      { getData: () => ({ finalUrlFull: 'https://krisshop.com/en/final.html' }) },
+    ])]);
+
+    const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
+    expect(out.fixedUrls.map((f) => f.url)).to.deep.equal(['https://krisshop.com/en/final.html']);
   });
 
   it('excludes non-SEO opportunity types (SEO allow-list) without fetching their fix entities', async () => {
@@ -113,16 +159,27 @@ describe('deriveFixedUrls', () => {
     ]);
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
     expect(out.fixedUrls).to.deep.equal([]);
-    expect(FixEntity.allByOpportunityIdAndStatus).to.not.have.been.called;
+    expect(FixEntity.getAllFixesWithSuggestionsByOpportunityId).to.not.have.been.called;
   });
 
   it('filters out fixes outside the date range', async () => {
     Opportunity.allBySiteId.resolves([{ getId: () => 'op1', getType: () => 'meta-tags' }]);
-    FixEntity.allByOpportunityIdAndStatus.withArgs('op1', 'DEPLOYED').resolves([
-      mkFe({ getExecutedAt: () => '2020-01-01T00:00:00Z', getChangeDetails: () => ({ url: 'https://k/old' }) }),
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').resolves([
+      mkRow(mkFe({ getExecutedAt: () => '2020-01-01T00:00:00Z', getChangeDetails: () => ({ url: 'https://k/old' }) })),
     ]);
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
     expect(out.fixedUrls).to.deep.equal([]);
+  });
+
+  it('skips fixes whose status is not in the requested set (in-memory status filter)', async () => {
+    Opportunity.allBySiteId.resolves([{ getId: () => 'op1', getType: () => 'meta-tags' }]);
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').resolves([
+      // getAllFixesWithSuggestionsByOpportunityId returns EVERY status; PENDING must be dropped
+      mkRow(mkFe({ getStatus: () => 'PENDING', getChangeDetails: () => ({ url: 'https://k/pending' }) })),
+      mkRow(mkFe({ getStatus: () => 'DEPLOYED', getChangeDetails: () => ({ url: 'https://k/deployed' }) })),
+    ]);
+    const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
+    expect(out.fixedUrls.map((f) => f.url)).to.deep.equal(['https://k/deployed']);
   });
 
   it('honours fixTypes filter and dedupes on (url, fixDate)', async () => {
@@ -130,20 +187,20 @@ describe('deriveFixedUrls', () => {
       { getId: () => 'op1', getType: () => 'meta-tags' },
       { getId: () => 'op2', getType: () => 'alt-text' },
     ]);
-    FixEntity.allByOpportunityIdAndStatus.withArgs('op1', 'DEPLOYED').resolves([
-      mkFe({ getChangeDetails: () => ({ url: 'https://k/a' }) }),
-      mkFe({ getChangeDetails: () => ({ url: 'https://k/a' }) }), // dup
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').resolves([
+      mkRow(mkFe({ getChangeDetails: () => ({ url: 'https://k/a' }) })),
+      mkRow(mkFe({ getChangeDetails: () => ({ url: 'https://k/a' }) })), // dup
     ]);
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05', fixTypes: ['meta-tags'] }, context);
     expect(out.fixedUrls).to.have.length(1);
-    expect(FixEntity.allByOpportunityIdAndStatus).to.not.have.been.calledWith('op2', 'DEPLOYED');
+    expect(FixEntity.getAllFixesWithSuggestionsByOpportunityId).to.not.have.been.calledWith('op2');
   });
 
   it('explicit fixTypes:[alt-text] overrides the default set (alt-text not in SEO_FIX_TYPES)', async () => {
     Opportunity.allBySiteId.resolves([{ getId: () => 'op1', getType: () => 'alt-text' }]);
-    FixEntity.allByOpportunityIdAndStatus.withArgs('op1', 'DEPLOYED').resolves([mkFe({
-      getSuggestions: async () => [{ getData: () => ({ recommendations: [{ pageUrl: 'https://k/en/img.html' }] }) }],
-    })]);
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').resolves([mkRow(mkFe(), [
+      { getData: () => ({ recommendations: [{ pageUrl: 'https://k/en/img.html' }] }) },
+    ])]);
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05', fixTypes: ['alt-text'] }, context);
     expect(out.fixedUrls.map((f) => f.url)).to.deep.equal(['https://k/en/img.html']);
   });
@@ -155,13 +212,13 @@ describe('deriveFixedUrls', () => {
       const id = `op${i}`;
       const date = `2026-06-${String(i + 1).padStart(2, '0')}`; // wide spread within band
       opps.push({ getId: () => id, getType: () => 'meta-tags' });
-      FixEntity.allByOpportunityIdAndStatus.withArgs(id, 'DEPLOYED').resolves([mkFe({
+      FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs(id).resolves([mkRow(mkFe({
         getExecutedAt: () => `${date}T00:00:00Z`,
         getChangeDetails: () => ({ url: `https://k/en/p${i}` }),
-      })]);
+      }))]);
     }
     Opportunity.allBySiteId.resolves(opps);
-    const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-07-15' }, context); // backfill (no since)
+    const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-07-15' }, context); // explicit window
     const distinctDates = new Set(out.fixedUrls.map((f) => f.fixDate));
     expect(distinctDates.size).to.equal(30); // capped
     expect(out.sourcing).to.include({ truncated: true, sourcedDateGroups: 31, keptDateGroups: 30 });
@@ -174,10 +231,10 @@ describe('deriveFixedUrls', () => {
       suggestions.push({ getData: () => ({ url: `https://k/en/p${i}` }) });
     }
     Opportunity.allBySiteId.resolves([{ getId: () => 'op1', getType: () => 'meta-tags' }]);
-    FixEntity.allByOpportunityIdAndStatus.withArgs('op1', 'DEPLOYED').resolves([mkFe({
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').resolves([mkRow(mkFe({
       getExecutedAt: () => '2026-05-04T00:00:00Z',
-      getSuggestions: async () => suggestions, // changeDetails.url absent → suggestion path
-    })]);
+      // changeDetails.url absent (mkFe default {}) => suggestion path
+    }), suggestions)]);
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-07-15' }, context);
     expect(out.fixedUrls).to.have.length(500); // urlTruncated branch exercised
     expect(out.sourcing).to.include({ truncated: true, keptDateGroups: 1 });
@@ -185,34 +242,35 @@ describe('deriveFixedUrls', () => {
 
   it('prefers getPublishedAt over getExecutedAt when present', async () => {
     Opportunity.allBySiteId.resolves([{ getId: () => 'op1', getType: () => 'meta-tags' }]);
-    FixEntity.allByOpportunityIdAndStatus.withArgs('op1', 'DEPLOYED').resolves([mkFe({
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').resolves([mkRow(mkFe({
       getPublishedAt: () => '2026-05-10T09:00:00Z', // published wins over executed
       getExecutedAt: () => '2026-05-04T10:00:00Z',
       getChangeDetails: () => ({ url: 'https://k/pub' }),
-    })]);
+    }))]);
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
     expect(out.fixedUrls).to.deep.equal([{ url: 'https://k/pub', fixType: 'meta-tags', fixDate: '2026-05-10' }]);
   });
 
-  it('skips a fix entity with neither published nor executed date', async () => {
+  it('skips a fix entity with neither published nor executed date and counts it', async () => {
     Opportunity.allBySiteId.resolves([{ getId: () => 'op1', getType: () => 'meta-tags' }]);
-    FixEntity.allByOpportunityIdAndStatus.withArgs('op1', 'DEPLOYED').resolves([mkFe({
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').resolves([mkRow(mkFe({
       getPublishedAt: () => null,
-      getExecutedAt: () => null, // raw null -> fixDate null -> filtered out of range
+      getExecutedAt: () => null, // raw null -> fixDate null -> skipped and counted
       getChangeDetails: () => ({ url: 'https://k/x' }),
-    })]);
+    }))]);
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
     expect(out.fixedUrls).to.deep.equal([]);
+    expect(out.sourcing.fixesSkippedNoDate).to.equal(1);
   });
 
-  it('tolerates missing getChangeDetails/getSuggestions accessors', async () => {
+  it('tolerates a missing getChangeDetails accessor and empty suggestions', async () => {
     Opportunity.allBySiteId.resolves([{ getId: () => 'op1', getType: () => 'meta-tags' }]);
-    FixEntity.allByOpportunityIdAndStatus.withArgs('op1', 'DEPLOYED').resolves([{
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').resolves([mkRow({
+      getStatus: () => 'DEPLOYED',
       getPublishedAt: () => null,
       getExecutedAt: () => '2026-05-04T00:00:00Z',
       getChangeDetails: undefined, // exercises `?.` + `?? {}` fallback
-      getSuggestions: undefined, // exercises `?.` + `?? []` fallback
-    }]);
+    }, [])]);
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
     expect(out.fixedUrls).to.deep.equal([]);
   });
@@ -222,19 +280,27 @@ describe('deriveFixedUrls', () => {
     expect(out.sourcing.mode).to.equal('incremental'); // opts.since truthy branch
   });
 
-  it('logs and drops a per-opportunity fetch failure without sinking the rest', async () => {
+  it('reports backfill mode (and clean telemetry) when neither since nor from/to is given', async () => {
+    const out = await deriveFixedUrls('site-1', {}, context);
+    expect(out.sourcing.mode).to.equal('backfill'); // no bounds => full backfill
+    expect(out.sourcing).to.include({ partial: false, opportunitiesErrored: 0, fixesSkippedNoDate: 0 });
+  });
+
+  it('logs and drops a per-opportunity fetch failure and marks the sourcing partial', async () => {
     Opportunity.allBySiteId.resolves([
       { getId: () => 'op1', getType: () => 'meta-tags' },
       { getId: () => 'op2', getType: () => 'meta-tags' },
     ]);
-    FixEntity.allByOpportunityIdAndStatus.withArgs('op1', 'DEPLOYED').rejects(new Error('boom'));
-    FixEntity.allByOpportunityIdAndStatus.withArgs('op2', 'DEPLOYED')
-      .resolves([mkFe({ getChangeDetails: () => ({ url: 'https://k/ok' }) })]);
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op1').rejects(new Error('boom'));
+    FixEntity.getAllFixesWithSuggestionsByOpportunityId.withArgs('op2')
+      .resolves([mkRow(mkFe({ getChangeDetails: () => ({ url: 'https://k/ok' }) }))]);
 
     const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
 
-    // op2's URL survives, op1's rejected fetch is dropped (not sunk) and logged
+    // op2's URL survives, op1's rejected fetch is dropped (not sunk), logged, and counted
     expect(out.fixedUrls.map((f) => f.url)).to.deep.equal(['https://k/ok']);
     expect(context.log.warn).to.have.been.called;
+    expect(out.sourcing.opportunitiesErrored).to.equal(1);
+    expect(out.sourcing.partial).to.equal(true);
   });
 });

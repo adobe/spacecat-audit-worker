@@ -14,14 +14,23 @@ import { limitConcurrencyAllSettled } from '../support/utils.js';
 // Caps shared with lib.js (which imports the same constants) so the derive OUTPUT bound
 // here and lib.js's runtime ABORT cap stay in lock-step.
 import { MAX_FIXED_URLS, MAX_DATE_GROUPS } from './constants.js';
+// Timing constants are owned by windows.js (the before/after window math). Derive the
+// derive-side lags from them instead of re-hardcoding 84/87/396 here, so the two files
+// cannot silently drift apart.
+import { DAYS, GSC_LAG_DAYS, RETENTION_DAYS } from './windows.js';
 
-const MAX_CONCURRENT = 10; // bound the per-opportunity FixEntity fan-out (no N+1)
+// One FixEntity batch-load per relevant opportunity, bounded by this concurrency limit.
+// getAllFixesWithSuggestionsByOpportunityId batches the suggestion lookup inside the
+// data-access layer, so DB work is ~constant per opportunity — there is no per-fix
+// getSuggestions() N+1 fanning out over the site's whole fix history.
+const MAX_CONCURRENT = 10;
 
 const iso = (d) => d.toISOString().slice(0, 10);
 const addDays = (d, n) => new Date(d.getTime() + n * 86400000);
 const toUtc = (s) => new Date(`${s}T00:00:00Z`);
-const READY_LAG = 84 + 3; // a fix matures (after-window complete) ~87 days after deploy
-const RETENTION_FLOOR = 396; // older fixes lose their before-window to GSC's ~16mo retention
+const READY_LAG = DAYS + GSC_LAG_DAYS; // 87: after-window completes ~87 days after deploy
+// 396: before-window still inside GSC's ~16mo retention
+const RETENTION_FLOOR = RETENTION_DAYS - DAYS;
 
 /**
  * Resolve the deploy-date band to source fixes from, from a single optional `since`.
@@ -55,9 +64,10 @@ export function resolveBand(opts = {}, now = new Date()) {
 // silently drops whole types (broken-internal-links, broken-backlinks, sitemap, alt-text,
 // redirect-chains). Map the SEO types we measure to their key; fall through the common
 // spellings for anything unlisted.
-const PAGE_URL_KEYS = {
+export const PAGE_URL_KEYS = {
   'meta-tags': ['url', 'pageUrl'],
-  'broken-internal-links': ['urlFrom'],
+  // suggestion schema allows either spelling; snake_case (url_from) was silently yielding 0 URLs
+  'broken-internal-links': ['urlFrom', 'url_from'],
   'broken-backlinks': ['url_to', 'urlTo'],
   sitemap: ['pageUrl'],
   canonical: ['url'],
@@ -65,7 +75,10 @@ const PAGE_URL_KEYS = {
   hreflang: ['url'],
   cwv: ['url'],
   readability: ['pageUrl', 'url'],
-  'redirect-chains': ['finalUrlFull', 'finalUrl'],
+  // TODO(validate): redirect-chains key semantics — whether the measured page is the SOURCE
+  // (sourceUrl) or the DESTINATION (finalUrl*) — need validation against real suggestion
+  // data. sourceUrl is a last-resort fallback only until that is confirmed.
+  'redirect-chains': ['finalUrlFull', 'finalUrl', 'sourceUrl'],
 };
 const FALLBACK_URL_KEYS = ['url', 'pageUrl', 'urlFrom', 'url_to', 'urlTo'];
 const isHttp = (v) => typeof v === 'string' && v.startsWith('http');
@@ -121,15 +134,19 @@ export function pageUrlsFromSuggestion(oppType, data) {
  * @param {{since?:string,from?:string,to?:string,fixStatuses?:string[],fixTypes?:string[]}} opts
  * @param {object} context - { dataAccess: { Opportunity, FixEntity }, log }
  * @returns {Promise<{fixedUrls: Array<{url:string,fixType:string,fixDate:string}>,
- *   sourcing: {mode:string, sourcedDateGroups:number, keptDateGroups:number, truncated:boolean}}>}
+ *   sourcing: {mode:string, sourcedDateGroups:number, keptDateGroups:number, truncated:boolean,
+ *   opportunitiesErrored:number, partial:boolean, fixesSkippedNoDate:number}}>}
  */
 export async function deriveFixedUrls(siteId, opts, context) {
   const { dataAccess, log } = context;
   const { Opportunity, FixEntity } = dataAccess;
   const { from, to } = resolveBand(opts);
-  const statuses = opts.fixStatuses ?? [FixEntity.STATUSES.DEPLOYED, FixEntity.STATUSES.PUBLISHED];
+  const statuses = new Set(
+    opts.fixStatuses ?? [FixEntity.STATUSES.DEPLOYED, FixEntity.STATUSES.PUBLISHED],
+  );
   const typeFilter = Array.isArray(opts.fixTypes) ? new Set(opts.fixTypes) : null;
-  const inRange = (d) => !!d && d >= from && d <= to;
+  // d is a real YYYY-MM-DD here — the null case is already filtered out below.
+  const inRange = (d) => d >= from && d <= to;
 
   // Explicit fixTypes OVERRIDE the default set (so `fixTypes:['alt-text']` works); with no
   // fixTypes we fall back to the SEO_FIX_TYPES default (which excludes alt-text). Either
@@ -140,35 +157,54 @@ export async function deriveFixedUrls(siteId, opts, context) {
     return typeFilter ? typeFilter.has(t) : SEO_FIX_TYPES.has(t);
   });
 
+  // Partial-sourcing telemetry (surfaced on the audit row): a run that silently lost some
+  // opportunities to fetch errors, or dropped fixes with no usable date, must be
+  // distinguishable from a genuine clean zero.
+  let opportunitiesErrored = 0;
+  let fixesSkippedNoDate = 0;
+
   const tasks = relevant.map((opp) => async () => {
+    const oppType = opp.getType();
     try {
       const rows = [];
-      for (const status of statuses) {
-        // eslint-disable-next-line no-await-in-loop
-        const fes = await FixEntity.allByOpportunityIdAndStatus(opp.getId(), status);
-        for (const fe of fes) {
-          const raw = fe.getPublishedAt?.() ?? fe.getExecutedAt?.();
-          const fixDate = raw ? String(raw).slice(0, 10) : null;
-          if (!inRange(fixDate)) {
-            // eslint-disable-next-line no-continue
-            continue;
-          }
-          const cd = fe.getChangeDetails?.() ?? {};
-          let urls = isHttp(cd.url) ? [cd.url] : [];
-          if (urls.length === 0) {
-            // eslint-disable-next-line no-await-in-loop
-            const sugs = (await fe.getSuggestions?.()) ?? [];
-            // Type-aware: the fixed-page URL key varies by opportunity type (see PAGE_URL_KEYS).
-            urls = sugs.flatMap((s) => pageUrlsFromSuggestion(opp.getType(), s.getData?.()));
-          }
-          for (const url of urls) {
-            rows.push({ url, fixType: opp.getType(), fixDate });
-          }
+      // Batch-load every fix for this opportunity WITH its suggestions attached in ~constant
+      // queries, then filter status + date in memory. DB suggestion-resolution is bounded by
+      // the opportunity count, not by total site fix history — no per-fix getSuggestions() N+1.
+      const fixesWithSuggestions = await FixEntity
+        .getAllFixesWithSuggestionsByOpportunityId(opp.getId());
+      for (const { fixEntity: fe, suggestions } of fixesWithSuggestions) {
+        // getAllFixesWithSuggestionsByOpportunityId returns every status; keep only ours.
+        if (!statuses.has(fe.getStatus?.())) {
+          // eslint-disable-next-line no-continue
+          continue;
+        }
+        const raw = fe.getPublishedAt?.() ?? fe.getExecutedAt?.();
+        const fixDate = raw ? String(raw).slice(0, 10) : null;
+        if (!fixDate) {
+          fixesSkippedNoDate += 1;
+          // eslint-disable-next-line no-continue
+          continue;
+        }
+        if (!inRange(fixDate)) {
+          // eslint-disable-next-line no-continue
+          continue;
+        }
+        // v1-only fast-path: v1 changeDetails carried a top-level `url`; v2 changeDetails has
+        // no top-level url, so this rarely hits and the suggestion fallback is the common path.
+        const cd = fe.getChangeDetails?.() ?? {};
+        let urls = isHttp(cd.url) ? [cd.url] : [];
+        if (urls.length === 0) {
+          // Type-aware: the fixed-page URL key varies by opportunity type (see PAGE_URL_KEYS).
+          urls = suggestions.flatMap((s) => pageUrlsFromSuggestion(oppType, s.getData?.()));
+        }
+        for (const url of urls) {
+          rows.push({ url, fixType: oppType, fixDate });
         }
       }
       return rows;
     } catch (e) {
-      log.warn(`gsc-search-analytics: fix-entity fetch failed for opp ${opp.getId()} (${opp.getType()}): ${e.message}`);
+      opportunitiesErrored += 1;
+      log.warn(`gsc-search-analytics: fix-entity fetch failed for opp ${opp.getId()} (${oppType}): ${e.message}`);
       return [];
     }
   });
@@ -202,13 +238,27 @@ export async function deriveFixedUrls(siteId, opts, context) {
   if (urlTruncated) {
     fixedUrls = fixedUrls.slice(0, MAX_FIXED_URLS);
   }
+  // BACKFILL = full measurable band (no bounds given). INCREMENTAL = since a date.
+  // EXPLICIT = a from/to window was pinned; that is a bounded, deterministic pull, NOT a
+  // backfill, so don't mislabel it.
+  let mode;
+  if (opts.since) {
+    mode = 'incremental';
+  } else if (opts.from || opts.to) {
+    mode = 'explicit';
+  } else {
+    mode = 'backfill';
+  }
   const sourcing = {
-    mode: opts.since ? 'incremental' : 'backfill',
+    mode,
     sourcedDateGroups: allDates.length,
     // distinct dates ACTUALLY in the output — recomputed AFTER the URL cap, which can trim
     // the tail of a kept date-group, so this can be < min(allDates, MAX_DATE_GROUPS).
     keptDateGroups: new Set(fixedUrls.map((f) => f.fixDate)).size,
     truncated: allDates.length > MAX_DATE_GROUPS || urlTruncated,
+    opportunitiesErrored,
+    partial: opportunitiesErrored > 0,
+    fixesSkippedNoDate,
   };
   if (sourcing.truncated) {
     log.warn(`gsc-search-analytics: sourcing truncated for site ${siteId} — kept newest ${sourcing.keptDateGroups}/${sourcing.sourcedDateGroups} date-groups (${fixedUrls.length} URLs). Narrow with an explicit window to reach older fixes.`);
