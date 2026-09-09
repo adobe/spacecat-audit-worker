@@ -29,6 +29,8 @@ import {
   sortErrorsByTrafficVolume,
   toPathOnly,
   isValidUrlPath,
+  isLikelyScannerPath,
+  SCANNER_PROBE_PATTERNS,
   downloadExistingCdnSheet,
   groupErrorsByUrl,
   getSiteCountryIgnoreList,
@@ -1123,6 +1125,121 @@ describe('LLM Error Pages Utils', () => {
     });
   });
 
+  describe('isLikelyScannerPath', () => {
+    it('flags version-control metadata probes', () => {
+      expect(isLikelyScannerPath('/.git/config')).to.equal(true);
+      expect(isLikelyScannerPath('/.git')).to.equal(true);
+      expect(isLikelyScannerPath('/.gitignore')).to.equal(true);
+      expect(isLikelyScannerPath('/.svn/entries')).to.equal(true);
+      expect(isLikelyScannerPath('/.hg/store')).to.equal(true);
+    });
+
+    it('flags environment / secret / credential files', () => {
+      expect(isLikelyScannerPath('/.env')).to.equal(true);
+      expect(isLikelyScannerPath('/.env.production')).to.equal(true);
+      expect(isLikelyScannerPath('/config/.env.local')).to.equal(true);
+      expect(isLikelyScannerPath('/.github/.env')).to.equal(true);
+      expect(isLikelyScannerPath('/id_rsa')).to.equal(true);
+      expect(isLikelyScannerPath('/.htpasswd')).to.equal(true);
+      expect(isLikelyScannerPath('/.npmrc')).to.equal(true);
+    });
+
+    it('flags cloud / IaC state & config probes', () => {
+      expect(isLikelyScannerPath('/.aws/credentials')).to.equal(true);
+      expect(isLikelyScannerPath('/.ssh/id_rsa')).to.equal(true);
+      expect(isLikelyScannerPath('/@fs/app/terraform.tfvars')).to.equal(true);
+      expect(isLikelyScannerPath('/infra/main.tfstate')).to.equal(true);
+      expect(isLikelyScannerPath('/.kube/config')).to.equal(true);
+      expect(isLikelyScannerPath('/.circleci/config.yml')).to.equal(true);
+    });
+
+    it('flags front-end dev-server / bundler internals', () => {
+      expect(isLikelyScannerPath('/@vite/client')).to.equal(true);
+      expect(isLikelyScannerPath('/@id/vite')).to.equal(true);
+      expect(isLikelyScannerPath('/node_modules/.bin/x')).to.equal(true);
+      expect(isLikelyScannerPath('/webpack-dev-server')).to.equal(true);
+    });
+
+    it('flags CMS / admin-panel probes', () => {
+      expect(isLikelyScannerPath('/wp-admin/')).to.equal(true);
+      expect(isLikelyScannerPath('/wp-login.php')).to.equal(true);
+      expect(isLikelyScannerPath('/wp-config.php')).to.equal(true);
+      expect(isLikelyScannerPath('/xmlrpc.php')).to.equal(true);
+      expect(isLikelyScannerPath('/phpmyadmin/index.php')).to.equal(true);
+      expect(isLikelyScannerPath('/administrator/')).to.equal(true);
+    });
+
+    it('flags server introspection & webshell probes', () => {
+      expect(isLikelyScannerPath('/cgi-bin/test.cgi')).to.equal(true);
+      expect(isLikelyScannerPath('/actuator/env')).to.equal(true);
+      expect(isLikelyScannerPath('/phpinfo.php')).to.equal(true);
+      expect(isLikelyScannerPath('/manager/html')).to.equal(true);
+    });
+
+    it('flags path traversal / LFI, including encoded-separator forms', () => {
+      expect(isLikelyScannerPath('/foo/..%2f..%2fetc/passwd')).to.equal(true);
+      expect(isLikelyScannerPath('/etc/passwd')).to.equal(true);
+      expect(isLikelyScannerPath('/windows/win.ini')).to.equal(true);
+    });
+
+    it('flags cloud instance-metadata SSRF targets', () => {
+      expect(isLikelyScannerPath('/latest/meta-data/iam')).to.equal(true);
+      expect(isLikelyScannerPath('/computeMetadata/v1')).to.equal(true);
+    });
+
+    it('flags database dumps / backups & editor swap files', () => {
+      expect(isLikelyScannerPath('/backup.sql')).to.equal(true);
+      expect(isLikelyScannerPath('/database.tar.gz')).to.equal(true);
+      expect(isLikelyScannerPath('/index.php.swp')).to.equal(true);
+    });
+
+    it('does not flag legitimate e-commerce / content paths', () => {
+      expect(isLikelyScannerPath('/roc-boots')).to.equal(false);
+      expect(isLikelyScannerPath('/bobux')).to.equal(false);
+      expect(isLikelyScannerPath('/colorado')).to.equal(false);
+      expect(isLikelyScannerPath('/environment')).to.equal(false);
+      expect(isLikelyScannerPath('/inventory')).to.equal(false);
+      expect(isLikelyScannerPath('/gitane-bikes')).to.equal(false);
+      expect(isLikelyScannerPath('/manager-specials')).to.equal(false);
+      expect(isLikelyScannerPath('/administrator-tools')).to.equal(false);
+      expect(isLikelyScannerPath('/products/o\'reilly')).to.equal(false);
+      expect(isLikelyScannerPath('/collections/test-drive')).to.equal(false);
+    });
+
+    it('normalizes literal dot-segments away before matching (no false positive)', () => {
+      // The URL parser collapses `/foo/../bar` to `/bar`, so a literal relative
+      // path is not mistaken for traversal — only encoded `..` survives.
+      expect(isLikelyScannerPath('/foo/../bar')).to.equal(false);
+    });
+
+    it('returns false for non-strings, empty, and unparseable input', () => {
+      expect(isLikelyScannerPath(null)).to.equal(false);
+      expect(isLikelyScannerPath(undefined)).to.equal(false);
+      expect(isLikelyScannerPath(42)).to.equal(false);
+      expect(isLikelyScannerPath('')).to.equal(false);
+      expect(isLikelyScannerPath('   ')).to.equal(false);
+      expect(isLikelyScannerPath('http://[invalid')).to.equal(false);
+    });
+
+    it('falls back to the raw pathname when percent-decoding throws', () => {
+      // `%E0%A4%A` is an incomplete escape → decodeURIComponent throws; the
+      // function must not crash and should still evaluate the raw pathname. The
+      // trailing bad escape sits past the matched segment, so a real probe is
+      // still flagged while a benign path is not.
+      expect(isLikelyScannerPath('/latest/meta-data/%E0%A4%A')).to.equal(true);
+      expect(isLikelyScannerPath('/safe/%E0%A4%A')).to.equal(false);
+    });
+
+    it('exposes a named, non-empty, non-global pattern list', () => {
+      expect(SCANNER_PROBE_PATTERNS).to.be.an('array').with.length.greaterThan(0);
+      SCANNER_PROBE_PATTERNS.forEach(({ name, regex }) => {
+        expect(name).to.be.a('string').and.not.empty;
+        expect(regex).to.be.instanceOf(RegExp);
+        expect(regex.global, `${name} must not use the g flag`).to.equal(false);
+      });
+    });
+  });
+
   // ============================================================================
   // Additional coverage tests for missing functions
   // ============================================================================
@@ -1274,12 +1391,32 @@ describe('LLM Error Pages Utils', () => {
         totalErrors: 0,
         errorPages: [],
         droppedUrls: [],
+        scannerUrls: [],
         summary: {
           uniqueUrls: 0,
           uniqueUserAgents: 0,
           statusCodes: {},
         },
       });
+    });
+
+    it('drops scanner/probe URLs into scannerUrls, keeps them out of errorPages and totals', () => {
+      const results = [
+        { url: '/roc-boots', total_requests: '9', status: '403', user_agent: 'ChatGPT' },
+        { url: '/.github/.env', total_requests: '4', status: '403', user_agent: 'GPTBot' },
+        { url: '/@fs/app/terraform.tfvars', total_requests: '6', status: '403', user_agent: 'GPTBot' },
+        { url: '/brandshttps://evil.com/x', total_requests: '2', status: '404', user_agent: 'GPTBot' },
+      ];
+      const processed = processErrorPagesResults(results);
+      expect(processed.errorPages).to.have.lengthOf(1);
+      expect(processed.errorPages[0].url).to.equal('/roc-boots');
+      expect(processed.scannerUrls).to.deep.equal([
+        '/.github/.env',
+        '/@fs/app/terraform.tfvars',
+      ]);
+      expect(processed.droppedUrls).to.deep.equal(['/brandshttps://evil.com/x']);
+      expect(processed.totalErrors).to.equal(9);
+      expect(processed.summary.statusCodes).to.deep.equal({ 403: 9 });
     });
 
     it('should coerce non-numeric total_requests to 0 and compute counts', () => {

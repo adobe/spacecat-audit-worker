@@ -421,6 +421,28 @@ describe('LLM Error Pages Handler', function () {
       );
     });
 
+    it('logs a sample of scanner/probe URLs filtered upstream in processErrorPagesResults', async () => {
+      mockProcessResults.returns({
+        totalErrors: 1,
+        errorPages: [
+          { user_agent: 'ChatGPT', url: '/legit-page', status: 404, total_requests: 10 },
+        ],
+        droppedUrls: [],
+        scannerUrls: [
+          '/.github/.env',
+          '/@fs/app/terraform.tfvars',
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 10 } },
+      });
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult[0].success).to.be.true;
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Filtered 2 scanner\/probe URL\(s\); sample: \[.*terraform\.tfvars.*\]/),
+      );
+    });
+
     it('should target the last completed week when run on a Monday without weekOffset', async () => {
       const monday = new Date('2025-08-18T12:00:00Z'); // Monday
       const clock = sinon.useFakeTimers(monday.getTime());
