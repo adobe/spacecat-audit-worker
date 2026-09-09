@@ -11,9 +11,8 @@
  */
 
 import { limitConcurrencyAllSettled } from '../support/utils.js';
-// Shared with lib.js so the derive OUTPUT bound and the runtime ABORT cap can never drift.
-// (Extract lib.js's existing MAX_FIXED_URLS/MAX_DATE_GROUPS into this new constants.js and
-// import them in both files — see Task 2, Step 3.)
+// Caps shared with lib.js (which imports the same constants) so the derive OUTPUT bound
+// here and lib.js's runtime ABORT cap stay in lock-step.
 import { MAX_FIXED_URLS, MAX_DATE_GROUPS } from './constants.js';
 
 const MAX_CONCURRENT = 10; // bound the per-opportunity FixEntity fan-out (no N+1)
@@ -142,31 +141,36 @@ export async function deriveFixedUrls(siteId, opts, context) {
   });
 
   const tasks = relevant.map((opp) => async () => {
-    const rows = [];
-    for (const status of statuses) {
-      // eslint-disable-next-line no-await-in-loop
-      const fes = await FixEntity.allByOpportunityIdAndStatus(opp.getId(), status);
-      for (const fe of fes) {
-        const raw = fe.getPublishedAt?.() ?? fe.getExecutedAt?.();
-        const fixDate = raw ? String(raw).slice(0, 10) : null;
-        if (!inRange(fixDate)) {
-          // eslint-disable-next-line no-continue
-          continue;
-        }
-        const cd = fe.getChangeDetails?.() ?? {};
-        let urls = isHttp(cd.url) ? [cd.url] : [];
-        if (urls.length === 0) {
-          // eslint-disable-next-line no-await-in-loop
-          const sugs = (await fe.getSuggestions?.()) ?? [];
-          // Type-aware: the fixed-page URL key varies by opportunity type (see PAGE_URL_KEYS).
-          urls = sugs.flatMap((s) => pageUrlsFromSuggestion(opp.getType(), s.getData?.()));
-        }
-        for (const url of urls) {
-          rows.push({ url, fixType: opp.getType(), fixDate });
+    try {
+      const rows = [];
+      for (const status of statuses) {
+        // eslint-disable-next-line no-await-in-loop
+        const fes = await FixEntity.allByOpportunityIdAndStatus(opp.getId(), status);
+        for (const fe of fes) {
+          const raw = fe.getPublishedAt?.() ?? fe.getExecutedAt?.();
+          const fixDate = raw ? String(raw).slice(0, 10) : null;
+          if (!inRange(fixDate)) {
+            // eslint-disable-next-line no-continue
+            continue;
+          }
+          const cd = fe.getChangeDetails?.() ?? {};
+          let urls = isHttp(cd.url) ? [cd.url] : [];
+          if (urls.length === 0) {
+            // eslint-disable-next-line no-await-in-loop
+            const sugs = (await fe.getSuggestions?.()) ?? [];
+            // Type-aware: the fixed-page URL key varies by opportunity type (see PAGE_URL_KEYS).
+            urls = sugs.flatMap((s) => pageUrlsFromSuggestion(opp.getType(), s.getData?.()));
+          }
+          for (const url of urls) {
+            rows.push({ url, fixType: opp.getType(), fixDate });
+          }
         }
       }
+      return rows;
+    } catch (e) {
+      log.warn(`gsc-search-analytics: fix-entity fetch failed for opp ${opp.getId()} (${opp.getType()}): ${e.message}`);
+      return [];
     }
-    return rows;
   });
 
   // limitConcurrencyAllSettled returns only the fulfilled task values (rejected ones

@@ -221,4 +221,20 @@ describe('deriveFixedUrls', () => {
     const out = await deriveFixedUrls('site-1', { since: '2026-08-01' }, context);
     expect(out.sourcing.mode).to.equal('incremental'); // opts.since truthy branch
   });
+
+  it('logs and drops a per-opportunity fetch failure without sinking the rest', async () => {
+    Opportunity.allBySiteId.resolves([
+      { getId: () => 'op1', getType: () => 'meta-tags' },
+      { getId: () => 'op2', getType: () => 'meta-tags' },
+    ]);
+    FixEntity.allByOpportunityIdAndStatus.withArgs('op1', 'DEPLOYED').rejects(new Error('boom'));
+    FixEntity.allByOpportunityIdAndStatus.withArgs('op2', 'DEPLOYED')
+      .resolves([mkFe({ getChangeDetails: () => ({ url: 'https://k/ok' }) })]);
+
+    const out = await deriveFixedUrls('site-1', { from: '2026-01-01', to: '2026-06-05' }, context);
+
+    // op2's URL survives, op1's rejected fetch is dropped (not sunk) and logged
+    expect(out.fixedUrls.map((f) => f.url)).to.deep.equal(['https://k/ok']);
+    expect(context.log.warn).to.have.been.called;
+  });
 });
