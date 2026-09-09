@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0.0",
+  "mode": "full",
+  "commit_sha": "bd6977faa28a9e73331d2532452c55ad1c0b86f1",
+  "author": "miculuis1@email.com",
+  "timestamp": "2026-09-09T15:44:09+03:00",
+  "detection": {
+    "ai_assisted": true,
+    "method": "editor_hook",
+    "tool": "claude-code",
+    "model": "",
+    "confidence": 1.0
+  },
+  "stats": {
+    "total_additions": 58,
+    "total_deletions": 0,
+    "ai_additions": 58,
+    "ai_deletions": 0,
+    "human_additions": 0,
+    "human_deletions": 0
+  },
+  "files": {
+    "src/cdn-analysis/sql/akamai/insert-aggregated.sql": {
+      "ai_additions": 1,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "27",
+      "human_lines": ""
+    },
+    "src/cdn-analysis/sql/cloudflare/insert-aggregated.sql": {
+      "ai_additions": 1,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "28",
+      "human_lines": ""
+    },
+    "src/cdn-analysis/sql/cloudfront/insert-aggregated.sql": {
+      "ai_additions": 1,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "25",
+      "human_lines": ""
+    },
+    "src/cdn-analysis/sql/fastly/insert-aggregated.sql": {
+      "ai_additions": 1,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "25",
+      "human_lines": ""
+    },
+    "src/cdn-analysis/sql/frontdoor/insert-aggregated.sql": {
+      "ai_additions": 1,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "25",
+      "human_lines": ""
+    },
+    "src/cdn-analysis/sql/imperva/insert-aggregated.sql": {
+      "ai_additions": 1,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "24",
+      "human_lines": ""
+    },
+    "src/cdn-analysis/sql/other/insert-aggregated.sql": {
+      "ai_additions": 1,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "24",
+      "human_lines": ""
+    },
+    "test/audits/cdn-logs-report/user-agent-patterns.test.js": {
+      "ai_additions": 51,
+      "human_additions": 0,
+      "ai_deletions": 0,
+      "human_deletions": 0,
+      "ai_lines": "13-15,20-23,232-275",
+      "human_lines": ""
+    }
+  }
+}
