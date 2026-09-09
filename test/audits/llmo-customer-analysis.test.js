@@ -112,6 +112,8 @@ describe('LLMO Customer Analysis Handler', () => {
     let triggerBrandDetectionStub;
     let createBrandPresenceScheduleStub;
     let drsCreateFromStub;
+    let checkValidEntitlementStub;
+    let tierClientCreateForSiteStub;
 
     beforeEach(async () => {
       sqs.sendMessage.resetHistory();
@@ -125,6 +127,15 @@ describe('LLMO Customer Analysis Handler', () => {
         isConfigured: sandbox.stub().returns(true),
         triggerBrandDetection: triggerBrandDetectionStub,
         createBrandPresenceSchedule: createBrandPresenceScheduleStub,
+      });
+
+      // Defaults to a FREE_TRIAL entitlement (the common PLG case); individual
+      // tests override checkValidEntitlementStub to exercise PAID and lookup-failure paths.
+      checkValidEntitlementStub = sandbox.stub().resolves({
+        entitlement: { getTier: () => 'FREE_TRIAL' },
+      });
+      tierClientCreateForSiteStub = sandbox.stub().resolves({
+        checkValidEntitlement: checkValidEntitlementStub,
       });
 
       mockLlmoConfig = {
@@ -209,6 +220,9 @@ describe('LLMO Customer Analysis Handler', () => {
         },
         '@adobe/spacecat-shared-drs-client': {
           default: { createFrom: drsCreateFromStub },
+        },
+        '@adobe/spacecat-shared-tier-client': {
+          TierClient: { createForSite: tierClientCreateForSiteStub },
         },
       });
     });
@@ -1146,10 +1160,77 @@ describe('LLMO Customer Analysis Handler', () => {
         siteId: 'site-123',
         description: sinon.match(/Onboarding brand presence:.*site-123/),
         triggerImmediately: true,
+        tier: 'FREE_TRIAL',
       });
+      expect(tierClientCreateForSiteStub).to.have.been.calledOnce;
 
       expect(result.auditResult.triggeredSteps).to.include('brand-presence-schedule');
       expect(result.auditResult.brandPresenceScheduleId).to.equal('sched-001');
+    });
+
+    it('passes tier=PAID through to createBrandPresenceSchedule when the org has a PAID LLMO entitlement', async () => {
+      checkValidEntitlementStub.resolves({ entitlement: { getTier: () => 'PAID' } });
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        { configVersion: 'v1' },
+      );
+
+      expect(createBrandPresenceScheduleStub).to.have.been.calledWithMatch({ tier: 'PAID' });
+    });
+
+    it('fails closed to FREE_TRIAL when the entitlement lookup throws', async () => {
+      tierClientCreateForSiteStub.rejects(new Error('SpaceCat unreachable'));
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        { configVersion: 'v1' },
+      );
+
+      expect(createBrandPresenceScheduleStub).to.have.been.calledWithMatch({ tier: 'FREE_TRIAL' });
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to resolve LLMO entitlement tier for site site-123/),
+      );
+    });
+
+    it('defaults to FREE_TRIAL and skips entitlement resolution entirely when opts.site is omitted', async () => {
+      // The one production caller (runLlmoCustomerAnalysis) always supplies opts.site --
+      // this exercises the direct call site's own defensive fallback, which had no test
+      // coverage before (caught in review).
+      const scheduleId = await mockHandler.createAndTriggerBrandPresenceSchedule(
+        context,
+        'site-123',
+        'example.com',
+        {},
+      );
+
+      expect(scheduleId).to.equal('sched-001');
+      expect(createBrandPresenceScheduleStub).to.have.been.calledWithMatch({ tier: 'FREE_TRIAL' });
+      expect(tierClientCreateForSiteStub).to.not.have.been.called;
     });
 
     it('should log "already existed" when schedule already existed', async () => {

@@ -50,15 +50,24 @@ Flow (`src/brand-claims/handler.js`), for a message `{ type: 'brand-claims', sit
    `organization_id` + `status='active'` + `site_id`, deterministic tiebreak, LLMO-4592).
    The read is inspection-only — the handler never writes the `brands` table (enable is
    out of scope; see Problem Statement).
-3. **Gate** — if `brand_claims_enabled` is off, log and ack with no further work (no S3
-   listing, no ready-signal). Only enabled brands proceed.
+3. **Gate** — if `brand_claims_enabled` is off **and the run is not on-demand**
+   (`message.onDemand !== true`), log and ack with no further work (no S3 listing, no
+   ready-signal). Scheduled/weekly runs require the enable flag; an on-demand run
+   (LLMO-7263) is an explicit one-shot that bypasses this gate for a disabled brand.
 4. **Run** — build the S3 prefix `{siteId}/{brandSlug}/analytics/chatgpt_free/` (brand slug
    via `sanitizePathComponent`, byte-for-byte with DRS) and select the latest sheet (max by
    S3 date partition, then `LastModified`).
 5. **Emit** — publish `BRAND_PRESENCE_SHEET_WRITTEN` to `SQS_BP_SHEET_READY_QUEUE_URL` with
    the DRS-shaped event (`organization_id` = SpaceCat org UUID — the BP consumer feeds it
    into `/v2/orgs/{spaceCatId}/…`, which 400s on an IMS org id — `brand_id`, `brand` slug, `site_id`,
-   `week`, `year`, `cadence: "weekly"`, `sheet_date`, `platform`, `s3_bucket`, `s3_key`).
+   `week`, `year`, `cadence`, `sheet_date`, `platform`, `s3_bucket`, `s3_key`, and
+   `on_demand` (`message.onDemand === true`), which tells the BP consumer to bypass its
+   own enablement + cadence gates for this single event).
+6. **Record** — persist a minimal `brand-claims` `Audit` row (`auditedAt`, `auditResult`
+   carrying `onDemand`/sheet metadata) when a run is triggered. This is the timestamp the
+   api-service on-demand request cooldown (`getLatestAuditByAuditType('brand-claims')`) and
+   the elmo-ui pending/cooldown states read (LLMO-7263). Best-effort: the event is already
+   published, so a persistence failure warns and acks rather than failing the handler.
 
 Env (from Vault): `SQS_BP_SHEET_READY_QUEUE_URL`, `DRS_BP_BUCKET`.
 
@@ -67,8 +76,10 @@ missing `SQS_BP_SHEET_READY_QUEUE_URL` / `DRS_BP_BUCKET` / PostgREST client, Pos
 errors, S3 listing failure, SQS publish failure. Genuine business no-ops warn/info + ack:
 missing `siteId`, no active brand, brand not enabled for claims, brand slug empty, no sheet yet.
 
-**Why not `AuditBuilder`.** This handler audits no URL and persists no audit result — it is
-a side-effecting operational trigger (publish an SQS event). `AuditBuilder`'s
+**Why not `AuditBuilder`.** This handler audits no URL — it is a side-effecting operational
+trigger (publish an SQS event), and the only thing it persists is a lightweight
+`brand-claims` `Audit` row used as the on-demand cooldown timestamp (step 6), not a
+URL-scoped audit result. `AuditBuilder`'s
 validate-site / resolve-URL / persist / post-process machinery does not apply. This matches
 the existing plain-handler precedent in the repo (`rum-config-refresh`,
 `offsite-brand-presence-drs-status`, `dummy`), now documented in CLAUDE.md.
@@ -88,5 +99,8 @@ the existing plain-handler precedent in the repo (`rum-config-refresh`,
 - Infra/config errors surface via SQS retry + DLQ (never silently acked); business no-ops
   ack without retry.
 - The handler is read-only against the `brands` table (no enable side-effect).
-- A brand with `brand_claims_enabled = false` is skipped: no S3 listing, no ready-signal.
+- A brand with `brand_claims_enabled = false` is skipped on a scheduled run: no S3 listing,
+  no ready-signal. An on-demand run (`onDemand: true`) bypasses that gate and proceeds.
+- A triggered run persists a `brand-claims` `Audit` row (the on-demand cooldown timestamp);
+  a persistence failure is best-effort (warns + acks, run already published).
 - 100% line/branch/statement coverage on `src/brand-claims/handler.js`.

@@ -66,6 +66,10 @@ export async function findSnapshotByTriggerAuditId({
     return null;
   }
 
+  olog.success('audit_persistence_snapshot_opportunity_read', 'Looked up existing snapshots', {
+    peer: PEER.POSTGRES, direction: 'inbound', auditType, count: (opportunities || []).length,
+  });
+
   return (opportunities || []).find((opportunity) => {
     const snapshotMetadata = opportunity.getData()?.snapshot;
 

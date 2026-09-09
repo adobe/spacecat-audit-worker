@@ -347,6 +347,11 @@ describe('offsite-retention', () => {
       expect(retentionSummary).to.deep.equal({
         scanned: 0, eligible: 0, deleted: 0, failed: 0,
       });
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_suggestions_read/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/count=0/)),
+      );
     });
 
     it('treats a falsy getSuggestions result as an empty set', async () => {
@@ -609,6 +614,11 @@ describe('offsite-retention', () => {
       });
 
       expect(allBySiteIdAndStatus).to.have.been.calledWith(siteId, 'IGNORED');
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_opportunities_read/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/count=0/)),
+      );
     });
 
     it('returns [] and logs (does not throw) when the lookup rejects', async () => {

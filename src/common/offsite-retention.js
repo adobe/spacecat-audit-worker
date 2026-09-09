@@ -53,6 +53,10 @@ export async function findExpiredSnapshots({
     return [];
   }
 
+  olog.success('audit_housekeeping_outdated_opportunities_read', 'Found snapshots', {
+    peer: PEER.POSTGRES, direction: 'inbound', auditType, count: (ignoredOpportunities || []).length,
+  });
+
   const retentionCutoff = subDays(new Date(), SNAPSHOT_RETENTION_DAYS);
 
   return (ignoredOpportunities || [])
@@ -173,6 +177,10 @@ export async function deleteExpiredOutdatedSuggestions({
     });
     return emptyRetentionSummary;
   }
+
+  olog.success('audit_housekeeping_outdated_suggestions_read', 'Read suggestions for OUTDATED suggestion cleanup', {
+    peer: PEER.POSTGRES, direction: 'inbound', auditType, count: opportunitySuggestions.length,
+  });
 
   const retentionCutoff = subDays(new Date(), OUTDATED_SUGGESTION_RETENTION_DAYS);
   const expiredOutdatedSuggestions = opportunitySuggestions

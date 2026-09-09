@@ -56,7 +56,7 @@
           "lcp": 2454.2,
           "lcpCount": 1,
           "cls": 0.26956930913977606,
-          "clsCount": 1,
+          "clsCount": 20,
           "inp": null,
           "inpCount": 0,
           "ttfb": 807.2999999858439,

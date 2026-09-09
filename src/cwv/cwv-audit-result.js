@@ -93,7 +93,7 @@ export async function isUrlGone(url, log) {
  * @param {string} baseURL - Normalized baseURL (without trailing slash) to compare against
  * @returns {boolean} - True if the entry's URL matches the given URL
  */
-function isHomepage(data, baseURL) {
+export function isHomepage(data, baseURL) {
   if (data.type !== 'url') {
     return false;
   }

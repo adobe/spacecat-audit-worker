@@ -166,6 +166,11 @@ describe('offsite-refresh', () => {
       });
 
       expect(result).to.equal(only);
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_persistence_evergreen_opportunity_read/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/count=1/)),
+      );
     });
 
     it('ignores opportunities of a different type', async () => {

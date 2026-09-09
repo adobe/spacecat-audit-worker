@@ -146,6 +146,11 @@ describe('offsite-snapshot', () => {
       });
 
       expect(result).to.be.null;
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_persistence_snapshot_opportunity_read/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/count=0/)),
+      );
     });
 
     it('logs and returns null (treats as no existing snapshot) on lookup failures', async () => {

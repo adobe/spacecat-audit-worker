@@ -482,6 +482,9 @@ export const isTBYBSite = checkIsTBYBSite;
  * @param {Function} [params.mergeStatusFunction] - Function to determine the status of
  *   existing suggestions.
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
+ * @param {Function} [params.isWithinCoverage] - Optional coverage predicate forwarded to
+ *   {@link handleOutdatedSuggestions}; takes precedence over `scrapedUrlsSet` when both are given
+ *   (e.g. CWV's per-metric OUTDATE guard). When omitted the `scrapedUrlsSet` guard applies.
  * @param {Array} [params.existingSuggestions] - Pre-fetched suggestions to avoid duplicate
  *   DB query. If not provided, will be fetched from opportunity.
  * @param {boolean} [params.outdateInProgress] - See {@link handleOutdatedSuggestions}.
@@ -507,6 +510,7 @@ export async function syncSuggestions({
   mergeStatusFunction = defaultMergeStatusFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  isWithinCoverage = null,
   existingSuggestions: prefetchedSuggestions = null,
   newSuggestionStatus = null,
   bypassValidationForPlg = false,
@@ -544,6 +548,7 @@ export async function syncSuggestions({
     context,
     statusToSetForOutdated,
     scrapedUrlsSet,
+    isWithinCoverage,
     outdateInProgress,
     protectEditedFromOutdated,
   });
