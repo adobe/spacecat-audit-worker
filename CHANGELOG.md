@@ -1,3 +1,31 @@
+# [1.534.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.7...v1.534.0) (2026-09-09)
+
+
+### Features
+
+* add new agentic bots and merge Research into Chatbots (LLMO-7325) ([#2950](https://github.com/adobe/spacecat-audit-worker/issues/2950)) ([8a44a06](https://github.com/adobe/spacecat-audit-worker/commit/8a44a06eea1533ea501b35a850e13231d631bf4a)), closes [adobe/project-elmo-ui#3095](https://github.com/adobe/project-elmo-ui/issues/3095)
+
+## [1.533.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.6...v1.533.7) (2026-09-09)
+
+
+### Bug Fixes
+
+* **toc:** exclude time-sensitive promotional headings from TOC extraction ([#2954](https://github.com/adobe/spacecat-audit-worker/issues/2954)) ([6f7078c](https://github.com/adobe/spacecat-audit-worker/commit/6f7078c7b5aa34aab214065735a5e65909a3f1c5))
+
+## [1.533.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.5...v1.533.6) (2026-09-08)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#2952](https://github.com/adobe/spacecat-audit-worker/issues/2952)) ([34e6702](https://github.com/adobe/spacecat-audit-worker/commit/34e67025b6359b8dfaf2128bedcf3dc8385282a7))
+
+## [1.533.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.4...v1.533.5) (2026-09-08)
+
+
+### Bug Fixes
+
+* Sitemap audit uses overrideBaseURL when present ([#2953](https://github.com/adobe/spacecat-audit-worker/issues/2953)) ([a03d27e](https://github.com/adobe/spacecat-audit-worker/commit/a03d27ecf2c152ef898897e0767f8765adc13097))
+
 ## [1.533.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.3...v1.533.4) (2026-09-08)
 
 
