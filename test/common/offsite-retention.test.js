@@ -26,6 +26,7 @@ import {
   OUTDATED_SUGGESTION_DELETE_BATCH_SIZE,
   isOutdatedSuggestionExpired,
   deleteExpiredOutdatedSuggestions,
+  logHousekeepingSummary,
 } from '../../src/common/offsite-retention.js';
 
 use(sinonChai);
@@ -343,15 +344,13 @@ describe('offsite-retention', () => {
         log,
       });
       expect(removeByIds).to.not.have.been.called;
-      expect(retentionSummary.deleted).to.equal(0);
-      expect(retentionSummary.scanned).to.equal(0);
+      expect(retentionSummary).to.deep.equal({
+        scanned: 0, eligible: 0, deleted: 0, failed: 0,
+      });
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=outdated_suggestion_retention_summary/)
+        sinon.match(/event=audit_housekeeping_outdated_suggestions_read/)
           .and(sinon.match(/outcome=success/))
-          .and(sinon.match(/scanned=0/))
-          .and(sinon.match(/eligible=0/))
-          .and(sinon.match(/deleted=0/))
-          .and(sinon.match(/failed=0/)),
+          .and(sinon.match(/count=0/)),
       );
     });
 
@@ -379,9 +378,9 @@ describe('offsite-retention', () => {
       expect(retentionSummary).to.deep.equal({
         scanned: 0, eligible: 0, deleted: 0, failed: 0,
       });
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=outdated_suggestion_lookup/)
-          .and(sinon.match(/outcome=failure/))
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_suggestions_read/)
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/opportunityId=evergreen-1/))
           .and(sinon.match(/siteId=site-1/))
           .and(sinon.match(/audit=cited/))
@@ -406,9 +405,9 @@ describe('offsite-retention', () => {
       expect(retentionSummary).to.deep.equal({
         scanned: 1, eligible: 1, deleted: 0, failed: 1,
       });
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=outdated_suggestion_delete/)
-          .and(sinon.match(/outcome=failure/))
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_suggestions_deleted/)
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/opportunityId=evergreen-1/))
           .and(sinon.match(/siteId=site-1/))
           .and(sinon.match(/errorMessage="DELETE failed"/)),
@@ -523,23 +522,19 @@ describe('offsite-retention', () => {
         deleted: OUTDATED_SUGGESTION_DELETE_BATCH_SIZE,
         failed: suggestionCount - OUTDATED_SUGGESTION_DELETE_BATCH_SIZE,
       });
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to delete 5 expired OUTDATED suggestion\(s\)/)
-          .and(sinon.match(/errorMessage="batch DELETE failed"/)),
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to delete expired OUTDATED suggestion batch/)
+          .and(sinon.match(/batchSize=5/))
+          .and(sinon.match(/errorMessage="batch DELETE failed"/))
+          .and(sinon.match(/reason=batch_delete_failed/))
+          .and(sinon.match(/outcome=degraded/)),
       );
       expect(log.info).to.not.have.been.calledWith(
         sinon.match(new RegExp(`suggestionIds=.*\\b${failedSuggestionId}\\b`)),
       );
-      // A partial failure must surface at outcome=failure on the summary, not success — an
-      // alerting query keyed on outcome=failure must not miss a partial-batch failure.
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=outdated_suggestion_retention_summary/)
-          .and(sinon.match(/outcome=failure/))
-          .and(sinon.match(`failed=${suggestionCount - OUTDATED_SUGGESTION_DELETE_BATCH_SIZE}`)),
-      );
     });
 
-    it('logs each deletion only after its batch succeeds and emits a summary', async () => {
+    it('logs each deletion only after its batch succeeds and returns the summary', async () => {
       const expiredOutdatedSuggestion = buildSuggestion({
         id: 'old',
         updatedAt: daysAgo(40),
@@ -559,23 +554,20 @@ describe('offsite-retention', () => {
       });
       expect(removeByIds).to.have.been.calledBefore(log.info);
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/Deleted 1 expired OUTDATED suggestion\(s\)/)
-          .and(sinon.match(/event=outdated_suggestion_delete/))
+        sinon.match(/Deleted expired OUTDATED suggestions/)
+          .and(sinon.match(/event=audit_housekeeping_outdated_suggestions_deleted/))
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/opportunityId=evergreen-1/))
           .and(sinon.match(/siteId=site-1/))
           .and(sinon.match(/suggestionIds=old/)),
       );
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/Expired OUTDATED suggestion deletion summary/)
-          .and(sinon.match(/event=outdated_suggestion_retention_summary/))
-          .and(sinon.match(/outcome=success/))
-          .and(sinon.match(/opportunityId=evergreen-1/))
-          .and(sinon.match(/siteId=site-1/))
-          .and(sinon.match(/scanned=1/))
-          .and(sinon.match(/eligible=1/))
-          .and(sinon.match(/deleted=1/))
-          .and(sinon.match(/failed=0/)),
+      // The combined audit_housekeeping_end summary is now emitted by the guidance-handlers,
+      // not this function — see guidance-handler.test.js for that assertion.
+      expect(log.info).to.not.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/),
+      );
+      expect(log.warn).to.not.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/),
       );
     });
   });
@@ -622,6 +614,11 @@ describe('offsite-retention', () => {
       });
 
       expect(allBySiteIdAndStatus).to.have.been.calledWith(siteId, 'IGNORED');
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_opportunities_read/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/count=0/)),
+      );
     });
 
     it('returns [] and logs (does not throw) when the lookup rejects', async () => {
@@ -634,9 +631,9 @@ describe('offsite-retention', () => {
       });
 
       expect(expiredSnapshots).to.deep.equal([]);
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=retention_lookup/)
-          .and(sinon.match(/outcome=failure/))
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_opportunities_read/)
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/audit=cited/))
           .and(sinon.match(/errorMessage="DB down"/)),
       );
@@ -651,7 +648,7 @@ describe('offsite-retention', () => {
         dataAccess, siteId, auditType: 'not-a-real-audit', log,
       });
 
-      expect(log.error).to.have.been.calledWith(sinon.match(/audit=unknown/));
+      expect(log.warn).to.have.been.calledWith(sinon.match(/audit=unknown/));
     });
 
     it('returns [] when the lookup resolves to null/undefined', async () => {
@@ -774,16 +771,16 @@ describe('offsite-retention', () => {
         Suggestion: { removeByIds: removeByIdsSuggestion },
       };
 
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
+      const result = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
 
-      expect(deletedSnapshotCount).to.equal(2);
+      expect(result).to.deep.equal({ eligible: 2, deleted: 2 });
       // Oldest-first ordering from findExpiredSnapshots is preserved into the bulk call.
       expect(removeByIdsSuggestion).to.have.been.calledOnceWith(['sugg-2', 'sugg-1']);
       expect(removeByIdsOpportunity).to.have.been.calledOnceWith(['second-expired', 'first-expired']);
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=retention_delete/)
+        sinon.match(/event=audit_housekeeping_outdated_opportunities_deleted/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/eligible=2/))
           .and(sinon.match(/deleted=2/)),
@@ -802,16 +799,16 @@ describe('offsite-retention', () => {
         Suggestion: { removeByIds: removeByIdsSuggestion },
       };
 
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
+      const result = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
 
-      expect(deletedSnapshotCount).to.equal(1);
+      expect(result).to.deep.equal({ eligible: 1, deleted: 1 });
       expect(removeByIdsSuggestion).to.not.have.been.called;
       expect(removeByIdsOpportunity).to.have.been.calledOnceWith(['no-suggestions']);
     });
 
-    it('returns 0, calls no removeByIds, and does not log when nothing is expired', async () => {
+    it('returns { eligible: 0, deleted: 0 }, calls no removeByIds, and does not log when nothing is expired', async () => {
       const youngSnapshot = buildSnapshotOpportunity({ id: 'young', createdAt: daysAgo(5) });
       const removeByIdsSuggestion = sandbox.stub().resolves();
       const removeByIdsOpportunity = sandbox.stub().resolves();
@@ -823,17 +820,25 @@ describe('offsite-retention', () => {
         Suggestion: { removeByIds: removeByIdsSuggestion },
       };
 
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
+      const result = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
 
-      expect(deletedSnapshotCount).to.equal(0);
+      expect(result).to.deep.equal({ eligible: 0, deleted: 0 });
       expect(removeByIdsSuggestion).to.not.have.been.called;
       expect(removeByIdsOpportunity).to.not.have.been.called;
-      expect(log.info).to.not.have.been.called;
+      // "Ran, nothing eligible" must be distinguishable from "never invoked" — a warn-level
+      // skip line fires on the same event the success path uses, with eligible=0.
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_opportunities_deleted/)
+          .and(sinon.match(/outcome=skip/))
+          .and(sinon.match(/No expired snapshots eligible for deletion/))
+          .and(sinon.match(/eligible=0/))
+          .and(sinon.match(/audit=cited/)),
+      );
     });
 
-    it('returns 0 without calling removeByIds when the lookup fails', async () => {
+    it('returns { eligible: 0, deleted: 0 } without calling removeByIds when the lookup fails', async () => {
       const removeByIdsOpportunity = sandbox.stub().resolves();
       const dataAccess = {
         Opportunity: {
@@ -842,11 +847,11 @@ describe('offsite-retention', () => {
         },
       };
 
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
+      const result = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
 
-      expect(deletedSnapshotCount).to.equal(0);
+      expect(result).to.deep.equal({ eligible: 0, deleted: 0 });
       expect(removeByIdsOpportunity).to.not.have.been.called;
     });
 
@@ -919,11 +924,11 @@ describe('offsite-retention', () => {
         Suggestion: { removeByIds: sandbox.stub().resolves() },
       };
 
-      const deletedSnapshotCount = await deleteExpiredSnapshots({
+      const result = await deleteExpiredSnapshots({
         dataAccess, siteId, auditType, log,
       });
 
-      expect(deletedSnapshotCount).to.equal(MAX_DELETIONS_PER_RUN);
+      expect(result).to.deep.equal({ eligible: totalExpired, deleted: MAX_DELETIONS_PER_RUN });
       const deletedIds = removeByIdsOpportunity.firstCall.args[0];
       expect(deletedIds).to.have.lengthOf(MAX_DELETIONS_PER_RUN);
       // The oldest snapshot (snap-<totalExpired>, daysAgo(45 + totalExpired)) must be included.
@@ -932,6 +937,131 @@ describe('offsite-retention', () => {
       expect(deletedIds).to.not.include('snap-1');
       expect(log.info).to.have.been.calledWith(
         sinon.match(`eligible=${totalExpired}`).and(sinon.match(`deleted=${MAX_DELETIONS_PER_RUN}`)),
+      );
+    });
+  });
+
+  describe('logHousekeepingSummary', () => {
+    let olog;
+
+    beforeEach(() => {
+      olog = { warn: sandbox.stub(), success: sandbox.stub() };
+    });
+
+    const expectedFields = ({
+      suggestionsSummary, snapshotsSummary,
+    }) => ({
+      peer: 'postgres',
+      direction: 'outbound',
+      auditType,
+      suggestionsScanned: suggestionsSummary.scanned,
+      suggestionsEligible: suggestionsSummary.eligible,
+      suggestionsDeleted: suggestionsSummary.deleted,
+      suggestionsFailed: suggestionsSummary.failed,
+      snapshotsEligible: snapshotsSummary.eligible,
+      snapshotsDeleted: snapshotsSummary.deleted,
+    });
+
+    it('emits success with outcome=success when neither cleanup failed', () => {
+      const suggestionsSummary = {
+        scanned: 5, eligible: 3, deleted: 3, failed: 0,
+      };
+      const snapshotsSummary = { eligible: 2, deleted: 2 };
+
+      logHousekeepingSummary(olog, {
+        auditType,
+        suggestionsSummary,
+        snapshotsSummary,
+        suggestionsErrored: false,
+        snapshotsErrored: false,
+      });
+
+      expect(olog.warn).to.not.have.been.called;
+      expect(olog.success).to.have.been.calledOnceWith(
+        'audit_housekeeping_end',
+        'Housekeeping cleanup summary',
+        {
+          ...expectedFields({ suggestionsSummary, snapshotsSummary }),
+          outcome: 'success',
+        },
+      );
+    });
+
+    it('escalates to warn/degraded when suggestionsErrored is true', () => {
+      const suggestionsSummary = {
+        scanned: 0, eligible: 0, deleted: 0, failed: 0,
+      };
+      const snapshotsSummary = { eligible: 0, deleted: 0 };
+
+      logHousekeepingSummary(olog, {
+        auditType,
+        suggestionsSummary,
+        snapshotsSummary,
+        suggestionsErrored: true,
+        snapshotsErrored: false,
+      });
+
+      expect(olog.success).to.not.have.been.called;
+      expect(olog.warn).to.have.been.calledOnceWith(
+        'audit_housekeeping_end',
+        'Housekeeping cleanup summary',
+        {
+          ...expectedFields({ suggestionsSummary, snapshotsSummary }),
+          reason: 'partial_cleanup_failure',
+          outcome: 'degraded',
+        },
+      );
+    });
+
+    it('escalates to warn/degraded when snapshotsErrored is true', () => {
+      const suggestionsSummary = {
+        scanned: 4, eligible: 1, deleted: 1, failed: 0,
+      };
+      const snapshotsSummary = { eligible: 0, deleted: 0 };
+
+      logHousekeepingSummary(olog, {
+        auditType,
+        suggestionsSummary,
+        snapshotsSummary,
+        suggestionsErrored: false,
+        snapshotsErrored: true,
+      });
+
+      expect(olog.success).to.not.have.been.called;
+      expect(olog.warn).to.have.been.calledOnceWith(
+        'audit_housekeeping_end',
+        'Housekeeping cleanup summary',
+        {
+          ...expectedFields({ suggestionsSummary, snapshotsSummary }),
+          reason: 'partial_cleanup_failure',
+          outcome: 'degraded',
+        },
+      );
+    });
+
+    it('escalates to warn/degraded when suggestionsSummary.failed > 0 (no exception)', () => {
+      const suggestionsSummary = {
+        scanned: 10, eligible: 4, deleted: 2, failed: 2,
+      };
+      const snapshotsSummary = { eligible: 0, deleted: 0 };
+
+      logHousekeepingSummary(olog, {
+        auditType,
+        suggestionsSummary,
+        snapshotsSummary,
+        suggestionsErrored: false,
+        snapshotsErrored: false,
+      });
+
+      expect(olog.success).to.not.have.been.called;
+      expect(olog.warn).to.have.been.calledOnceWith(
+        'audit_housekeeping_end',
+        'Housekeeping cleanup summary',
+        {
+          ...expectedFields({ suggestionsSummary, snapshotsSummary }),
+          reason: 'partial_cleanup_failure',
+          outcome: 'degraded',
+        },
       );
     });
   });

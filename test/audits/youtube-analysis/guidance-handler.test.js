@@ -159,7 +159,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       }
       return { opportunityData, opportunityToUpdate: evergreenOpportunity };
     });
-    deleteExpiredSnapshotsStub = sandbox.stub().resolves(0);
+    deleteExpiredSnapshotsStub = sandbox.stub().resolves({ eligible: 0, deleted: 0 });
     deleteExpiredOutdatedSuggestionsStub = sandbox.stub().resolves({
       scanned: 0, eligible: 0, deleted: 0, failed: 0,
     });
@@ -447,7 +447,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       const response = await guidanceHandler.default(message, context);
 
       expect(response.status).to.equal(204);
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/No suggestions found/),
       );
     });
@@ -467,7 +467,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       const response = await guidanceHandler.default(message, context);
 
       expect(response.status).to.equal(204);
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/No suggestions found/),
       );
     });
@@ -682,17 +682,18 @@ describe('YouTube Analysis Guidance Handler', () => {
       const response = await guidanceHandler.default(message, context);
 
       expect(response.status).to.equal(400);
-      // The outer catch folds the error into a structured guidance_complete failure line
+      // The outer catch folds the error into a structured audit_persistence_end failure line
       // (errorName/errorMessage tokens) and passes the raw error as a genuine second arg
       // purely for stack capture (Fix B).
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/Error processing YouTube analysis/)
-          .and(sinon.match(/event=guidance_complete/))
+        sinon.match(/Error processing analysis/)
+          .and(sinon.match(/event=audit_persistence_end/))
           .and(sinon.match(/outcome=failure/))
+          .and(sinon.match(/reason=unexpected_error/))
           .and(sinon.match(/errorName=Error/)),
       );
       const outerCatchCall = context.log.error.getCalls().find(
-        (c) => /event=guidance_complete/.test(String(c.args[0])),
+        (c) => /event=audit_persistence_end/.test(String(c.args[0])),
       );
       expect(outerCatchCall.args).to.have.lengthOf(2);
       expect(outerCatchCall.args[1]).to.be.an('error');
@@ -714,9 +715,10 @@ describe('YouTube Analysis Guidance Handler', () => {
 
       expect(response.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=suggestion_sync/)
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/peer=postgres/))
+          .and(sinon.match(/reason=suggestions_write_failed/))
           .and(sinon.match(/errorName=Error/)),
       );
     });
@@ -734,7 +736,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       await guidanceHandler.default(message, context);
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/event=suggestion_sync/)
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/opportunityId=opportunity-123/)),
@@ -977,7 +979,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(mockOpportunity.save).to.have.been.calledOnce;
       expect(response.status).to.equal(200);
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Successfully processed YouTube analysis/),
+        sinon.match(/Run processed successfully/),
       );
     });
   });
@@ -1588,9 +1590,9 @@ describe('YouTube Analysis Guidance Handler', () => {
       const result = await guidanceHandler.default(validMessage(), context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=retention_delete/)
-          .and(sinon.match(/outcome=failure/))
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_opportunities_deleted/)
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
     });
@@ -1651,6 +1653,107 @@ describe('YouTube Analysis Guidance Handler', () => {
         .to.have.been.calledBefore(deleteExpiredSnapshotsStub);
     });
 
+    it('emits a single combined audit_housekeeping_end summary after both cleanups resolve', async () => {
+      deleteExpiredOutdatedSuggestionsStub.resolves({
+        scanned: 5, eligible: 3, deleted: 3, failed: 0,
+      });
+      deleteExpiredSnapshotsStub.resolves({ eligible: 2, deleted: 2 });
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await guidanceHandler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/suggestionsScanned=5/))
+          .and(sinon.match(/suggestionsEligible=3/))
+          .and(sinon.match(/suggestionsDeleted=3/))
+          .and(sinon.match(/suggestionsFailed=0/))
+          .and(sinon.match(/snapshotsEligible=2/))
+          .and(sinon.match(/snapshotsDeleted=2/)),
+      );
+      expect(deleteExpiredSnapshotsStub).to.have.been.calledOnce;
+      expect(deleteExpiredOutdatedSuggestionsStub).to.have.been.calledOnce;
+    });
+
+    it('emits a degraded audit_housekeeping_end summary when suggestion cleanup fails', async () => {
+      deleteExpiredOutdatedSuggestionsStub.rejects(new Error('sugg cleanup blew up'));
+      deleteExpiredSnapshotsStub.resolves({ eligible: 0, deleted: 0 });
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await guidanceHandler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      // suggestionsErrored is true because the cleanup threw, so the summary fields for
+      // suggestions fall back to the zero-defaults set before the try/catch, not any partial
+      // values from the (rejected) promise; snapshots resolved normally with its own zeros.
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/reason=partial_cleanup_failure/))
+          .and(sinon.match(/suggestionsScanned=0/))
+          .and(sinon.match(/suggestionsEligible=0/))
+          .and(sinon.match(/suggestionsDeleted=0/))
+          .and(sinon.match(/suggestionsFailed=0/))
+          .and(sinon.match(/snapshotsEligible=0/))
+          .and(sinon.match(/snapshotsDeleted=0/)),
+      );
+    });
+
+    it('escalates to degraded independently via snapshotsErrored when snapshot cleanup throws (suggestions succeed normally)', async () => {
+      deleteExpiredOutdatedSuggestionsStub.resolves({
+        scanned: 4, eligible: 1, deleted: 1, failed: 0,
+      });
+      deleteExpiredSnapshotsStub.rejects(new Error('snapshot cleanup blew up'));
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await guidanceHandler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      // snapshotsErrored is true because the cleanup threw, so the summary fields for
+      // snapshots fall back to the zero-defaults; suggestions resolved normally with no
+      // failures, distinct from the already-tested "suggestions throws" path above.
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/reason=partial_cleanup_failure/))
+          .and(sinon.match(/suggestionsScanned=4/))
+          .and(sinon.match(/suggestionsEligible=1/))
+          .and(sinon.match(/suggestionsDeleted=1/))
+          .and(sinon.match(/suggestionsFailed=0/))
+          .and(sinon.match(/snapshotsEligible=0/))
+          .and(sinon.match(/snapshotsDeleted=0/)),
+      );
+    });
+
+    it('escalates to degraded when suggestion cleanup resolves normally but reports a per-batch failure (failed > 0)', async () => {
+      // This exercises the suggestionsSummary.failed > 0 branch of housekeepingHadFailure,
+      // independent of the suggestionsErrored/exception path above: deleteExpiredOutdatedSuggestions
+      // resolves normally (no throw) but its own returned summary reports a nonzero failed count
+      // (a per-batch delete failure caught inside that function).
+      deleteExpiredOutdatedSuggestionsStub.resolves({
+        scanned: 10, eligible: 4, deleted: 2, failed: 2,
+      });
+      deleteExpiredSnapshotsStub.resolves({ eligible: 0, deleted: 0 });
+      context.dataAccess.Opportunity = { allBySiteIdAndStatus: sandbox.stub().resolves([]) };
+
+      const result = await guidanceHandler.default(validMessage(), context);
+
+      expect(result.status).to.equal(200);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_end/)
+          .and(sinon.match(/outcome=degraded/))
+          .and(sinon.match(/reason=partial_cleanup_failure/))
+          .and(sinon.match(/suggestionsScanned=10/))
+          .and(sinon.match(/suggestionsEligible=4/))
+          .and(sinon.match(/suggestionsDeleted=2/))
+          .and(sinon.match(/suggestionsFailed=2/))
+          .and(sinon.match(/snapshotsEligible=0/))
+          .and(sinon.match(/snapshotsDeleted=0/)),
+      );
+    });
+
     it('does NOT run retention when the handler returns before a successful sync', async () => {
       // syncSuggestions throwing means the refresh never completed — retention must not run.
       mockSyncSuggestions.rejects(new Error('sync blew up'));
@@ -1677,9 +1780,9 @@ describe('YouTube Analysis Guidance Handler', () => {
       const result = await guidanceHandler.default(validMessage(), context);
 
       expect(result.status).to.equal(200);
-      expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/event=outdated_suggestion_delete/)
-          .and(sinon.match(/outcome=failure/))
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_housekeeping_outdated_suggestions_deleted/)
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
     });

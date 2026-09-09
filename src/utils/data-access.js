@@ -35,6 +35,22 @@ export const AUTHOR_ONLY_OPPORTUNITY_TYPES = [
 ];
 
 /**
+ * Statuses a reconcile/resolve sweep must NEVER overwrite when aging suggestions to
+ * OUTDATED: terminal (OUTDATED/FIXED/ERROR/SKIPPED), reviewer-acted (REJECTED/APPROVED),
+ * or mid-remediation (IN_PROGRESS). Shared by {@link handleOutdatedSuggestions} and the
+ * CSP resolveOpportunity sweep so both protect the same set (SITES-49908).
+ */
+export const RESOLVE_PROTECTED_STATUSES = [
+  SuggestionDataAccess.STATUSES.OUTDATED,
+  SuggestionDataAccess.STATUSES.FIXED,
+  SuggestionDataAccess.STATUSES.ERROR,
+  SuggestionDataAccess.STATUSES.SKIPPED,
+  SuggestionDataAccess.STATUSES.REJECTED,
+  SuggestionDataAccess.STATUSES.APPROVED,
+  SuggestionDataAccess.STATUSES.IN_PROGRESS,
+];
+
+/**
  * Validates suggestion data against the Joi schema for the given opportunity type.
  * Logs a warning if validation fails but does not block the operation.
  *
@@ -273,15 +289,12 @@ export const handleOutdatedSuggestions = async ({
   const { Suggestion } = context.dataAccess;
   const { log } = context;
 
-  const excludedStatuses = [
-    SuggestionDataAccess.STATUSES.OUTDATED,
-    SuggestionDataAccess.STATUSES.FIXED,
-    SuggestionDataAccess.STATUSES.ERROR,
-    SuggestionDataAccess.STATUSES.SKIPPED,
-    SuggestionDataAccess.STATUSES.REJECTED,
-    SuggestionDataAccess.STATUSES.APPROVED,
-    ...(outdateInProgress ? [] : [SuggestionDataAccess.STATUSES.IN_PROGRESS]),
-  ];
+  // Derive from the shared protected set so CSP + this sweep stay in lockstep
+  // (SITES-49908). Byte-identical to the prior inline list: full 7 normally, and 6
+  // (IN_PROGRESS dropped) when outdateInProgress is true.
+  const excludedStatuses = outdateInProgress
+    ? RESOLVE_PROTECTED_STATUSES.filter((s) => s !== SuggestionDataAccess.STATUSES.IN_PROGRESS)
+    : RESOLVE_PROTECTED_STATUSES;
 
   const existingOutdatedSuggestions = existingSuggestions
     .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
@@ -469,6 +482,9 @@ export const isTBYBSite = checkIsTBYBSite;
  * @param {Function} [params.mergeStatusFunction] - Function to determine the status of
  *   existing suggestions.
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
+ * @param {Function} [params.isWithinCoverage] - Optional coverage predicate forwarded to
+ *   {@link handleOutdatedSuggestions}; takes precedence over `scrapedUrlsSet` when both are given
+ *   (e.g. CWV's per-metric OUTDATE guard). When omitted the `scrapedUrlsSet` guard applies.
  * @param {Array} [params.existingSuggestions] - Pre-fetched suggestions to avoid duplicate
  *   DB query. If not provided, will be fetched from opportunity.
  * @param {boolean} [params.outdateInProgress] - See {@link handleOutdatedSuggestions}.
@@ -494,6 +510,7 @@ export async function syncSuggestions({
   mergeStatusFunction = defaultMergeStatusFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   scrapedUrlsSet = null,
+  isWithinCoverage = null,
   existingSuggestions: prefetchedSuggestions = null,
   newSuggestionStatus = null,
   bypassValidationForPlg = false,
@@ -531,6 +548,7 @@ export async function syncSuggestions({
     context,
     statusToSetForOutdated,
     scrapedUrlsSet,
+    isWithinCoverage,
     outdateInProgress,
     protectEditedFromOutdated,
   });

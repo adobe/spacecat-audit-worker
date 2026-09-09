@@ -20,7 +20,9 @@ import {
   DRS_POLL_INTERVAL_SECONDS,
   DRS_POLL_INTERVAL_UNATTENDED_SECONDS,
 } from '../offsite-brand-presence/constants.js';
-import { PEER, errorField, appendFields } from './offsite-logging.js';
+import {
+  PEER, OUTCOME, errorField,
+} from './offsite-logging.js';
 
 export const MYSTIQUE_URLS_LIMIT = 50;
 
@@ -281,7 +283,8 @@ export function isExcludedCitedHost(hostname, brandTokens) {
  *
  * @param {object} [auditContext]
  * @param {number|string} [auditContext.messageData.urlLimit]
- * @param {object} [olog] - bound offsite logger (createOffsiteLogger); emits `url_limit_resolve`
+ * @param {object} [olog] - bound offsite logger (createOffsiteLogger);
+ *   emits `audit_analysis_scope_resolved`
  * @returns {number}
  */
 /**
@@ -426,15 +429,16 @@ export function scrapedThisCycle(auditContext) {
  *   (e.g. ['reddit_posts', 'reddit_comments'])
  * @param {string} siteId - Site ID required by the DRS lookup API
  * @param {object|null} drsClient - Configured DrsClient instance (or null / unconfigured)
- * @param {object} [olog] - bound offsite logger (see createOffsiteLogger); emits `drs_availability`
+ * @param {object} [olog] - bound offsite logger (see createOffsiteLogger);
+ *   emits `data_acquisition_drs_scrape_content_checked`
  * @returns {Promise<{urls: Array<{url: string}>, counts: {total: number, available: number,
  *   scraping: number, notFound: number, determined: boolean}}>}
  * @throws {DrsNoContentAvailableError} When DRS responded but no URLs are available yet
  */
 export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient, olog) {
   if (!drsClient || !drsClient.isConfigured()) {
-    olog?.skip('drs_availability', 'DRS client not configured, skipping availability filter', {
-      peer: PEER.DRS, direction: 'outbound', reason: 'not_configured',
+    olog?.warn('data_acquisition_drs_scrape_content_checked', 'DRS client not configured, skipping availability filter', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'drs_not_configured', outcome: OUTCOME.DEGRADED,
     });
     return { urls, counts: undeterminedDrsCounts(urls.length) };
   }
@@ -449,8 +453,8 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
       // eslint-disable-next-line no-await-in-loop
       const response = await drsClient.lookupScrapeResults({ datasetId, siteId, urls: rawUrls });
       if (!response) {
-        olog?.warn('drs_availability', `DRS lookup returned null for datasetId=${datasetId}, skipping`, {
-          peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'null_response',
+        olog?.warn('data_acquisition_drs_scrape_content_checked', 'DRS lookup returned null; skipping dataset', {
+          peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'null_response', outcome: OUTCOME.DEGRADED,
         });
         // eslint-disable-next-line no-continue
         continue;
@@ -463,23 +467,29 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
           scrapingUrls.add(result.url);
         }
       }
-      olog?.debug(
-        'drs_availability',
-        `DRS lookup datasetId=${datasetId}: `
-        + `${response.summary?.available ?? 0}/${response.summary?.total ?? rawUrls.length} available, `
-        + `${response.summary?.scraping ?? 0} scraping, ${response.summary?.not_found ?? 0} not-found`,
-        { peer: PEER.DRS, direction: 'outbound', datasetId },
+      olog?.success(
+        'data_acquisition_drs_scrape_content_checked',
+        'DRS lookup dataset summary',
+        {
+          peer: PEER.DRS,
+          direction: 'outbound',
+          datasetId,
+          available: response.summary?.available ?? 0,
+          total: response.summary?.total ?? rawUrls.length,
+          scraping: response.summary?.scraping ?? 0,
+          notFound: response.summary?.not_found ?? 0,
+        },
       );
     } catch (error) {
-      olog?.warn('drs_availability', `DRS lookup failed for datasetId=${datasetId}, skipping`, {
-        peer: PEER.DRS, direction: 'outbound', datasetId, ...errorField(error),
+      olog?.warn('data_acquisition_drs_scrape_content_checked', 'DRS lookup failed; skipping dataset', {
+        peer: PEER.DRS, direction: 'outbound', datasetId, reason: 'lookup_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
       });
     }
   }
 
   if (!atLeastOneLookupSucceeded) {
-    olog?.warn('drs_availability', `All DRS lookups failed or returned null for datasets [${datasetIds.join(', ')}], skipping availability filter`, {
-      peer: PEER.DRS, direction: 'outbound', reason: 'all_failed',
+    olog?.warn('data_acquisition_drs_scrape_content_checked', 'All DRS lookups failed or returned null; skipping availability filter', {
+      peer: PEER.DRS, direction: 'outbound', reason: 'all_failed', datasetIds, outcome: OUTCOME.DEGRADED,
     });
     return { urls, counts: undeterminedDrsCounts(urls.length) };
   }
@@ -504,8 +514,8 @@ export async function filterUrlsByDrsStatus(urls, datasetIds, siteId, drsClient,
   const filtered = urls.filter((item) => availableUrls.has(item.url));
   const removed = total - filtered.length;
   if (removed > 0) {
-    olog?.debug('drs_availability', `DRS availability filter: removed ${removed} URL(s) not yet scraped (${scraping} scraping, ${notFound} not-found), ${filtered.length} remaining`, {
-      peer: PEER.DRS, direction: 'outbound', removed, remaining: filtered.length,
+    olog?.success('data_acquisition_drs_scrape_content_checked', 'DRS availability filter removed URLs not yet scraped', {
+      peer: PEER.DRS, direction: 'outbound', removed, remaining: filtered.length, scraping, notFound,
     });
   }
   return { urls: filtered, counts };
@@ -520,15 +530,21 @@ export function resolveMystiqueUrlLimit(auditContext, olog) {
   const n = Number(raw);
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
     olog?.warn(
-      'url_limit_resolve',
-      `Invalid urlLimit in auditContext (${JSON.stringify(raw)}), using default ${MYSTIQUE_URLS_LIMIT}`,
-      { reason: 'invalid', urlLimit: MYSTIQUE_URLS_LIMIT },
+      'audit_analysis_scope_resolved',
+      'Invalid urlLimit in auditContext; using default',
+      {
+        scopeKind: 'url_limit', reason: 'invalid', raw: JSON.stringify(raw), urlLimit: MYSTIQUE_URLS_LIMIT, outcome: OUTCOME.DEGRADED,
+      },
     );
     return MYSTIQUE_URLS_LIMIT;
   }
   if (n > MYSTIQUE_URLS_LIMIT) {
-    olog?.debug('url_limit_resolve', `urlLimit ${n} exceeds cap ${MYSTIQUE_URLS_LIMIT}, using ${MYSTIQUE_URLS_LIMIT}`, {
-      requested: n, cap: MYSTIQUE_URLS_LIMIT, urlLimit: MYSTIQUE_URLS_LIMIT,
+    olog?.warn('audit_analysis_scope_resolved', 'urlLimit exceeds cap; using cap', {
+      scopeKind: 'url_limit',
+      requested: n,
+      cap: MYSTIQUE_URLS_LIMIT,
+      urlLimit: MYSTIQUE_URLS_LIMIT,
+      outcome: OUTCOME.DEGRADED,
     });
     return MYSTIQUE_URLS_LIMIT;
   }
@@ -547,12 +563,19 @@ export function resolveMystiqueUrlLimit(auditContext, olog) {
  * values as strings, so only those two string forms or real booleans are accepted as
  * explicit values; anything else is invalid and resolves to `undefined` with a warning.
  *
+ * The invalid-override warning is emitted through the caller-supplied bound `olog` (see
+ * {@link createOffsiteLogger}) rather than a raw platform `log`, so the line always
+ * carries the `domain=offsite`, `audit=<slug>` and `event=<eventName>` tokens the rest
+ * of the taxonomy relies on for Splunk `stats ... by domain, audit, event, outcome`.
+ * `eventName` is supplied per field (rather than hardcoded) because two fields built
+ * from this same factory can conceptually belong under two different existing events.
+ *
  * @param {string} fieldName - Key read from `auditContext.messageData`.
- * @returns {function(object, object, string): boolean|undefined}
+ * @param {string} eventName - Existing taxonomy event name to emit the warning under.
+ * @returns {function(object, object): boolean|undefined}
  */
-function makeResolveOverride(fieldName) {
-  return function resolveOverride(auditContext, log, logPrefix) {
-    const prefix = logPrefix ?? '';
+function makeResolveOverride(fieldName, eventName) {
+  return function resolveOverride(auditContext, olog) {
     const ctx = auditContext ?? {};
     const raw = ctx.messageData?.[fieldName];
     if (raw === true || raw === 'true') {
@@ -564,16 +587,12 @@ function makeResolveOverride(fieldName) {
     if (raw === undefined || raw === null || raw === '') {
       return undefined;
     }
-    // Route the Slack-controlled `raw` value through appendFields so renderField
-    // quotes/sanitizes it as a single token — a crafted value cannot split the line
-    // or forge a second key=value. (This helper is audit-agnostic, so it takes the
-    // platform `log`, not an `olog`; the value must still be field-rendered, never
-    // interpolated raw into the message.)
-    log?.warn(appendFields(`${prefix} Invalid ${fieldName} in auditContext, omitting`, {
+    olog?.warn(eventName, 'Invalid override value in auditContext, omitting', {
       reason: 'invalid_override',
       field: fieldName,
       raw: JSON.stringify(raw).slice(0, 100),
-    }));
+      outcome: OUTCOME.DEGRADED,
+    });
     return undefined;
   };
 }
@@ -584,13 +603,19 @@ function makeResolveOverride(fieldName) {
  * for post-processors, which forward it to Mystique on `data.enableBrandProfile`; `undefined`
  * omits the flag entirely from the outgoing message so Mystique's own default applies.
  *
+ * An invalid override value is warned through the bound `olog` under
+ * `audit_orchestration_brand_profile_resolved` — the same event every caller already uses
+ * for brand-profile resolution — rather than a new/nameless event.
+ *
  * @param {object} [auditContext]
  * @param {boolean|string} [auditContext.messageData.enableBrandProfile]
- * @param {object} [log]
- * @param {string} [logPrefix]
+ * @param {object} [olog] - bound offsite logger (see createOffsiteLogger)
  * @returns {boolean|undefined}
  */
-export const resolveEnableBrandProfile = makeResolveOverride('enableBrandProfile');
+export const resolveEnableBrandProfile = makeResolveOverride(
+  'enableBrandProfile',
+  'audit_orchestration_brand_profile_resolved',
+);
 
 /**
  * Optional `enableSemrush` flag from `auditContext.messageData.enableSemrush`. Lets a
@@ -599,13 +624,20 @@ export const resolveEnableBrandProfile = makeResolveOverride('enableBrandProfile
  * fleet-wide env var flip, or to force the legacy source for one run while the env var is
  * on. `undefined` means the env var's value applies unchanged.
  *
+ * An invalid override value is warned through the bound `olog` under
+ * `data_acquisition_bp_data_semrush_read` — this is a precondition check on whether
+ * Semrush is even attempted as a data source, the same event that covers the rest of
+ * that attempt's lifecycle — rather than a new/nameless event.
+ *
  * @param {object} [auditContext]
  * @param {boolean|string} [auditContext.messageData.enableSemrush]
- * @param {object} [log]
- * @param {string} [logPrefix]
+ * @param {object} [olog] - bound offsite logger (see createOffsiteLogger)
  * @returns {boolean|undefined}
  */
-export const resolveEnableSemrush = makeResolveOverride('enableSemrush');
+export const resolveEnableSemrush = makeResolveOverride(
+  'enableSemrush',
+  'data_acquisition_bp_data_semrush_read',
+);
 
 /**
  * Same validation/cap as {@link resolveMystiqueUrlLimit}, but returns `undefined` when
@@ -646,7 +678,8 @@ export function resolveForwardedUrlLimit(auditContext, log, logPrefix) {
  * @param {boolean} [enableSemrush] - Forwarded so this scoped offsite-brand-presence run honors
  *   the same `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` override originally requested on Slack for
  *   the analysis audit that triggered it, instead of falling back to the plain env var.
- * @param {object} [olog] - bound offsite logger (see createOffsiteLogger); emits `scrape_request`
+ * @param {object} [olog] - bound offsite logger (see createOffsiteLogger);
+ *   emits `data_acquisition_drs_scrape_job_request_dispatched`
  *   with `reason=self_heal`. Threaded from the analysis-handler caller so the audit slug/ids are
  *   bound (this generic util does not know which analysis triggered the self-heal).
  *
@@ -682,12 +715,12 @@ export async function requestOffsiteScrape(
         messageData: { domainScope, ...overrides },
       },
     });
-    olog?.success('scrape_request', `Requested DRS scrape for '${domainScope}' (site ${siteId})`, {
-      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, ...overrides,
+    olog?.success('data_acquisition_drs_scrape_job_request_dispatched', 'Requested DRS scrape for domain scope', {
+      peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', reason: 'self_heal', domainScope, dispatchKind: 'self_heal_audit', ...overrides,
     });
   } catch (error) {
-    olog?.warn('scrape_request', `Failed to request DRS scrape for '${domainScope}' (site ${siteId})`, {
-      peer: PEER.SQS, direction: 'outbound', reason: 'self_heal', domainScope, ...overrides, ...errorField(error),
+    olog?.failure('data_acquisition_drs_scrape_job_request_dispatched', 'Failed to request DRS scrape for domain scope', {
+      peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', reason: 'self_heal_failed', domainScope, dispatchKind: 'self_heal_audit', ...overrides, ...errorField(error),
     });
   }
 }

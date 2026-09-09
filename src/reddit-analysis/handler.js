@@ -35,7 +35,7 @@ import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
-  createOffsiteLogger, withAuditPersistLog, errorField, AUDIT, OUTCOME, PEER,
+  createOffsiteLogger, withAuditPersistLog, errorField, resolveTriggerFields, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 
 // Human prefix for the one offsite-audit-utils helper that still logs via a passed-in prefix
@@ -91,14 +91,7 @@ async function fetchStoreData(siteId, context, site) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.REDDIT, siteId });
   const storeClient = StoreClient.createFrom(context);
 
-  olog.start('url_store_read', `Fetching data from stores for siteId: ${siteId}`, {
-    peer: PEER.URL_STORE, direction: 'inbound',
-  });
-
   const rawUrls = await storeClient.getUrls(siteId, URL_TYPES.REDDIT, { sortBy: 'createdAt', sortOrder: 'desc' });
-  olog.success('url_store_read', `Retrieved ${rawUrls.length} Reddit URLs from URL Store`, {
-    peer: PEER.URL_STORE, direction: 'inbound', count: rawUrls.length,
-  });
 
   const drsClient = DrsClient.createFrom(context);
   const { datasetIds } = OFFSITE_DOMAINS['reddit.com'];
@@ -109,15 +102,14 @@ async function fetchStoreData(siteId, context, site) {
     drsClient,
     olog,
   );
-  olog.success('drs_availability', `${urls.length} Reddit URLs available in DRS${formatDrsExtras(counts)}`, {
+  olog.success('data_acquisition_drs_scrape_content_checked', `${urls.length} Reddit URLs available in DRS${formatDrsExtras(counts)}`, {
     peer: PEER.DRS, direction: 'outbound', available: urls.length,
   });
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
-  olog.debug('topics_load', `Computed ${topics.length} topics from brand presence data`, {
+  olog.success('data_acquisition_bp_data_topics_resolved', 'Computed topics from brand presence data', {
     count: topics.length,
   });
-  olog.debug('topics_load', `Brand-presence topics payload: ${JSON.stringify(topics)}`);
 
   let guidelines = [];
   try {
@@ -128,17 +120,11 @@ async function fetchStoreData(siteId, context, site) {
     guidelines = sentimentConfig.guidelines ?? [];
   } catch (error) {
     if (error instanceof StoreEmptyError) {
-      olog.skip('guideline_read', 'No guidelines configured for reddit-analysis, proceeding without', {
-        peer: PEER.URL_STORE, direction: 'inbound', reason: 'no_guidelines',
-      });
+      // store-client's getGuidelines already logged the skip; nothing else to do here.
     } else {
       throw error;
     }
   }
-
-  olog.success('guideline_read', `Retrieved ${guidelines.length} guidelines`, {
-    peer: PEER.URL_STORE, direction: 'inbound', count: guidelines.length,
-  });
 
   return {
     urls,
@@ -165,19 +151,18 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
   // handler to report DRS / Mystique / total durations.
   const analysisStartedAt = Date.now();
 
-  olog.start('audit_start', `Starting Reddit analysis audit for site: ${siteId}`);
-  olog.debug('audit_start', `auditContext: ${JSON.stringify(auditContext)}`);
+  olog.start('audit_orchestration_spacecat_request_received', 'Audit started', resolveTriggerFields(auditContext));
 
-  const enableBrandProfile = resolveEnableBrandProfile(auditContext, log, HUMAN_PREFIX);
+  const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
-  const enableSemrush = resolveEnableSemrush(auditContext, log, HUMAN_PREFIX);
+  const enableSemrush = resolveEnableSemrush(auditContext, olog);
 
   try {
     const redditConfig = getRedditConfig(site);
 
     if (!redditConfig.companyName) {
-      olog.warn('config_resolve', 'No company name configured for site, skipping audit', {
-        outcome: OUTCOME.SKIP, reason: 'no_company_name',
+      olog.failure('audit_orchestration_brand_profile_resolved', 'No company name configured for site; producing no result this run', {
+        outcome: OUTCOME.FAILURE, reason: 'no_company_name',
       });
       return {
         auditResult: {
@@ -188,10 +173,21 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.success('config_resolve', 'Resolved Reddit config', {
+    olog.success('audit_orchestration_brand_profile_resolved', 'Brand profile resolved', {
       companyName: redditConfig.companyName,
       website: redditConfig.companyWebsite,
+      competitors: redditConfig.competitors.length,
     });
+    if (redditConfig.competitors.length === 0) {
+      // Surfaces the misconfiguration before the SQS hop to Mystique. With an
+      // empty list Mystique will only count the primary brand in Share of Voice
+      // (no hardcoded fallback) — see LLMO-4909 / cited_sentiment_flow.py.
+      olog.warn('audit_orchestration_brand_profile_resolved', 'No competitors configured; Share of Voice will only include the primary brand', {
+        outcome: OUTCOME.DEGRADED, reason: 'no_competitors',
+      });
+    }
+
+    olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS', {});
 
     const storeData = await fetchStoreData(siteId, context, site);
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
@@ -199,10 +195,10 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
     // reads as a coherent sequence rather than a contradictory "no scrape needed".
     const scrapedNow = scrapedThisCycle(auditContext);
     olog.success(
-      'store_fetch_complete',
+      'data_acquisition_end',
       scrapedNow
-        ? `DRS scrape finished this cycle; ${storeData.urls.length} URL(s) ready, proceeding to Mystique`
-        : `Reusing previously scraped DRS content for ${storeData.urls.length} URL(s); no new scrape needed, proceeding to Mystique`,
+        ? 'DRS scrape finished this cycle; proceeding to Mystique'
+        : 'Reusing previously scraped DRS content; no new scrape needed, proceeding to Mystique',
       { status: 'pending_analysis', urls: storeData.urls.length, scrapedNow },
     );
 
@@ -227,6 +223,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       { threadTs: slackContext?.threadTs },
     );
 
+    olog.success('audit_orchestration_end', 'Audit complete', { status: 'pending_analysis' });
+
     return {
       auditResult: {
         success: true,
@@ -249,8 +247,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       // A scoped scrape already ran and the store is STILL empty → the brand has no
       // Reddit URLs to analyze. Report a terminal message instead of looping.
       if (auditContext.drsScrapeRequested) {
-        olog.failure('url_store_read', 'URL store still empty after scrape', {
-          peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_after_scrape', ...errorField(error),
+        olog.failure('data_acquisition_url_store_read', 'URL store still empty after scrape', {
+          peer: PEER.URL_STORE, direction: 'inbound', reason: 'store_empty_after_scrape', ...errorField(error),
         });
         await postMessageOptional(
           context,
@@ -266,8 +264,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       // First individual run with an empty store: collect + scrape just this bucket via a
       // domain-scoped offsite-brand-presence run, which re-triggers this analysis when DRS
       // completes — no need to run offsite-brand-presence for all buckets manually.
-      olog.skip('store_fetch_complete', 'URL store empty, requesting a scoped scrape for reddit.com', {
-        status: 'pending_scrape', peer: PEER.URL_STORE, direction: 'inbound', reason: 'empty_store',
+      olog.warn('data_acquisition_end', 'URL store empty, requesting a scoped scrape for reddit.com', {
+        outcome: OUTCOME.SKIP, status: 'pending_scrape', peer: PEER.URL_STORE, direction: 'inbound', reason: 'store_empty_first_attempt',
       });
       await postMessageOptional(
         context,
@@ -297,8 +295,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       const { channelId, threadTs } = slackContext || {};
       if (auditContext.drsScrapeRequested) {
         // A scrape already ran this cycle and DRS still reports no scraped content → terminal.
-        olog.failure('drs_availability', 'No DRS content available after scraping', {
-          peer: PEER.DRS, direction: 'outbound', reason: 'no_content_after_scrape', ...errorField(error),
+        olog.failure('data_acquisition_drs_scrape_content_checked', 'No DRS content available after scraping', {
+          peer: PEER.DRS, direction: 'outbound', reason: 'content_not_scraped_after_retry', ...errorField(error),
         });
         await postMessageOptional(
           context,
@@ -311,8 +309,8 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
           fullAuditRef: url,
         };
       }
-      olog.skip('store_fetch_complete', 'URLs stored but not scraped in DRS yet, requesting a scrape for reddit.com', {
-        status: 'pending_scrape', peer: PEER.DRS, direction: 'outbound', reason: 'no_drs_content',
+      olog.warn('data_acquisition_end', 'URLs stored but not scraped in DRS yet, requesting a scrape for reddit.com', {
+        outcome: OUTCOME.SKIP, status: 'pending_scrape', peer: PEER.DRS, direction: 'outbound', reason: 'content_not_scraped_first_attempt',
       });
       await postMessageOptional(
         context,
@@ -337,7 +335,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
       };
     }
 
-    olog.failure('audit_start', 'Audit failed', { ...errorField(error) });
+    olog.failure('audit_orchestration_end', 'Audit failed', { reason: 'unexpected_error', ...errorField(error) });
     return {
       auditResult: {
         success: false,
@@ -363,15 +361,15 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const olog = createOffsiteLogger(log, { audit: AUDIT.REDDIT, siteId, auditId: audit?.getId() });
 
   if (!auditResult.success) {
-    olog.skip('mystique_dispatch', 'Audit failed, skipping Mystique message', {
-      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed',
+    olog.warn('audit_analysis_mystique_request_dispatched', 'Audit failed, skipping Mystique message', {
+      outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'audit_failed',
     });
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    olog.warn('mystique_dispatch', 'SQS or Mystique queue not configured, skipping message', {
-      outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'not_configured',
+    olog.failure('audit_analysis_mystique_request_dispatched', 'SQS or Mystique queue not configured; message dispatch unavailable this run', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'mystique_not_configured',
     });
     return auditData;
   }
@@ -380,15 +378,15 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      olog.warn('mystique_dispatch', 'Site not found, skipping Mystique message', {
-        outcome: OUTCOME.SKIP, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found',
+      olog.failure('audit_analysis_mystique_request_dispatched', 'Site not found, skipping Mystique message', {
+        outcome: OUTCOME.FAILURE, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'site_not_found_at_dispatch',
       });
       return auditData;
     }
 
     const { config, storeData } = auditResult;
     const urlLimit = config?.urlLimit ?? MYSTIQUE_URLS_LIMIT;
-    olog.success('url_limit_resolve', `urlLimit=${urlLimit} (URLs sent to Mystique)`);
+    olog.success('audit_analysis_scope_resolved', 'URL limit resolved', { scopeKind: 'url_limit', urlLimit });
 
     const { urls, sentimentConfig } = storeData;
     const enrichedUrls = enrichUrlsWithTopicData(urls, sentimentConfig.topics)
@@ -418,31 +416,29 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     try {
       brand = await resolveBrandForSite(context, site);
     } catch (brandError) {
-      olog.warn('mystique_dispatch', 'Brand resolution failed unexpectedly; proceeding without scope', {
-        peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
+      olog.warn('audit_analysis_scope_resolved', 'Brand resolution failed unexpectedly; proceeding without scope', {
+        scopeKind: 'brand', outcome: OUTCOME.DEGRADED, peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'brand_resolution', ...errorField(brandError),
       });
     }
     const message = applyBrandScope(baseMessage, brand);
 
-    olog.debug('mystique_dispatch', `Built Mystique message type ${message.type}`, {
-      peer: PEER.MYSTIQUE, direction: 'outbound',
-    });
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     olog.success(
-      'mystique_dispatch',
-      `Queued Reddit analysis request to Mystique with ${enrichedUrls.length} URLs`,
+      'audit_analysis_mystique_request_dispatched',
+      'Queued analysis request to Mystique',
       {
         peer: PEER.MYSTIQUE,
         direction: 'outbound',
         companyName: config.companyName,
         urls: enrichedUrls.length,
+        messageType: message.type,
         ...(brand && { brandId: brand.brandId }),
       },
     );
     return auditData;
   } catch (error) {
-    olog.failure('mystique_dispatch', 'Failed to send Mystique message', {
-      peer: PEER.MYSTIQUE, direction: 'outbound', ...errorField(error),
+    olog.failure('audit_analysis_mystique_request_dispatched', 'Failed to send Mystique message', {
+      peer: PEER.MYSTIQUE, direction: 'outbound', reason: 'unexpected_error', ...errorField(error),
     });
     throw error;
   }

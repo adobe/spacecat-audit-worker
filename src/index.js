@@ -48,6 +48,7 @@ import formsOpportunities from './forms-opportunities/handler.js';
 import metaTags from './metatags/handler.js';
 import structuredData from './structured-data/handler.js';
 import structuredDataGuidance from './structured-data/guidance-handler.js';
+import gscSearchAnalytics from './gsc-search-analytics/handler.js';
 import siteDetection from './site-detection/handler.js';
 import detectCdn from './detect-cdn/handler.js';
 import deliveryConfigWriter from './delivery-config-writer/handler.js';
@@ -156,6 +157,7 @@ const HANDLERS = {
   'detect-cdn': detectCdn,
   'delivery-config-writer': deliveryConfigWriter,
   'structured-data': structuredData,
+  'gsc-search-analytics': gscSearchAnalytics,
   'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,

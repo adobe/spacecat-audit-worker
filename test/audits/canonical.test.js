@@ -2638,6 +2638,89 @@ describe('Canonical URL Tests', () => {
         expect(context.log.info).to.have.been.calledWith('[canonical] No scrapeResultPaths found for site test-site-id');
       });
 
+      it('bows out of legacy CANONICAL creation and resolves the legacy canonical opportunity when canonicalEngine=blackboard', async function () {
+        this.timeout(5000);
+        site.getDeliveryConfig = sinon.stub().returns({ canonicalEngine: 'blackboard' });
+
+        const scrapedContent = {
+          url: 'https://example.com/page1',
+          finalUrl: 'https://example.com/page1',
+          isPreview: false,
+          scrapeResult: {
+            canonical: {
+              exists: true, count: 1, href: 'https://example.com/other-page', inHead: true,
+            },
+            rawBody: createValidRawBody('<html><head><link rel="canonical" href="https://example.com/other-page"></head><body><p>Content for testing canonical URL validation.</p></body></html>'),
+          },
+        };
+        const mockGetObjectFromKey = sinon.stub().resolves(scrapedContent);
+
+        const legacyCanonicalOppty = {
+          getType: () => 'canonical',
+          getId: () => 'legacy-canonical-oppty',
+          setStatus: sinon.stub().resolves(),
+          setUpdatedBy: sinon.stub(),
+          save: sinon.stub().resolves(),
+          getSuggestions: sinon.stub().resolves([{ getStatus: () => 'NEW' }]),
+        };
+
+        const testContext = {
+          ...context,
+          site,
+          s3Client: {},
+          scrapeResultPaths: new Map([
+            ['https://example.com/page1', 'scrapes/job-id/page1/scrape.json'],
+          ]),
+          audit: { getId: () => 'test-audit-id' },
+          dataAccess: {
+            Opportunity: {
+              allBySiteId: sinon.stub().resolves([]),
+              allBySiteIdAndStatus: sinon.stub().resolves([legacyCanonicalOppty]),
+              create: sinon.stub().resolves({
+                getId: () => 'test-oppty-id',
+                getType: () => 'generic-opportunity',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+              }),
+            },
+            Suggestion: {
+              allByOpportunityId: sinon.stub().resolves([]),
+              createMany: sinon.stub().resolves([]),
+              removeMany: sinon.stub().resolves([]),
+              bulkUpdateStatus: sinon.stub().resolves(),
+            },
+          },
+        };
+
+        // Stub convertToOpportunity so the separate Elmo generic-opportunity path (which
+        // still runs after the CANONICAL bow-out) is inert here — this test asserts the
+        // bow-out cleanup, not opportunity construction. resolveOpportunityIfNoIssues
+        // (data-access.js) stays real.
+        const { processScrapedContent: processScrapedContentMocked } = await esmock(
+          '../../src/canonical/handler.js',
+          {
+            '../../src/utils/s3-utils.js': { getObjectFromKey: mockGetObjectFromKey },
+            '../../src/common/opportunity-utils.js': { checkGoogleConnection: sinon.stub().resolves(false) },
+            '../../src/common/opportunity.js': {
+              convertToOpportunity: sinon.stub().resolves({
+                getId: () => 'elmo-oppty',
+                getType: () => 'generic-opportunity',
+                getSuggestions: sinon.stub().resolves([]),
+                addSuggestions: sinon.stub().resolves({ createdItems: [] }),
+              }),
+            },
+          },
+        );
+
+        await processScrapedContentMocked(testContext);
+
+        // The bow-out log fires and the legacy CANONICAL opportunity is resolved — neither
+        // happens on the normal issues-present path (which would create the CANONICAL row).
+        expect(testContext.log.info).to.have.been.calledWithMatch('bowing out of legacy CANONICAL sync');
+        expect(legacyCanonicalOppty.setStatus).to.have.been.calledWith('RESOLVED');
+        expect(legacyCanonicalOppty.save).to.have.been.called;
+      });
+
       it('should process scraped content and detect canonical issues', async function () {
         this.timeout(5000);
         const scrapedContent = {

@@ -41,10 +41,72 @@ import {
   fetchAndProcessPageObject,
   opportunityAndSuggestions,
   buildKey,
+  runAuditAndGenerateSuggestions,
 } from '../../src/metatags/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
+
+describe('Meta Tags — blackboard bow-out (Spec 009-04 / ADR-0022)', () => {
+  let sandbox;
+  let site;
+  let dataAccess;
+  let context;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    const newSuggestion = { getStatus: () => 'NEW' };
+    const legacyOppty = {
+      getType: () => 'meta-tags',
+      getId: () => 'legacy-meta-oppty',
+      setStatus: sandbox.stub().resolves(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([newSuggestion]),
+    };
+    dataAccess = {
+      Opportunity: {
+        allBySiteIdAndStatus: sandbox.stub().resolves([legacyOppty]),
+        create: sandbox.stub().resolves({}),
+      },
+      Suggestion: { bulkUpdateStatus: sandbox.stub().resolves() },
+    };
+    site = {
+      getId: () => 'site-id',
+      getBaseURL: () => 'https://example.com',
+      getDeliveryConfig: sandbox.stub().returns({ metaTagsEngine: 'blackboard' }),
+    };
+    context = {
+      site,
+      audit: { getId: () => 'audit-id' },
+      finalUrl: 'https://example.com',
+      scrapeResultPaths: new Map(),
+      log: {
+        info: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub(),
+      },
+      sqs: { sendMessage: sandbox.stub().resolves() },
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'q' },
+      dataAccess,
+    };
+  });
+
+  afterEach(() => sandbox.restore());
+
+  it('creates no opportunity, sends no Mystique message, and returns complete when metaTagsEngine=blackboard', async () => {
+    const result = await runAuditAndGenerateSuggestions(context);
+
+    expect(result).to.deep.equal({ status: 'complete' });
+    expect(dataAccess.Opportunity.create).to.not.have.been.called;
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+  });
+
+  it('resolves the pre-existing legacy meta-tags opportunity and outdates only its live suggestions', async () => {
+    await runAuditAndGenerateSuggestions(context);
+
+    expect(dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith('site-id', 'NEW');
+    expect(dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
+  });
+});
 
 describe('Meta Tags', () => {
   describe('SeoChecks', () => {

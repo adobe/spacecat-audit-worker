@@ -15,7 +15,7 @@ import DrsClient from '@adobe/spacecat-shared-drs-client';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import { formatDuration, resolveDrsPollIntervalSeconds } from '../utils/offsite-audit-utils.js';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
+  createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
 } from '../utils/offsite-logging.js';
 import {
   DRS_TERMINAL_STATUSES,
@@ -69,14 +69,17 @@ async function hasRecentAudit(siteId, auditType, dataAccess, log) {
     // (Without this, an individual analysis run that self-heals an empty URL store never
     // reaches Mystique: its pending_scrape audit trips the cooldown for the whole hour.)
     // Only a real completed/in-progress analysis within the window dedupes redelivered polls.
+    olog.success('data_acquisition_analysis_request_dispatched', 'Recent-audit cooldown check succeeded', {
+      peer: PEER.SPACECAT, direction: 'inbound', auditType,
+    });
     if (latest.getAuditResult?.()?.status === 'pending_scrape') {
       return false;
     }
     const auditedAt = new Date(latest.getAuditedAt()).getTime();
     return (Date.now() - auditedAt) < AUDIT_TRIGGER_COOLDOWN_MS;
   } catch (err) {
-    olog.warn('cooldown_check', `Failed to check recent ${auditType} audit for site ${siteId}`, {
-      peer: PEER.SPACECAT, direction: 'inbound', auditType, ...errorField(err),
+    olog.warn('data_acquisition_analysis_request_dispatched', 'Failed to check recent audit', {
+      outcome: OUTCOME.DEGRADED, peer: PEER.SPACECAT, direction: 'inbound', auditType, reason: 'lookup', ...errorField(err),
     });
     return false;
   }
@@ -144,7 +147,8 @@ function computeReadyAuditTypes(statuses, deadlineReached, alreadyTriggered) {
  *
  * @param {Array<{domain: string, status: string|undefined}>} statuses - Per-job statuses
  * @param {Set<string>} triggered - Audit types already dispatched (this + prior polls)
- * @returns {Array<{auditType: string, reason: string}>} Dropped audit types with a reason
+ * @returns {Array<{auditType: string, reason: string}>} Dropped
+ *   audit types with a reason
  */
 function computeDroppedAuditTypes(statuses, triggered) {
   const groups = new Map();
@@ -172,7 +176,10 @@ function computeDroppedAuditTypes(statuses, triggered) {
       continue;
     }
     const allGroupTerminal = groupJobs.every((s) => DRS_TERMINAL_STATUSES.has(s.status));
-    dropped.push({ auditType, reason: allGroupTerminal ? 'scrape_failed' : 'budget_exceeded' });
+    dropped.push({
+      auditType,
+      reason: allGroupTerminal ? 'scrape_failed' : 'budget_exceeded',
+    });
   }
   return dropped;
 }
@@ -230,8 +237,8 @@ async function triggerAnalysisAudits(
     try {
       // eslint-disable-next-line no-await-in-loop
       if (await hasRecentAudit(siteId, type, dataAccess, log)) {
-        olog.skip('analysis_dispatch', `Skipping ${type} for site ${siteId} — recent audit exists`, {
-          peer: PEER.SQS, direction: 'outbound', reason: 'cooldown', auditType: type,
+        olog.warn('data_acquisition_analysis_request_dispatched', 'Skipping analysis dispatch; recent audit exists', {
+          outcome: OUTCOME.SKIP, peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', reason: 'cooldown', auditType: type,
         });
         handled.push(type);
         // eslint-disable-next-line no-continue
@@ -256,13 +263,13 @@ async function triggerAnalysisAudits(
           ...(Object.keys(messageData).length > 0 && { messageData }),
         },
       });
-      olog.success('analysis_dispatch', `Triggered ${type} for site ${siteId}`, {
-        peer: PEER.SQS, direction: 'outbound', auditType: type,
+      olog.success('data_acquisition_analysis_request_dispatched', 'Analysis audit dispatched', {
+        peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', auditType: type,
       });
       handled.push(type);
     } catch (err) {
-      olog.warn('analysis_dispatch', `Failed to trigger ${type} analysis audit for site ${siteId}`, {
-        peer: PEER.SQS, direction: 'outbound', auditType: type, ...errorField(err),
+      olog.warn('data_acquisition_analysis_request_dispatched', 'Failed to dispatch analysis audit', {
+        outcome: OUTCOME.DEGRADED, peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', auditType: type, reason: 'dispatch_failed', ...errorField(err),
       });
     }
   }
@@ -338,7 +345,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   if (jobs.length === 0) {
     // ADR convention: "no jobs to poll" is the canonical .skip() case (info level,
     // outcome=skip) — not a warning. See scheduleDrsStatusPoll's analogous skip.
-    olog.skip('drs_poll', `No jobs to poll, skipping (site ${siteId})`, {
+    olog.skip('data_acquisition_drs_scrape_job_poll_checked', 'No jobs to poll, skipping', {
       peer: PEER.DRS, reason: 'no_jobs',
     });
     return ok();
@@ -356,8 +363,8 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       const result = await drsClient.getJob(job.jobId);
       return { ...job, status: result?.status, error: result?.error_message };
     } catch (err) {
-      olog.warn('drs_poll', `getJob failed for ${job.jobId}`, {
-        peer: PEER.DRS, drsJobId: job.jobId, ...errorField(err),
+      olog.warn('data_acquisition_drs_scrape_job_poll_checked', 'DRS getJob call failed', {
+        outcome: OUTCOME.DEGRADED, peer: PEER.DRS, drsJobId: job.jobId, ...errorField(err),
       });
       return { ...job, status: undefined, error: undefined };
     }
@@ -370,7 +377,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
 
   // P1-7: per-poll visibility. Emit a snapshot of terminal/total after resolving statuses
   // so the wait is observable in Splunk (previously nothing was logged on a normal poll).
-  olog.start('drs_poll', `DRS poll for ${baseURL}: ${terminalCount}/${statuses.length} jobs terminal`, {
+  olog.start('data_acquisition_drs_scrape_job_poll_checked', 'DRS poll in progress', {
     peer: PEER.DRS, terminal: terminalCount, total: statuses.length,
   });
 
@@ -392,8 +399,8 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       enableSemrush,
     );
   } catch (err) {
-    olog.warn('analysis_dispatch', `Failed to trigger analysis audits for ${baseURL}`, {
-      peer: PEER.SQS, direction: 'outbound', ...errorField(err),
+    olog.warn('data_acquisition_analysis_request_dispatched', 'Failed to dispatch analysis audits', {
+      outcome: OUTCOME.DEGRADED, peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', reason: 'dispatch_failed', ...errorField(err),
     });
   }
   const nextTriggered = [...alreadyTriggered, ...handled];
@@ -422,13 +429,13 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
     try {
       await sqs.sendMessage(configuration.getQueues().audits, nextMessage, null, delaySeconds);
     } catch (err) {
-      olog.failure('drs_poll_reschedule', `Failed to re-enqueue DRS status poll for ${baseURL}`, {
-        peer: PEER.SQS, direction: 'outbound', ...errorField(err),
+      olog.failure('data_acquisition_drs_scrape_job_poll_request_dispatched', 'Failed to re-enqueue DRS status poll', {
+        peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', firstSchedule: false, reason: 'reenqueue_failed', ...errorField(err),
       });
       throw err;
     }
-    olog.success('drs_poll_reschedule', `${terminalCount}/${statuses.length} jobs terminal for ${baseURL}, re-polling in ${delaySeconds}s`, {
-      peer: PEER.SQS, direction: 'outbound', terminal: terminalCount, total: statuses.length, delaySeconds,
+    olog.success('data_acquisition_drs_scrape_job_poll_request_dispatched', 'Re-polling DRS status', {
+      peer: PEER.SPACECAT_AUDIT_WORKER, direction: 'outbound', terminal: terminalCount, total: statuses.length, delaySeconds, firstSchedule: false,
     });
     return ok();
   }
@@ -445,15 +452,19 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   // dropped source (was previously visible only as prose in the Slack summary).
   const dropped = computeDroppedAuditTypes(statuses, new Set(nextTriggered));
   for (const { auditType, reason } of dropped) {
-    olog.failure('drs_poll', `Dropping ${auditType} for ${baseURL}: no DRS success (${reason})`, {
+    olog.failure('data_acquisition_drs_scrape_job_poll_checked', 'Dropping analysis audit type; no DRS success', {
       peer: PEER.DRS, reason, auditType,
     });
   }
 
   const summary = buildSummary(baseURL, statuses, drsStartedAt, nextTriggered);
   await postMessageOptional(context, channelId, summary, { threadTs });
-  olog.success('poll_summary', `Posted completion summary for ${baseURL} (${statuses.length} jobs)`, {
-    peer: PEER.SLACK, direction: 'outbound', jobs: statuses.length,
+  olog.success('data_acquisition_drs_scrape_job_poll_end', 'Posted DRS completion summary', {
+    peer: PEER.SLACK,
+    direction: 'outbound',
+    jobs: statuses.length,
+    dropped: dropped.length,
+    ...(dropped.length > 0 && { reason: 'partial_drop' }),
   });
 
   return ok();

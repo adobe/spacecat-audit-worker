@@ -19,6 +19,7 @@ import {
 } from '../common/user-agent-classification.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
+import { validateCountryCode } from '../common/country-codes.js';
 
 // ============================================================================
 // CONSTANTS
@@ -591,14 +592,28 @@ export async function downloadExistingCdnSheet(
 }
 
 /**
+ * Reads the per-site country-code ignore list from site config, defaulting to [].
+ *
+ * @param {Object} site - Site entity.
+ * @returns {Array<string>} Configured ignore list, or [] when unset.
+ */
+export function getSiteCountryIgnoreList(site) {
+  return site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
+}
+
+/**
  * Collapses Athena rows (one per URL × user_agent) into one entry per URL.
  * agentTypes and userAgents are deduped Sets so a URL hit by multiple bots
  * yields a single Suggestion with both arrays populated.
  *
+ * The raw `country_code` is regex-extracted from the URL path and normalized
+ * via validateCountryCode.
+ *
  * @param {Array<Object>} errors - Categorized error rows.
+ * @param {Array<string>} [siteIgnoreList] - Per-site country codes to force to 'GLOBAL'.
  * @returns {Array<Object>} One entry per unique URL with aggregated metrics.
  */
-export function groupErrorsByUrl(errors) {
+export function groupErrorsByUrl(errors, siteIgnoreList = []) {
   const urlMap = new Map();
 
   for (const error of errors) {
@@ -612,7 +627,7 @@ export function groupErrorsByUrl(errors) {
         agentTypes: new Set(),
         userAgents: new Set(),
         avgTtfb: error.avg_ttfb_ms,
-        countryCode: error.country_code,
+        countryCode: validateCountryCode(error.country_code, siteIgnoreList),
         product: error.product,
         category: error.category,
       };

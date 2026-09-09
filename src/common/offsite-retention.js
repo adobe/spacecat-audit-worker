@@ -14,7 +14,7 @@ import { subDays } from 'date-fns';
 import { Opportunity as Oppty, Suggestion as Sugg } from '@adobe/spacecat-shared-data-access';
 import { isOffsiteSnapshot } from './offsite-snapshot.js';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
+  createOffsiteLogger, errorField, AUDIT, PEER, OUTCOME,
 } from '../utils/offsite-logging.js';
 
 // See docs/decisions/004-offsite-snapshot-retention-window.md for the rationale.
@@ -47,11 +47,15 @@ export async function findExpiredSnapshots({
     ignoredOpportunities = await Opportunity
       .allBySiteIdAndStatus(siteId, Oppty.STATUSES.IGNORED);
   } catch (error) {
-    olog.failure('retention_lookup', `Failed to find snapshots for auditType ${auditType}`, {
-      peer: PEER.POSTGRES, direction: 'inbound', ...errorField(error),
+    olog.warn('audit_housekeeping_outdated_opportunities_read', 'Failed to find snapshots', {
+      peer: PEER.POSTGRES, direction: 'inbound', auditType, reason: 'lookup', outcome: OUTCOME.DEGRADED, ...errorField(error),
     });
     return [];
   }
+
+  olog.success('audit_housekeeping_outdated_opportunities_read', 'Found snapshots', {
+    peer: PEER.POSTGRES, direction: 'inbound', auditType, count: (ignoredOpportunities || []).length,
+  });
 
   const retentionCutoff = subDays(new Date(), SNAPSHOT_RETENTION_DAYS);
 
@@ -89,7 +93,10 @@ export async function deleteExpiredSnapshots({
   const expiredSnapshots = allExpiredSnapshots.slice(0, MAX_DELETIONS_PER_RUN);
 
   if (expiredSnapshots.length === 0) {
-    return 0;
+    olog.warn('audit_housekeeping_outdated_opportunities_deleted', 'No expired snapshots eligible for deletion', {
+      auditType, eligible: 0, outcome: OUTCOME.SKIP,
+    });
+    return { eligible: 0, deleted: 0 };
   }
 
   const suggestionIds = [];
@@ -107,11 +114,11 @@ export async function deleteExpiredSnapshots({
   const snapshotIds = expiredSnapshots.map((snapshot) => snapshot.getId());
   await Opportunity.removeByIds(snapshotIds);
 
-  olog.success('retention_delete', `Deleted ${snapshotIds.length} expired snapshot(s) for auditType ${auditType}`, {
-    peer: PEER.POSTGRES, direction: 'outbound', eligible: allExpiredSnapshots.length, deleted: snapshotIds.length,
+  olog.success('audit_housekeeping_outdated_opportunities_deleted', 'Deleted expired snapshots', {
+    peer: PEER.POSTGRES, direction: 'outbound', auditType, eligible: allExpiredSnapshots.length, deleted: snapshotIds.length,
   });
 
-  return snapshotIds.length;
+  return { eligible: allExpiredSnapshots.length, deleted: snapshotIds.length };
 }
 
 export const OUTDATED_SUGGESTION_RETENTION_DAYS = 30;
@@ -165,11 +172,15 @@ export async function deleteExpiredOutdatedSuggestions({
   try {
     opportunitySuggestions = await opportunity.getSuggestions() || [];
   } catch (error) {
-    olog.failure('outdated_suggestion_lookup', `Failed to read suggestions for expired OUTDATED suggestion deletion, auditType ${auditType}`, {
-      peer: PEER.POSTGRES, direction: 'inbound', ...errorField(error),
+    olog.warn('audit_housekeeping_outdated_suggestions_read', 'Failed to read suggestions for expired OUTDATED suggestion deletion', {
+      peer: PEER.POSTGRES, direction: 'inbound', auditType, reason: 'lookup', outcome: OUTCOME.DEGRADED, ...errorField(error),
     });
     return emptyRetentionSummary;
   }
+
+  olog.success('audit_housekeeping_outdated_suggestions_read', 'Read suggestions for OUTDATED suggestion cleanup', {
+    peer: PEER.POSTGRES, direction: 'inbound', auditType, count: opportunitySuggestions.length,
+  });
 
   const retentionCutoff = subDays(new Date(), OUTDATED_SUGGESTION_RETENTION_DAYS);
   const expiredOutdatedSuggestions = opportunitySuggestions
@@ -185,13 +196,13 @@ export async function deleteExpiredOutdatedSuggestions({
       try {
         // Dependent fix-entity rows cascade-delete with their suggestions.
         await Suggestion.removeByIds(suggestionIds);
-        olog.success('outdated_suggestion_delete', `Deleted ${suggestionIds.length} expired OUTDATED suggestion(s) for auditType ${auditType}`, {
-          peer: PEER.POSTGRES, direction: 'outbound', suggestionIds,
+        olog.success('audit_housekeeping_outdated_suggestions_deleted', 'Deleted expired OUTDATED suggestions', {
+          peer: PEER.POSTGRES, direction: 'outbound', auditType, suggestionIds,
         });
         return { deleted: suggestionBatch.length, failed: 0 };
       } catch (error) {
-        olog.failure('outdated_suggestion_delete', `Failed to delete ${suggestionBatch.length} expired OUTDATED suggestion(s), auditType ${auditType}`, {
-          peer: PEER.POSTGRES, direction: 'outbound', ...errorField(error),
+        olog.warn('audit_housekeeping_outdated_suggestions_deleted', 'Failed to delete expired OUTDATED suggestion batch', {
+          peer: PEER.POSTGRES, direction: 'outbound', auditType, batchSize: suggestionBatch.length, reason: 'batch_delete_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
         });
         return { deleted: 0, failed: suggestionBatch.length };
       }
@@ -210,19 +221,39 @@ export async function deleteExpiredOutdatedSuggestions({
     ...deletionTotals,
   };
 
+  return retentionSummary;
+}
+
+/**
+ * Emits the combined `audit_housekeeping_end` summary for the two retention cleanups
+ * (expired OUTDATED suggestions + expired snapshots) run by each offsite guidance handler.
+ * Escalates to warn/degraded when either cleanup threw (suggestionsErrored/snapshotsErrored)
+ * or when suggestion deletion resolved normally but reported a per-batch failure
+ * (suggestionsSummary.failed > 0).
+ */
+export function logHousekeepingSummary(olog, {
+  auditType, suggestionsSummary, snapshotsSummary, suggestionsErrored, snapshotsErrored,
+}) {
+  const housekeepingHadFailure = suggestionsErrored || snapshotsErrored
+    || suggestionsSummary.failed > 0;
   const summaryFields = {
     peer: PEER.POSTGRES,
     direction: 'outbound',
-    scanned: retentionSummary.scanned,
-    eligible: retentionSummary.eligible,
-    deleted: retentionSummary.deleted,
-    failed: retentionSummary.failed,
+    auditType,
+    suggestionsScanned: suggestionsSummary.scanned,
+    suggestionsEligible: suggestionsSummary.eligible,
+    suggestionsDeleted: suggestionsSummary.deleted,
+    suggestionsFailed: suggestionsSummary.failed,
+    snapshotsEligible: snapshotsSummary.eligible,
+    snapshotsDeleted: snapshotsSummary.deleted,
   };
-  if (retentionSummary.failed > 0) {
-    olog.failure('outdated_suggestion_retention_summary', `Expired OUTDATED suggestion deletion summary for auditType ${auditType}`, summaryFields);
+  if (housekeepingHadFailure) {
+    olog.warn('audit_housekeeping_end', 'Housekeeping cleanup summary', {
+      ...summaryFields, reason: 'partial_cleanup_failure', outcome: OUTCOME.DEGRADED,
+    });
   } else {
-    olog.success('outdated_suggestion_retention_summary', `Expired OUTDATED suggestion deletion summary for auditType ${auditType}`, summaryFields);
+    olog.success('audit_housekeeping_end', 'Housekeeping cleanup summary', {
+      ...summaryFields, outcome: OUTCOME.SUCCESS,
+    });
   }
-
-  return retentionSummary;
 }

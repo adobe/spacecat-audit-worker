@@ -39,17 +39,26 @@ export const AUDIT = {
   BRAND_PRESENCE: 'brand-presence',
 };
 
+// `DEGRADED` covers a condition that did not go perfectly but that the system handled and moved
+// past (retried, fell back, mitigated) — distinct from `FAILURE` (a terminal, unrecovered
+// problem, almost always logged via `.failure()` at `error` level) and from `SKIP` (a deliberate
+// no-op decision, not something going wrong). It is the default `outcome` for `.warn()`.
 export const OUTCOME = {
   START: 'start',
   SUCCESS: 'success',
   FAILURE: 'failure',
   SKIP: 'skip',
+  DEGRADED: 'degraded',
 };
 
+// `URL_STORE` is the raw-URL store (`store-client.js#getUrls`); `GUIDELINE_STORE` is the
+// separate guideline/sentiment-topic store (`store-client.js#getGuidelines`) — kept distinct so
+// `peer` alone tells you which backing store a log line concerns.
 export const PEER = {
   DRS: 'drs',
   MYSTIQUE: 'mystique',
   URL_STORE: 'url_store',
+  GUIDELINE_STORE: 'guideline_store',
   S3: 's3',
   POSTGRES: 'postgres',
   SHAREPOINT: 'sharepoint',
@@ -57,6 +66,9 @@ export const PEER = {
   SLACK: 'slack',
   SQS: 'sqs',
   SPACECAT: 'spacecat',
+  JOBS_DISPATCHER: 'spacecat-jobs-dispatcher',
+  API_SERVICE: 'spacecat-api-service',
+  SPACECAT_AUDIT_WORKER: 'spacecat-audit-worker',
 };
 
 // Canonical order so a human scanning logs always sees the dimensions in the same place.
@@ -148,9 +160,37 @@ export function errorField(err) {
 }
 
 /**
+ * Resolve the `trigger`/`peer` fields for `audit_orchestration_spacecat_request_received` from
+ * the explicit `origin` marker stamped into `auditContext` by whichever service dispatched this
+ * run's SQS message. `spacecat-jobs-dispatcher` is the default/legacy sender — it does not stamp
+ * `origin` today — so an absent `origin` (as well as `origin: 'jobs-dispatcher'`) resolves to the
+ * same `scheduled`/`spacecat-jobs-dispatcher` pair as an explicit `origin: 'api-service'`
+ * resolves to `manual`/`spacecat-api-service`.
+ *
+ * @param {object} [auditContext] the `auditContext` a `RunnerAudit` runner receives as its 4th
+ *   argument (see `buildRunnerAuditContext` in `src/common/runner-audit.js`)
+ * @returns {{trigger: 'scheduled'|'manual', peer: string}}
+ */
+export function resolveTriggerFields(auditContext) {
+  const isManual = auditContext?.origin === 'api-service';
+  return {
+    trigger: isManual ? 'manual' : 'scheduled',
+    peer: isManual ? PEER.API_SERVICE : PEER.JOBS_DISPATCHER,
+  };
+}
+
+/**
  * Create an offsite-scoped logger bound to an audit and (optionally) the run's identifiers.
  * Each method emits exactly one string argument to the underlying logger — except `failure`,
  * which may pass a raw Error as a genuine second arg purely for stack capture.
+ *
+ * `warn()` defaults its `outcome` to {@link OUTCOME.DEGRADED} (not `FAILURE`) when the caller
+ * does not pass one explicitly, because the overwhelming majority of `.warn()` call sites
+ * describe a non-fatal, self-healed, retried, or otherwise mitigated condition — genuine
+ * terminal problems should use `.failure()` (which logs at `error` level with
+ * `outcome=failure`). Callers that really mean a deliberate no-op should pass
+ * `{ outcome: OUTCOME.SKIP }` explicitly; callers that really mean a terminal, unrecovered
+ * problem at `warn` level should pass `{ outcome: OUTCOME.FAILURE }` explicitly.
  *
  * @param {object} log the helix logger (`context.log`)
  * @param {object} bound `{ audit, siteId, auditId, opportunityId }`
@@ -189,7 +229,7 @@ export function createOffsiteLogger(log, bound = {}) {
     success: (event, message, extra) => emit('info', event, OUTCOME.SUCCESS, message, extra),
     skip: (event, message, extra) => emit('info', event, OUTCOME.SKIP, message, extra),
     failure: (event, message, extra, error) => emit('error', event, OUTCOME.FAILURE, message, extra, error),
-    warn: (event, message, extra = {}) => emit('warn', event, extra.outcome ?? OUTCOME.FAILURE, message, extra),
+    warn: (event, message, extra = {}) => emit('warn', event, extra.outcome ?? OUTCOME.DEGRADED, message, extra),
     debug: (event, message, extra = {}) => emit('debug', event, extra.outcome ?? OUTCOME.SUCCESS, message, extra),
     with: (moreIds) => createOffsiteLogger(log, {
       audit, siteId, auditId, opportunityId, ...moreIds,
@@ -198,7 +238,7 @@ export function createOffsiteLogger(log, bound = {}) {
 }
 
 /**
- * Build an offsite `audit_persist` post-processor for an AuditBuilder.
+ * Build an offsite `audit_analysis_run_write` post-processor for an AuditBuilder.
  *
  * The framework persists the Audit record silently (`defaultPersister` -> `Audit.create`) and
  * sets `context.audit` before post-processors run, so this post-processor makes the persist
@@ -215,7 +255,7 @@ export function withAuditPersistLog(audit) {
       audit,
       siteId: auditData?.siteId,
       auditId: auditData?.id ?? context.audit?.getId?.(),
-    }).success('audit_persist', 'Audit persisted', {
+    }).success('audit_analysis_run_write', 'Audit persisted', {
       peer: PEER.POSTGRES,
       direction: 'outbound',
       auditType: auditData?.auditType,

@@ -132,7 +132,7 @@ describe('offsite-refresh', () => {
 
       expect(log.error).to.have.been.calledWith(
         sinon.match(/DB down/)
-          .and(sinon.match(/event=opportunity_resolve/))
+          .and(sinon.match(/event=audit_persistence_evergreen_opportunity_read/))
           .and(sinon.match(/outcome=failure/))
           .and(sinon.match(/audit=cited/)),
       );
@@ -148,7 +148,7 @@ describe('offsite-refresh', () => {
       })).to.be.rejectedWith('DB down');
 
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=opportunity_resolve/).and(sinon.match(/audit=unknown/)),
+        sinon.match(/event=audit_persistence_evergreen_opportunity_read/).and(sinon.match(/audit=unknown/)),
       );
     });
 
@@ -166,6 +166,11 @@ describe('offsite-refresh', () => {
       });
 
       expect(result).to.equal(only);
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_persistence_evergreen_opportunity_read/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/count=1/)),
+      );
     });
 
     it('ignores opportunities of a different type', async () => {
@@ -219,10 +224,12 @@ describe('offsite-refresh', () => {
       expect(oldest.setStatus).to.have.been.calledWith('IGNORED');
       expect(middle.setStatus).to.have.been.calledWith('IGNORED');
       expect(newest.setStatus).to.not.have.been.called;
-      // P4-7: retirement is now a structured opportunity_retire line.
-      expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=opportunity_retire/)
-          .and(sinon.match(/outcome=success/))
+      // P4-7: retirement is now a structured opportunity_retire line. This is a data-integrity
+      // signal (should almost never happen), so it is logged at warn/degraded even though the
+      // pipeline auto-heals by retiring the extras and keeping the most recent.
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/event=audit_persistence_opportunity_retired/)
+          .and(sinon.match(/outcome=degraded/))
           .and(sinon.match(/retired=2/))
           .and(sinon.match(/kept=newest/)),
       );
@@ -307,12 +314,13 @@ describe('offsite-refresh', () => {
       );
 
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=opportunity_persist/)
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=success/))
           .and(sinon.match(/peer=postgres/))
           .and(sinon.match(/audit=reddit/))
           .and(sinon.match(/opportunityId=new-opp-id/))
-          .and(sinon.match(/status=IGNORED/)),
+          .and(sinon.match(/status=IGNORED/))
+          .and(sinon.match(/writeAction=created/)),
       );
     });
 
@@ -341,9 +349,10 @@ describe('offsite-refresh', () => {
       );
 
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/event=opportunity_persist/)
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=success/))
-          .and(sinon.match(/opportunityId=evergreen-1/)),
+          .and(sinon.match(/opportunityId=evergreen-1/))
+          .and(sinon.match(/writeAction=refreshed/)),
       );
     });
 
@@ -363,11 +372,12 @@ describe('offsite-refresh', () => {
       )).to.be.rejectedWith('db exploded');
 
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/event=opportunity_persist/)
+        sinon.match(/event=audit_persistence_evergreen_opportunity_write/)
           .and(sinon.match(/outcome=failure/))
-          .and(sinon.match(/reason=db_write/))
+          .and(sinon.match(/reason=opportunity_write_failed/))
           .and(sinon.match(/errorName=Error/))
-          .and(sinon.match(/audit=youtube/)),
+          .and(sinon.match(/audit=youtube/))
+          .and(sinon.match(/writeAction=write_failed/)),
       );
     });
   });

@@ -14,7 +14,7 @@ import { Opportunity as Oppty, Audit } from '@adobe/spacecat-shared-data-access'
 import { DATA_SOURCES, OFFSITE_AUDIT_TYPES } from './constants.js';
 import { checkGoogleConnection } from './opportunity-utils.js';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
+  createOffsiteLogger, errorField, AUDIT, PEER, OUTCOME,
 } from '../utils/offsite-logging.js';
 
 // This module is shared by all three offsite guidance handlers, so it does not know the audit
@@ -112,11 +112,13 @@ export async function persistOffsiteOpportunity(
         data: mappedOpportunity.data,
         ...(mappedOpportunity.status ? { status: mappedOpportunity.status } : {}),
       });
-      olog.success('opportunity_persist', `Created ${auditType} opportunity`, {
+      olog.success('audit_persistence_evergreen_opportunity_write', 'Created opportunity', {
         peer: PEER.POSTGRES,
         direction: 'outbound',
         opportunityId: created.getId(),
+        auditType,
         status: mappedOpportunity.status,
+        writeAction: 'created',
       });
       return created;
     }
@@ -126,20 +128,23 @@ export async function persistOffsiteOpportunity(
     opportunityToUpdate.setUpdatedBy('system');
     await opportunityToUpdate.save();
 
-    olog.success('opportunity_persist', `Refreshed evergreen ${auditType} opportunity`, {
+    olog.success('audit_persistence_evergreen_opportunity_write', 'Refreshed evergreen opportunity', {
       peer: PEER.POSTGRES,
       direction: 'outbound',
       opportunityId: opportunityToUpdate.getId(),
+      auditType,
       status: mappedOpportunity.status,
+      writeAction: 'refreshed',
     });
     return opportunityToUpdate;
   } catch (error) {
     // The sharpest edge: a silent DB write failure here strands the run. Log loudly and
     // structured, THEN rethrow unchanged so the caller's error handling is preserved.
-    olog.failure('opportunity_persist', `Failed to persist opportunity for siteId ${auditData.siteId}, auditId ${auditData.id}`, {
+    olog.failure('audit_persistence_evergreen_opportunity_write', 'Failed to persist opportunity', {
       peer: PEER.POSTGRES,
       direction: 'outbound',
-      reason: 'db_write',
+      reason: 'opportunity_write_failed',
+      writeAction: 'write_failed',
       ...errorField(error),
     });
     throw error;
@@ -168,11 +173,15 @@ export async function resolveEvergreenOffsiteOpportunity({
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.NEW);
   } catch (e) {
-    olog.failure('opportunity_resolve', `Failed to fetch opportunities for siteId ${siteId}`, {
+    olog.failure('audit_persistence_evergreen_opportunity_read', 'Failed to fetch opportunities', {
       peer: PEER.POSTGRES, direction: 'inbound', reason: 'lookup', ...errorField(e),
     });
     throw e;
   }
+
+  olog.success('audit_persistence_evergreen_opportunity_read', 'Fetched opportunities', {
+    peer: PEER.POSTGRES, direction: 'inbound', count: (opportunities || []).length,
+  });
 
   const matchingOpportunities = (opportunities || [])
     .filter((opportunity) => opportunity.getType() === auditType);
@@ -187,8 +196,8 @@ export async function resolveEvergreenOffsiteOpportunity({
     (a, b) => new Date(b.getUpdatedAt()) - new Date(a.getUpdatedAt()),
   );
 
-  olog.success('opportunity_retire', `Found ${matchingOpportunities.length} NEW ${auditType} opportunities for siteId ${siteId}; retiring ${duplicates.length} duplicate(s), keeping ${evergreenOpportunity.getId()} as the evergreen opportunity`, {
-    peer: PEER.POSTGRES, direction: 'outbound', retired: duplicates.length, kept: evergreenOpportunity.getId(),
+  olog.warn('audit_persistence_opportunity_retired', 'Duplicate opportunities found; retiring extras', {
+    peer: PEER.POSTGRES, direction: 'outbound', found: matchingOpportunities.length, retired: duplicates.length, kept: evergreenOpportunity.getId(), outcome: OUTCOME.DEGRADED,
   });
 
   duplicates.forEach((duplicate) => {

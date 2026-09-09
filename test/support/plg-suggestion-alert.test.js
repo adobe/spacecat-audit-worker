@@ -37,10 +37,16 @@ describe('sendLowSuggestionCountAlert', () => {
     }),
   });
 
-  const makeSite = (enrollments) => ({
+  const makeSite = (enrollments, organizationId = 'org-uuid-789') => ({
     getId: () => 'site-uuid-123',
     getBaseURL: () => 'https://example.com',
     getSiteEnrollments: sinon.stub().resolves(enrollments),
+    getOrganizationId: () => organizationId,
+  });
+
+  const makeOrganization = (imsOrgId = 'ims-org-abc', name = 'Acme Corp') => ({
+    getImsOrgId: () => imsOrgId,
+    getName: () => name,
   });
 
   const makeContext = (overrides = {}) => ({
@@ -52,6 +58,12 @@ describe('sendLowSuggestionCountAlert', () => {
     log: {
       warn: sandbox.stub(),
       error: sandbox.stub(),
+    },
+    dataAccess: {
+      Organization: {
+        findById: sandbox.stub().resolves(makeOrganization()),
+      },
+      ...overrides.dataAccess,
     },
   });
 
@@ -260,5 +272,74 @@ describe('sendLowSuggestionCountAlert', () => {
     const text = JSON.stringify(getPostedBody().blocks);
     expect(text).to.include('&lt;script&gt;bad&lt;/script&gt;');
     expect(text).to.not.include('<script>');
+  });
+
+  it('includes IMS org name and ASO link when organization is resolved', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')]);
+    const context = makeContext();
+
+    await sendLowSuggestionCountAlert(site, 'cwv', 0, context);
+
+    expect(fetchStub).to.have.been.calledOnce;
+    expect(context.dataAccess.Organization.findById).to.have.been.calledWith('org-uuid-789');
+    const text = JSON.stringify(getPostedBody().blocks);
+    expect(text).to.include('IMS Org Name');
+    expect(text).to.include('Acme Corp');
+    expect(text).to.include('ims-org-abc');
+    expect(text).to.include('ASO Link');
+    expect(text).to.include('organizationId=org-uuid-789');
+    expect(text).to.include('/sites-optimizer/sites/site-uuid-123');
+  });
+
+  it('URL-encodes organizationId and siteId in the ASO link', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')], 'org&id=weird#value');
+    const weirdSite = { ...site, getId: () => 'site&id=weird#value' };
+
+    await sendLowSuggestionCountAlert(weirdSite, 'cwv', 0, makeContext());
+
+    expect(fetchStub).to.have.been.calledOnce;
+    const text = JSON.stringify(getPostedBody().blocks);
+    expect(text).to.include('organizationId=org%26id%3Dweird%23value');
+    expect(text).to.include('/sites-optimizer/sites/site%26id%3Dweird%23value');
+    expect(text).to.not.include('org&id=weird#value');
+  });
+
+  it('omits org/ASO lines when the site has no organizationId', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')], null);
+    await sendLowSuggestionCountAlert(site, 'cwv', 0, makeContext());
+
+    expect(fetchStub).to.have.been.calledOnce;
+    const text = JSON.stringify(getPostedBody().blocks);
+    expect(text).to.not.include('IMS Org Name');
+    expect(text).to.not.include('ASO Link');
+  });
+
+  it('omits IMS org name/id but still shows ASO link when organization lookup resolves null', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')]);
+    const context = makeContext({
+      dataAccess: { Organization: { findById: sandbox.stub().resolves(null) } },
+    });
+
+    await sendLowSuggestionCountAlert(site, 'cwv', 0, context);
+
+    expect(fetchStub).to.have.been.calledOnce;
+    const text = JSON.stringify(getPostedBody().blocks);
+    expect(text).to.not.include('IMS Org Name');
+    expect(text).to.not.include('IMS Org ID');
+    expect(text).to.include('ASO Link');
+  });
+
+  it('logs a warning and omits org lines when organization lookup throws', async () => {
+    const site = makeSite([makeEnrollment('ASO', 'PLG')]);
+    const context = makeContext({
+      dataAccess: { Organization: { findById: sandbox.stub().rejects(new Error('db down')) } },
+    });
+
+    await sendLowSuggestionCountAlert(site, 'cwv', 0, context);
+
+    expect(fetchStub).to.have.been.calledOnce;
+    const text = JSON.stringify(getPostedBody().blocks);
+    expect(text).to.not.include('IMS Org Name');
+    expect(context.log.warn).to.have.been.calledWithMatch('Failed to look up organization for low suggestion count alert');
   });
 });

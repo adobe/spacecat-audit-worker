@@ -263,6 +263,7 @@ describe('Commerce Product Enrichments Handler', () => {
         waitTimeoutForMetaTags: 5000,
         screenshotTypes: [],
         expandShadowDOM: false,
+        waitUntil: 'domcontentloaded',
       },
       customHeaders: {
         'User-Agent': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; gptbot/1.2; +https://openai.com/gptbot',
@@ -516,6 +517,7 @@ describe('Commerce Product Enrichments Handler', () => {
         waitTimeoutForMetaTags: 5000,
         screenshotTypes: [],
         expandShadowDOM: false,
+        waitUntil: 'domcontentloaded',
       },
       customHeaders: {
         'User-Agent': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; gptbot/1.2; +https://openai.com/gptbot',

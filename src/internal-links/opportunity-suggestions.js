@@ -13,11 +13,12 @@
 import { pickUrlsFromSerpResults } from '../support/bright-data-serp-urls.js';
 import { createInternalLinksConfigResolver } from './config.js';
 import { createInternalLinksStepLogger } from './logging.js';
-import { warnOnInvalidSuggestionData } from '../utils/data-access.js';
+import { warnOnInvalidSuggestionData, resolveOpportunityIfNoIssues } from '../utils/data-access.js';
 import { getMergedAuditInputUrls } from '../utils/audit-input-urls.js';
 import { loadScrapeResultPaths } from './batch-state.js';
 import { normalizeComparableUrl } from './link-key.js';
 import { isWithinAuditScope } from './subpath-filter.js';
+import { isBlackboardEngine } from '../common/delivery-engine.js';
 
 /**
  * Builds the crawl-coverage set for this run: the normalized set of source pages
@@ -107,6 +108,17 @@ export function createOpportunityAndSuggestionsStep({
     const reportedLinks = filteredBrokenInternalLinks.length > maxBrokenLinksReported
       ? filteredBrokenInternalLinks.slice(0, maxBrokenLinksReported)
       : filteredBrokenInternalLinks;
+
+    // Per-site V1 -> V2 cutover (Spec 009-04 / ADR-0022): when the BROKEN_INTERNAL_LINKS
+    // opportunity is owned by Mystique's blackboard producer cascade
+    // (deliveryConfig.brokenInternalLinksEngine=blackboard), bow out before creating the
+    // opportunity or dispatching to Mystique, and resolve any pre-existing legacy opportunity
+    // so the flip strands no active rows.
+    if (isBlackboardEngine(site, 'brokenInternalLinksEngine')) {
+      log.info('Bowing out — deliveryConfig.brokenInternalLinksEngine=blackboard (Mystique-owned); resolving any legacy opportunity, skipping create/dispatch');
+      await resolveOpportunityIfNoIssues(site.getId(), auditType, dataAccess, log);
+      return { status: 'complete', reportedBrokenLinks: reportedLinks };
+    }
 
     if (!success) {
       log.info('Audit failed, skipping suggestions generation');

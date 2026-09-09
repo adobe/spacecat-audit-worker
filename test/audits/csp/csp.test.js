@@ -310,6 +310,34 @@ describe('CSP Post-processor', () => {
     ], Suggestion.STATUSES.OUTDATED);
   });
 
+  it('should NOT overwrite REJECTED/APPROVED/IN_PROGRESS suggestions when resolving (SITES-49908)', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [];
+
+    sinon.replace(opportunityStub, 'allBySiteIdAndStatus', sinon.stub().resolves([cspOpportunity]));
+    const newSuggestion = { getStatus: () => Suggestion.STATUSES.NEW };
+    const rejectedSuggestion = { getStatus: () => Suggestion.STATUSES.REJECTED };
+    const approvedSuggestion = { getStatus: () => Suggestion.STATUSES.APPROVED };
+    const inProgressSuggestion = { getStatus: () => Suggestion.STATUSES.IN_PROGRESS };
+    sinon.replace(cspOpportunity, 'getSuggestions', sinon.stub().resolves([
+      newSuggestion,
+      rejectedSuggestion,
+      approvedSuggestion,
+      inProgressSuggestion,
+    ]));
+
+    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+    assertAuditData(cspAuditData);
+
+    expect(cspOpportunity.setStatus).to.have.been.calledWith(Opportunity.STATUSES.RESOLVED);
+    // Only the NEW suggestion is aged to OUTDATED; reviewer-acted (REJECTED/APPROVED)
+    // and mid-remediation (IN_PROGRESS) are protected — never overwritten.
+    expect(suggestionStub.bulkUpdateStatus).to.have.been.calledWith(
+      [newSuggestion],
+      Suggestion.STATUSES.OUTDATED,
+    );
+  });
+
   it('should resolve existing opportunity if no CSP findings in lighthouse report - error case 1', async () => {
     sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
     auditData.auditResult.csp = [];

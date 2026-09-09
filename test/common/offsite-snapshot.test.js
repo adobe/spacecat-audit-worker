@@ -146,18 +146,27 @@ describe('offsite-snapshot', () => {
       });
 
       expect(result).to.be.null;
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/event=audit_persistence_snapshot_opportunity_read/)
+          .and(sinon.match(/outcome=success/))
+          .and(sinon.match(/count=0/)),
+      );
     });
 
-    it('logs and rethrows lookup failures', async () => {
+    it('logs and returns null (treats as no existing snapshot) on lookup failures', async () => {
       const dataAccess = {
         Opportunity: { allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')) },
       };
 
-      await expect(findSnapshotByTriggerAuditId({
+      const result = await findSnapshotByTriggerAuditId({
         dataAccess, siteId: 'site-1', auditType: 'cited-analysis', triggerAuditId: 'audit-1', log,
-      })).to.be.rejectedWith('DB down');
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to look up existing auditType cited-analysis snapshots/),
+      });
+
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to look up existing snapshots/)
+          .and(sinon.match(/auditType=cited-analysis/))
+          .and(sinon.match(/outcome=degraded/)),
       );
     });
 
@@ -231,11 +240,12 @@ describe('offsite-snapshot', () => {
         Opportunity: { allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')) },
       };
 
-      await expect(findSnapshotByTriggerAuditId({
+      const result = await findSnapshotByTriggerAuditId({
         dataAccess, siteId: 'site-1', auditType: 'not-a-real-audit', triggerAuditId: 'audit-1', log,
-      })).to.be.rejectedWith('DB down');
+      });
 
-      expect(log.error).to.have.been.calledWith(sinon.match(/audit=unknown/));
+      expect(result).to.be.null;
+      expect(log.warn).to.have.been.calledWith(sinon.match(/audit=unknown/));
     });
   });
 
@@ -283,7 +293,7 @@ describe('offsite-snapshot', () => {
         tags: ['custom-tag'],
         data: { qa: 'suppressed' },
       });
-      expect(log.info).to.have.been.calledWith(sinon.match(/Reusing suppressed-refresh snapshot snapshot-1/));
+      expect(log.info).to.have.been.calledWith(sinon.match(/Reusing suppressed-refresh snapshot/).and(sinon.match(/snapshotId=snapshot-1/)));
     });
 
     it('builds a managed snapshot without lookup when triggerAuditId is missing', async () => {
@@ -314,7 +324,11 @@ describe('offsite-snapshot', () => {
         opportunityToUpdate: null,
       });
       expect(allBySiteIdAndStatus).to.not.have.been.called;
-      expect(log.warn).to.have.been.calledWith(sinon.match(/idempotency.*traceability/i));
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/idempotency.*traceability/i)
+          .and(sinon.match(/snapshotAction=creating/))
+          .and(sinon.match(/outcome=degraded/)),
+      );
       expect(log.info).to.have.been.calledWith(sinon.match(/Preparing new suppressed-refresh snapshot/));
     });
 
@@ -365,7 +379,9 @@ describe('offsite-snapshot', () => {
       expect(result).to.deep.equal({ opportunityData, opportunityToUpdate: null });
       expect(lookup).to.not.have.been.called;
       expect(create).to.not.have.been.called;
-      expect(log.debug).to.have.been.calledWith(sinon.match(/no superseded-refresh snapshot is needed/i));
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/no superseded-refresh snapshot is needed/i).and(sinon.match(/outcome=skip/)),
+      );
     });
 
     it('reuses an existing superseded snapshot and targets the evergreen refresh', async () => {
@@ -394,7 +410,7 @@ describe('offsite-snapshot', () => {
         opportunityToUpdate: evergreenOpportunity,
       });
       expect(create).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith(sinon.match(/Reusing superseded-refresh snapshot snapshot-1/));
+      expect(log.info).to.have.been.calledWith(sinon.match(/Reusing superseded-refresh snapshot/).and(sinon.match(/snapshotId=snapshot-1/)));
     });
 
     it('creates an IGNORED managed snapshot preserving fields, scope, and data', async () => {
@@ -451,7 +467,9 @@ describe('offsite-snapshot', () => {
         },
       });
       expect(log.info).to.have.been.calledWith(
-        sinon.match(/Created superseded-refresh snapshot snapshot-1 from evergreen opportunity evergreen-1/),
+        sinon.match(/Created superseded-refresh snapshot from evergreen opportunity/)
+          .and(sinon.match(/opportunityId=snapshot-1/))
+          .and(sinon.match(/evergreenOpportunityId=evergreen-1/)),
       );
     });
 
@@ -648,10 +666,16 @@ describe('offsite-snapshot', () => {
         log,
       });
 
-      expect(log.error).to.have.been.calledWith(sinon.match(/1 suggestion\(s\) failed to copy/));
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Suggestions failed to copy onto snapshot/)
+          .and(sinon.match(/failed=1/))
+          .and(sinon.match(/reason=suggestions_copy_failed/))
+          .and(sinon.match(/snapshotAction=created/))
+          .and(sinon.match(/outcome=degraded/)),
+      );
     });
 
-    it('deletes the orphan snapshot and rethrows when addSuggestions fully rejects', async () => {
+    it('deletes the orphan snapshot and returns normally (does not abort the evergreen write) when addSuggestions fully rejects', async () => {
       const addSuggestionsError = new Error('DB write failed');
       const remove = sandbox.stub().resolves();
       const create = sandbox.stub().resolves({
@@ -669,24 +693,31 @@ describe('offsite-snapshot', () => {
         getSkipDetail: () => undefined,
       };
       const evergreenOpportunity = makeEvergreenOpportunity({ suggestions: [suggestion] });
+      const opportunityData = {};
 
-      await expect(prepareSupersededRunSnapshot({
+      const result = await prepareSupersededRunSnapshot({
         dataAccess: {
           Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]), create },
         },
         siteId: 'site-1',
         auditType: 'cited-analysis',
         triggerAuditId: 'audit-1',
-        opportunityData: {},
+        opportunityData,
         evergreenOpportunity,
         log,
-      })).to.be.rejectedWith('DB write failed');
+      });
 
+      expect(result).to.deep.equal({ opportunityData, opportunityToUpdate: evergreenOpportunity });
       expect(remove).to.have.been.calledOnce;
-      expect(log.error).to.have.been.calledWith(sinon.match(/addSuggestions threw.*deleting orphan/i));
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/addSuggestions threw.*deleting orphan/i)
+          .and(sinon.match(/reason=suggestions_copy_failed/))
+          .and(sinon.match(/snapshotAction=created/))
+          .and(sinon.match(/outcome=degraded/)),
+      );
     });
 
-    it('still rethrows the original addSuggestions error when orphan removal also fails', async () => {
+    it('does not rethrow the original addSuggestions error when orphan removal also fails; still returns normally', async () => {
       const addSuggestionsError = new Error('DB write failed');
       const remove = sandbox.stub().rejects(new Error('delete also failed'));
       const create = sandbox.stub().resolves({
@@ -704,21 +735,28 @@ describe('offsite-snapshot', () => {
         getSkipDetail: () => undefined,
       };
       const evergreenOpportunity = makeEvergreenOpportunity({ suggestions: [suggestion] });
+      const opportunityData = {};
 
-      await expect(prepareSupersededRunSnapshot({
+      const result = await prepareSupersededRunSnapshot({
         dataAccess: {
           Opportunity: { allBySiteIdAndStatus: sandbox.stub().resolves([]), create },
         },
         siteId: 'site-1',
         auditType: 'cited-analysis',
         triggerAuditId: 'audit-1',
-        opportunityData: {},
+        opportunityData,
         evergreenOpportunity,
         log,
-      })).to.be.rejectedWith('DB write failed');
+      });
 
+      expect(result).to.deep.equal({ opportunityData, opportunityToUpdate: evergreenOpportunity });
       expect(remove).to.have.been.calledOnce;
-      expect(log.error).to.have.been.calledWith(sinon.match(/Failed to delete orphan snapshot/i));
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to delete orphan snapshot/i)
+          .and(sinon.match(/reason=orphan_cleanup_failed/))
+          .and(sinon.match(/snapshotAction=created/))
+          .and(sinon.match(/outcome=degraded/)),
+      );
     });
 
     it('creates a managed snapshot without trigger metadata when auditId is missing', async () => {
@@ -743,23 +781,44 @@ describe('offsite-snapshot', () => {
         evergreenOpportunityId: 'evergreen-1',
         kind: SNAPSHOT_KINDS.SUPERSEDED_REFRESH,
       });
-      expect(log.warn).to.have.been.calledWith(sinon.match(/idempotency.*traceability/i));
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/idempotency.*traceability/i)
+          .and(sinon.match(/snapshotAction=creating/))
+          .and(sinon.match(/outcome=degraded/)),
+      );
     });
 
-    it('propagates idempotency lookup failures', async () => {
-      await expect(prepareSupersededRunSnapshot({
+    it('proceeds to create a new snapshot when the idempotency lookup fails', async () => {
+      const evergreenOpportunity = makeEvergreenOpportunity();
+      const create = sandbox.stub().resolves({
+        getId: () => 'snapshot-1',
+        addSuggestions: sandbox.stub(),
+      });
+      const opportunityData = {};
+
+      const result = await prepareSupersededRunSnapshot({
         dataAccess: {
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().rejects(new Error('DB down')),
+            create,
           },
         },
         siteId: 'site-1',
         auditType: 'cited-analysis',
         triggerAuditId: 'audit-1',
-        opportunityData: {},
-        evergreenOpportunity: { getId: () => 'evergreen-1' },
+        opportunityData,
+        evergreenOpportunity,
         log,
-      })).to.be.rejectedWith('DB down');
+      });
+
+      expect(result).to.deep.equal({ opportunityData, opportunityToUpdate: evergreenOpportunity });
+      expect(create).to.have.been.calledOnce;
+      expect(log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to look up existing snapshots/).and(sinon.match(/outcome=degraded/)),
+      );
+      expect(log.info).to.have.been.calledWith(
+        sinon.match(/Created superseded-refresh snapshot from evergreen opportunity/),
+      );
     });
 
     it('emits audit=unknown when the auditType is not in the slug map (defensive fallback)', async () => {

@@ -12,7 +12,7 @@
 
 import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 import {
-  createOffsiteLogger, errorField, AUDIT, PEER,
+  createOffsiteLogger, errorField, AUDIT, PEER, OUTCOME,
 } from '../utils/offsite-logging.js';
 
 export const SNAPSHOT_TAG = 'offsite-snapshot';
@@ -39,7 +39,10 @@ export function isOffsiteSnapshot(opportunity, auditType) {
 
 /**
  * Finds a snapshot by (siteId, auditType, triggerAuditId).
- * Lookup failures propagate to avoid duplicate creation.
+ * Lookup failures are logged and treated as "no existing snapshot found" so the caller
+ * proceeds to create a new one. Snapshots are a secondary backup mechanism (not
+ * customer-visible active state), so this accepts a small risk of an occasional duplicate
+ * snapshot on a lookup-failure race rather than aborting the whole persistence flow.
  *
  * NOTE: This fetches ALL IGNORED opportunities for a site from the DB and filters in-memory.
  * Since every refresh creates a snapshot, the working set grows over time (one per refresh across
@@ -57,11 +60,15 @@ export async function findSnapshotByTriggerAuditId({
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(siteId, Oppty.STATUSES.IGNORED);
   } catch (e) {
-    olog.failure('snapshot_lookup', `Failed to look up existing auditType ${auditType} snapshots`, {
-      peer: PEER.POSTGRES, direction: 'inbound', ...errorField(e),
+    olog.warn('audit_persistence_snapshot_opportunity_read', 'Failed to look up existing snapshots', {
+      peer: PEER.POSTGRES, direction: 'inbound', auditType, outcome: OUTCOME.DEGRADED, ...errorField(e),
     });
-    throw e;
+    return null;
   }
+
+  olog.success('audit_persistence_snapshot_opportunity_read', 'Looked up existing snapshots', {
+    peer: PEER.POSTGRES, direction: 'inbound', auditType, count: (opportunities || []).length,
+  });
 
   return (opportunities || []).find((opportunity) => {
     const snapshotMetadata = opportunity.getData()?.snapshot;
@@ -121,8 +128,10 @@ export async function prepareSuppressedRunSnapshot({
   };
 
   if (!triggerAuditId) {
-    olog.warn('snapshot_prepare', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
+    olog.warn('audit_persistence_snapshot_opportunity_write', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
       reason: 'missing_audit_id',
+      snapshotAction: 'creating',
+      outcome: OUTCOME.DEGRADED,
     });
   }
 
@@ -135,14 +144,16 @@ export async function prepareSuppressedRunSnapshot({
   if (existingSuppressedRunSnapshot) {
     // triggerAuditId is provably truthy here: existingSuppressedRunSnapshot can only be set
     // by the lookup above, which only runs when triggerAuditId is truthy.
-    olog.success('snapshot_prepare', `Reusing suppressed-refresh snapshot ${existingSuppressedRunSnapshot.getId()}`, {
+    olog.success('audit_persistence_snapshot_opportunity_write', 'Reusing suppressed-refresh snapshot', {
       peer: PEER.POSTGRES,
       snapshotId: existingSuppressedRunSnapshot.getId(),
       triggerAuditId,
+      snapshotAction: 'reused',
     });
   } else {
-    olog.start('snapshot_prepare', 'Preparing new suppressed-refresh snapshot', {
+    olog.start('audit_persistence_snapshot_opportunity_write', 'Preparing new suppressed-refresh snapshot', {
       triggerAuditId: triggerAuditId || undefined,
+      snapshotAction: 'creating',
     });
   }
 
@@ -168,13 +179,17 @@ export async function prepareSupersededRunSnapshot({
 
   if (!evergreenOpportunity) {
     // First surfaced run: there is no previous evergreen state to preserve.
-    olog.debug('snapshot_prepare', 'No evergreen opportunity exists; no superseded-refresh snapshot is needed');
+    olog.skip('audit_persistence_snapshot_opportunity_write', 'No evergreen opportunity exists; no superseded-refresh snapshot is needed', {
+      snapshotAction: 'skipped',
+    });
     return { opportunityData, opportunityToUpdate: null };
   }
 
   if (!triggerAuditId) {
-    olog.warn('snapshot_prepare', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
+    olog.warn('audit_persistence_snapshot_opportunity_write', 'Missing auditId; snapshot idempotency and traceability are unavailable', {
       reason: 'missing_audit_id',
+      snapshotAction: 'creating',
+      outcome: OUTCOME.DEGRADED,
     });
   }
 
@@ -187,10 +202,11 @@ export async function prepareSupersededRunSnapshot({
   if (existingSupersededRunSnapshot) {
     // triggerAuditId is provably truthy here: existingSupersededRunSnapshot can only be set
     // by the lookup above, which only runs when triggerAuditId is truthy.
-    olog.success('snapshot_prepare', `Reusing superseded-refresh snapshot ${existingSupersededRunSnapshot.getId()}`, {
+    olog.success('audit_persistence_snapshot_opportunity_write', 'Reusing superseded-refresh snapshot', {
       peer: PEER.POSTGRES,
       snapshotId: existingSupersededRunSnapshot.getId(),
       triggerAuditId,
+      snapshotAction: 'reused',
     });
   }
 
@@ -235,31 +251,51 @@ export async function prepareSupersededRunSnapshot({
           ...(suggestion.getSkipDetail() ? { skipDetail: suggestion.getSkipDetail() } : {}),
         })));
         if (errorItems?.length > 0) {
-          olog.failure('snapshot_copy_suggestions', `${errorItems.length} suggestion(s) failed to copy onto snapshot ${snapshot.getId()}`, {
-            peer: PEER.POSTGRES, opportunityId: snapshot.getId(),
+          olog.warn('audit_persistence_snapshot_opportunity_write', 'Suggestions failed to copy onto snapshot', {
+            peer: PEER.POSTGRES,
+            opportunityId: snapshot.getId(),
+            failed: errorItems.length,
+            reason: 'suggestions_copy_failed',
+            snapshotAction: 'created',
+            outcome: OUTCOME.DEGRADED,
           });
         }
       } catch (err) {
         // addSuggestions threw entirely — the snapshot record already exists but has no
         // suggestions. Delete the orphan so the next delivery recreates the snapshot cleanly.
-        olog.failure('snapshot_copy_suggestions', `addSuggestions threw for snapshot ${snapshot.getId()}; deleting orphan and rethrowing`, {
-          peer: PEER.POSTGRES, opportunityId: snapshot.getId(), ...errorField(err),
+        // The snapshot is a secondary backup mechanism, so this failure is logged and
+        // swallowed rather than rethrown — it must not abort the real evergreen opportunity
+        // write that follows.
+        olog.warn('audit_persistence_snapshot_opportunity_write', 'addSuggestions threw for snapshot; deleting orphan', {
+          peer: PEER.POSTGRES,
+          opportunityId: snapshot.getId(),
+          reason: 'suggestions_copy_failed',
+          snapshotAction: 'created',
+          outcome: OUTCOME.DEGRADED,
+          ...errorField(err),
         });
         try {
           await snapshot.remove();
         } catch (removeErr) {
-          olog.failure('snapshot_cleanup', `Failed to delete orphan snapshot ${snapshot.getId()}`, {
-            peer: PEER.POSTGRES, opportunityId: snapshot.getId(), ...errorField(removeErr),
+          olog.warn('audit_persistence_snapshot_opportunity_write', 'Failed to delete orphan snapshot', {
+            peer: PEER.POSTGRES,
+            opportunityId: snapshot.getId(),
+            reason: 'orphan_cleanup_failed',
+            snapshotAction: 'created',
+            outcome: OUTCOME.DEGRADED,
+            ...errorField(removeErr),
           });
         }
-        throw err;
+        return { opportunityData, opportunityToUpdate: evergreenOpportunity };
       }
     }
 
-    olog.success('snapshot_prepare', `Created superseded-refresh snapshot ${snapshot.getId()} from evergreen opportunity ${evergreenOpportunity.getId()}`, {
+    olog.success('audit_persistence_snapshot_opportunity_write', 'Created superseded-refresh snapshot from evergreen opportunity', {
       peer: PEER.POSTGRES,
       opportunityId: snapshot.getId(),
+      evergreenOpportunityId: evergreenOpportunity.getId(),
       triggerAuditId: triggerAuditId || undefined,
+      snapshotAction: 'created',
     });
   }
 
