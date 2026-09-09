@@ -618,6 +618,9 @@ export function buildUserAgentFilter() {
     claude,
     mistralai,
     amazon,
+    parallel,
+    manus,
+    keenable,
   } = PROVIDER_USER_AGENT_PATTERNS;
 
   return `(
@@ -626,7 +629,10 @@ export function buildUserAgentFilter() {
     REGEXP_LIKE(user_agent, '${googleai}') OR
     REGEXP_LIKE(user_agent, '${claude}') OR
     REGEXP_LIKE(user_agent, '${mistralai}') OR
-    REGEXP_LIKE(user_agent, '${amazon}')
+    REGEXP_LIKE(user_agent, '${amazon}') OR
+    REGEXP_LIKE(user_agent, '${parallel}') OR
+    REGEXP_LIKE(user_agent, '${manus}') OR
+    REGEXP_LIKE(user_agent, '${keenable}')
   ) AND ${buildAdobeInternalUaExclusion()}`;
 }
 /* c8 ignore end */
