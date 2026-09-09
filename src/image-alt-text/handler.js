@@ -422,7 +422,9 @@ export async function processAltTextWithMystique(context) {
 
       // Filter suggestions with URLs not in current pageUrls
       const pageUrlSet = new Set(pageUrls);
-      const IGNORED_STATUSES = ['SKIPPED', 'FIXED', 'OUTDATED'];
+      // REJECTED preserved alongside SKIPPED — both are operator decisions
+      // whose updatedAt must not be bumped by subsequent audit runs (SITES-44646).
+      const IGNORED_STATUSES = ['SKIPPED', 'REJECTED', 'FIXED', 'OUTDATED'];
 
       const suggestionsToOutdate = existingSuggestions.filter((suggestion) => {
         const rec = suggestion.getData()?.recommendations?.[0];
