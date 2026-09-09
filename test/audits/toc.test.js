@@ -26,6 +26,7 @@ import {
   TOC_EXCLUDED_HEADING_PHRASES,
   normalizeHeadingTextForMatch,
   isExcludedConsentHeadingText,
+  isTimeSensitivePromoHeadingText,
   isHeadingInExcludedContainer,
   getSurroundingText,
   getFollowingStructure,
@@ -3644,6 +3645,53 @@ describe('TOC (Table of Contents) Audit', () => {
       });
     });
 
+    describe('isTimeSensitivePromoHeadingText', () => {
+      it('returns true for percentage-off headings', () => {
+        expect(isTimeSensitivePromoHeadingText('25% Off Everything')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Save 30% off sitewide')).to.equal(true);
+      });
+      it('returns true for dollar-off / savings headings', () => {
+        expect(isTimeSensitivePromoHeadingText('$50 Off Your First Order')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Save up to $200')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Save $12.99 today')).to.equal(true);
+      });
+      it('returns true for named sale events', () => {
+        expect(isTimeSensitivePromoHeadingText('Flash Sale Starts Now')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Clearance Sale')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Black Friday Deals')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Cyber Monday Sale')).to.equal(true);
+      });
+      it('returns true for urgency/expiry phrasing', () => {
+        expect(isTimeSensitivePromoHeadingText('Limited Time Offer')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Sale Ends Sunday')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Offer Expires Soon')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('While Supplies Last')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Today Only')).to.equal(true);
+      });
+      it('returns true for promo/coupon code headings', () => {
+        expect(isTimeSensitivePromoHeadingText('Use Promo Code SAVE20')).to.equal(true);
+        expect(isTimeSensitivePromoHeadingText('Enter Discount Code')).to.equal(true);
+      });
+      it('is case-insensitive', () => {
+        expect(isTimeSensitivePromoHeadingText('LIMITED TIME OFFER')).to.equal(true);
+      });
+      it('does NOT exclude bare evergreen pricing/sale headings', () => {
+        expect(isTimeSensitivePromoHeadingText('Pricing')).to.equal(false);
+        expect(isTimeSensitivePromoHeadingText('Our Pricing Plans')).to.equal(false);
+        expect(isTimeSensitivePromoHeadingText('Homes for Sale')).to.equal(false);
+        expect(isTimeSensitivePromoHeadingText('Our Offers')).to.equal(false);
+        expect(isTimeSensitivePromoHeadingText('Special Offers')).to.equal(false);
+      });
+      it('returns false for non-promotional content', () => {
+        expect(isTimeSensitivePromoHeadingText('Product details')).to.equal(false);
+        expect(isTimeSensitivePromoHeadingText('Section 1')).to.equal(false);
+      });
+      it('returns false for empty or whitespace', () => {
+        expect(isTimeSensitivePromoHeadingText('')).to.equal(false);
+        expect(isTimeSensitivePromoHeadingText('   ')).to.equal(false);
+      });
+    });
+
     describe('isHeadingInExcludedContainer', () => {
       it('returns false when heading or $ is missing', () => {
         const $ = cheerioLoad('<h1>Title</h1>');
@@ -3917,6 +3965,31 @@ describe('TOC (Table of Contents) Audit', () => {
         const result = extractTocData($, stubGetHeadingSelector);
         expect(result).to.have.lengthOf(2);
         expect(result.map((r) => r.text)).to.deep.equal(['Welcome to {Brand}', '{TITLE} and more']);
+      });
+      it('excludes time-sensitive promotional headings (price drops, flash sales, limited-time offers)', () => {
+        const $ = cheerioLoad(
+          '<body><main>'
+          + '<h1 id="title">Fall Collection</h1>'
+          + '<h2 id="promo1">25% Off Everything</h2>'
+          + '<h2 id="promo2">Flash Sale Ends Tonight</h2>'
+          + '<h2 id="sec">Shipping &amp; Returns</h2>'
+          + '</main></body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(2);
+        expect(result.map((r) => r.text)).to.deep.equal(['Fall Collection', 'Shipping & Returns']);
+      });
+      it('keeps evergreen pricing/offer headings that are not time-sensitive', () => {
+        const $ = cheerioLoad(
+          '<body><main>'
+          + '<h1 id="title">Enterprise Plan</h1>'
+          + '<h2 id="pricing">Pricing</h2>'
+          + '<h2 id="offers">Our Offers</h2>'
+          + '</main></body>',
+        );
+        const result = extractTocData($, stubGetHeadingSelector);
+        expect(result).to.have.lengthOf(3);
+        expect(result.map((r) => r.text)).to.deep.equal(['Enterprise Plan', 'Pricing', 'Our Offers']);
       });
     });
 

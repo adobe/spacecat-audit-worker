@@ -77,6 +77,21 @@ export const TOC_EXCLUDED_HEADING_PHRASES = [
 ];
 
 /**
+ * Time-sensitive promotional headings (price drops, % off, flash sales, limited-time
+ * offers) go stale within days or hours and describe a merchandising banner, not a stable
+ * content section — a TOC (or an LLM citing it) pointing at "20% Off Everything" next month
+ * links to a dead promo. Unlike consent-widget copy above (a fixed, known set of vendor
+ * phrases), promo copy is open-ended — any percentage, dollar amount, or campaign name — so
+ * this is regex-driven instead of a literal phrase list.
+ *
+ * Deliberately does NOT match bare "Price", "Pricing", "Sale", "Offer", or "Deals" alone —
+ * those are legitimate evergreen headings (SaaS pricing pages, real-estate "Homes for Sale",
+ * a services page's "Our Offers"). Only matches when paired with a quantity/urgency signal
+ * (a %, a $ amount, a named sale event, or "ends/expires/today only/while supplies last").
+ */
+const TIME_SENSITIVE_PROMO_RE = /\d+%\s*off\b|\$\d+(?:\.\d{2})?\s*(?:off|savings?)\b|\bsave\s+(?:up\s+to\s+)?\$?\d+\b|\b(?:flash|clearance|blowout|closeout)\s+sale\b|\b(?:black\s*friday|cyber\s*monday)\s+(?:sale|deal)s?\b|\blimited[\s-]time\s+(?:offer|deal)\b|\b(?:offer|sale|deal|discount|promo)\s+(?:ends?|expires?)\b|\bwhile\s+supplies\s+last\b|\btoday\s+only\b|\b(?:promo|coupon|discount)\s+code\b/i;
+
+/**
  * Normalize heading text for phrase matching: trim, lowercase, collapse whitespace
  * @param {string} text - Raw heading text
  * @returns {string} Normalized text
@@ -101,6 +116,20 @@ export function isExcludedConsentHeadingText(text) {
   return TOC_EXCLUDED_HEADING_PHRASES.some(
     (phrase) => normalized.includes(phrase) || phrase.includes(normalized),
   );
+}
+
+/**
+ * Check if heading text reads as a time-sensitive promotional banner (price drop, % off,
+ * flash sale, limited-time offer) rather than stable page content.
+ * @param {string} text - Heading text
+ * @returns {boolean} True if text matches a time-sensitive promo pattern
+ */
+export function isTimeSensitivePromoHeadingText(text) {
+  const normalized = normalizeHeadingTextForMatch(text);
+  if (!normalized) {
+    return false;
+  }
+  return TIME_SENSITIVE_PROMO_RE.test(normalized);
 }
 
 /**
@@ -300,8 +329,9 @@ export function getScrapeJsonPath(url, siteId) {
 
 /**
  * Extract TOC data from document headings.
- * Excludes headings inside cookie/consent/privacy containers and headings whose
- * text matches consent phrases. When <main> exists, only headings inside
+ * Excludes headings inside cookie/consent/privacy containers, headings whose text matches
+ * consent phrases, and headings that read as time-sensitive promotional banners (price
+ * drops, % off, flash sales, limited-time offers). When <main> exists, only headings inside
  * body > main are considered.
  * @param {CheerioAPI} $ - The Cheerio instance
  * @param {Function} getHeadingSelectorFn - Function to get heading selector
@@ -327,6 +357,9 @@ export function extractTocData($, getHeadingSelectorFn) {
         return false;
       }
       if (isExcludedConsentHeadingText(text)) {
+        return false;
+      }
+      if (isTimeSensitivePromoHeadingText(text)) {
         return false;
       }
       const normalized = normalizeHeadingTextForMatch(text);
