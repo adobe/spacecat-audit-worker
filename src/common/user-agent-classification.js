@@ -188,13 +188,13 @@ export function inferProviderFromUserAgent(userAgent = '') {
   if (/(amzn|amazon)/.test(ua)) {
     return 'Amazon';
   }
-  if (/shap/.test(ua)) {
+  if (/shap(bot|-user)/.test(ua)) {
     return 'Parallel.ai';
   }
-  if (/manus/.test(ua)) {
+  if (/manus-user/.test(ua)) {
     return 'Manus';
   }
-  if (/keenable/.test(ua)) {
+  if (/keenable-user/.test(ua)) {
     return 'Keenable.ai';
   }
 

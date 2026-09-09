@@ -226,6 +226,11 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('ShapBot/0.1.0')).to.equal('Parallel.ai');
       expect(inferProviderFromUserAgent('Manus-User/1.0')).to.equal('Manus');
       expect(inferProviderFromUserAgent('Keenable-User/1.0')).to.equal('Keenable.ai');
+      // regexes must stay as specific as PROVIDER_USER_AGENT_PATTERNS -- not broad
+      // substring matches that would misattribute an unrelated bot's provider
+      expect(inferProviderFromUserAgent('reshape-bot/1.0')).to.equal('Other');
+      expect(inferProviderFromUserAgent('manuscript-crawler/1.0')).to.equal('Other');
+      expect(inferProviderFromUserAgent('unkeenable-thing/1.0')).to.equal('Other');
       expect(inferProviderFromUserAgent('something-unknown')).to.equal('Other');
     });
   });
