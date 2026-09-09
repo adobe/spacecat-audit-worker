@@ -12,7 +12,12 @@
 
 import { prependSchema, stripWWW } from '@adobe/spacecat-shared-utils';
 import { createInternalLinksStepLogger } from './logging.js';
-import { classifyStatusBucket, isLinkInaccessible } from './helpers.js';
+import {
+  classifyStatusBucket,
+  isLinkInaccessible,
+  identifyUncorroboratedBoilerplateLinks,
+} from './helpers.js';
+import { normalizeComparableUrl } from './link-key.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 import { isSharedInternalResource } from './scope-utils.js';
 
@@ -181,6 +186,7 @@ export function createFinalizeCrawlDetection({
 
     let finalLinks = rumLinks;
     let opportunityResult;
+    let suppressedBoilerplateLinks = null;
 
     try {
       if (!skipCrawlDetection) {
@@ -271,6 +277,34 @@ export function createFinalizeCrawlDetection({
         log.info('No crawl results to merge, using RUM-only results');
       }
 
+      // Always classify uncorroborated site-wide boilerplate broken links so we can record
+      // what would be suppressed (observability). Only actually remove them when the
+      // suppression flag is enabled for the site; otherwise this is shadow mode.
+      const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(finalLinks, {
+        rumProducedBrokenLinks: rumLinks.length > 0,
+        minSourcePages: config.getBoilerplateMinSourcePages(),
+      });
+      const suppressionApplied = config.getSuppressUncorroboratedBoilerplate();
+      if (suppressed.length > 0) {
+        const distinctTargets = [
+          ...new Set(suppressed.map((l) => normalizeComparableUrl(l.urlTo))),
+        ];
+        suppressedBoilerplateLinks = {
+          count: suppressed.length,
+          distinctTargets: distinctTargets.length,
+          targets: distinctTargets,
+          applied: suppressionApplied,
+        };
+        log.info(
+          `Uncorroborated boilerplate: ${suppressed.length} crawl-only suggestion(s) across `
+          + `${distinctTargets.length} site-wide target(s) (>= ${config.getBoilerplateMinSourcePages()} pages, `
+          + `no RUM/LinkChecker corroboration); applied=${suppressionApplied}`,
+        );
+        if (suppressionApplied) {
+          finalLinks = kept;
+        }
+      }
+
       const beforeStatusFilter = finalLinks.length;
       finalLinks = filterByStatusIfNeeded(finalLinks, config.getIncludedStatusBuckets());
       if (finalLinks.length < beforeStatusFilter) {
@@ -292,6 +326,7 @@ export function createFinalizeCrawlDetection({
       const updatedAuditResult = {
         ...auditResult,
         brokenInternalLinks: prioritizedLinks,
+        ...(suppressedBoilerplateLinks ? { suppressedBoilerplateLinks } : {}),
       };
 
       log.info('=====================================================');

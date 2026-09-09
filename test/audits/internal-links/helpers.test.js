@@ -21,6 +21,7 @@ import {
   CPC_DEFAULT_VALUE,
   isLinkInaccessible,
   calculatePriority,
+  identifyUncorroboratedBoilerplateLinks,
   classifyStatusBucket,
   STATUS_BUCKETS,
 } from '../../../src/internal-links/helpers.js';
@@ -603,6 +604,133 @@ describe('calculatePriority', () => {
     expect(result[0].trafficDomain).to.equal(1000);
     expect(result[1].trafficDomain).to.equal(500);
     expect(result[2].trafficDomain).to.equal(10);
+  });
+});
+
+describe('identifyUncorroboratedBoilerplateLinks', () => {
+  const base = 'https://www.example.com';
+  // N crawl-only links pointing at the same broken target from N distinct pages
+  const boilerplate = (target, pages, extra = {}) => Array.from({ length: pages }, (_, i) => ({
+    urlFrom: `${base}/page-${i}`,
+    urlTo: `${base}${target}`,
+    itemType: 'link',
+    detectionSource: 'crawl',
+    ...extra,
+  }));
+
+  it('flags a crawl-only target that repeats across > minSourcePages distinct pages', () => {
+    const links = boilerplate('/support/privacy-notice/', 12);
+    const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    expect(kept).to.be.an('array').that.is.empty;
+    expect(suppressed).to.have.lengthOf(12);
+  });
+
+  it('flags at exactly minSourcePages (>= is inclusive)', () => {
+    const links = boilerplate('/support/privacy-notice/', 10);
+    const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    expect(kept).to.be.empty;
+    expect(suppressed).to.have.lengthOf(10);
+  });
+
+  it('keeps a target that appears on fewer than minSourcePages pages', () => {
+    const links = boilerplate('/rare-404/', 9);
+    const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    expect(kept).to.have.lengthOf(9);
+    expect(suppressed).to.be.empty;
+  });
+
+  it('never flags links corroborated by RUM/LinkChecker', () => {
+    const links = boilerplate('/real-broken/', 20, { detectionSource: 'crawl+rum' });
+    const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    expect(kept).to.have.lengthOf(20);
+    expect(suppressed).to.be.empty;
+  });
+
+  it('preserves the per-page decision when the same target is mixed crawl-only and corroborated', () => {
+    // 10 crawl-only pages for the target + 1 page where it was also seen by RUM.
+    const links = [
+      ...boilerplate('/support/privacy-notice/', 10),
+      {
+        urlFrom: `${base}/page-hot`,
+        urlTo: `${base}/support/privacy-notice/`,
+        itemType: 'link',
+        detectionSource: 'crawl+rum',
+      },
+    ];
+    const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    // The corroborated instance survives; only the 10 crawl-only instances are flagged.
+    expect(suppressed).to.have.lengthOf(10);
+    expect(suppressed.every((l) => l.detectionSource === 'crawl')).to.be.true;
+    expect(kept).to.have.lengthOf(1);
+    expect(kept[0].detectionSource).to.equal('crawl+rum');
+  });
+
+  it('is a no-op when RUM produced no broken-link signal for the site', () => {
+    const links = boilerplate('/support/privacy-notice/', 20);
+    const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: false,
+      minSourcePages: 10,
+    });
+    expect(kept).to.have.lengthOf(20);
+    expect(suppressed).to.be.empty;
+  });
+
+  it('flags only the boilerplate target, keeping unrelated crawl links', () => {
+    const links = [
+      ...boilerplate('/support/privacy-notice/', 15),
+      {
+        urlFrom: `${base}/blog/a`,
+        urlTo: `${base}/genuinely-missing/`,
+        itemType: 'link',
+        detectionSource: 'crawl',
+      },
+    ];
+    const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    expect(kept).to.have.lengthOf(1);
+    expect(kept[0].urlTo).to.equal(`${base}/genuinely-missing/`);
+    expect(suppressed).to.have.lengthOf(15);
+  });
+
+  it('counts distinct pages only (duplicate source pages do not inflate the count)', () => {
+    const links = Array.from({ length: 12 }, () => ({
+      urlFrom: `${base}/same-page`,
+      urlTo: `${base}/support/privacy-notice/`,
+      itemType: 'link',
+      detectionSource: 'crawl',
+    }));
+    const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    // Only 1 distinct source page -> not boilerplate -> kept
+    expect(kept).to.have.lengthOf(12);
+    expect(suppressed).to.be.empty;
+  });
+
+  it('handles empty / non-array input', () => {
+    expect(identifyUncorroboratedBoilerplateLinks([], {
+      rumProducedBrokenLinks: true, minSourcePages: 10,
+    })).to.deep.equal({ kept: [], suppressed: [] });
+    expect(identifyUncorroboratedBoilerplateLinks(undefined, {}))
+      .to.deep.equal({ kept: undefined, suppressed: [] });
   });
 });
 

@@ -15,6 +15,7 @@ import {
   isInternalLinksContextLogger,
 } from './logging.js';
 import { isHtmlContentType, isSoft404Body } from '../utils/url-utils.js';
+import { normalizeComparableUrl, DEFAULT_ITEM_TYPE } from './link-key.js';
 
 const AUDIT_TYPE = 'broken-internal-links';
 
@@ -366,4 +367,93 @@ export function calculatePriority(links) {
       priority,
     };
   });
+}
+
+/**
+ * Identifies uncorroborated site-wide boilerplate broken *internal links*.
+ *
+ * Background: the crawl detector reads a link's `href` from the (JS-hydrated) DOM and
+ * validates it with a direct HTTP fetch. It cannot execute click handlers, so a
+ * template widget (nav/footer) whose anchor carries a same-domain fallback `href` but
+ * whose click is intercepted by client-side JS (e.g. it actually navigates cross-domain)
+ * is flagged as broken on every page the widget renders on. See SITES-50131: one shared
+ * footer "Privacy Notice" button produced 60 of a domain's 184 broken-internal-link
+ * suggestions, all pointing at the same fabricated same-domain 404.
+ *
+ * Heuristic: if the identical `urlTo` is flagged **only** by the crawl detector
+ * (`detectionSource === 'crawl'`, i.e. never corroborated by RUM or LinkChecker) across
+ * at least `minSourcePages` distinct source pages, it is site-wide boilerplate. When RUM
+ * detection produced broken-link signal for this site yet never observed a real
+ * navigation to that target, the target is almost certainly never navigated to by users
+ * (JS-intercepted or decorative), so the crawl finding is very likely a false positive.
+ *
+ * This function only CLASSIFIES — it never mutates. The caller decides whether to drop
+ * the `suppressed` links or merely record them (shadow mode). Conservative by design
+ * (avoids over-flagging genuinely broken template links):
+ *  - only runs when `rumProducedBrokenLinks` is true (RUM produced a validated broken
+ *    link for this site, so absence of RUM corroboration for this target is meaningful);
+ *  - only ever flags `detectionSource === 'crawl'` links — anything RUM/LinkChecker also
+ *    saw (`crawl+rum`, `crawl+linkchecker`, ...) is always kept;
+ *  - requires the target to repeat across `minSourcePages` distinct pages (true
+ *    boilerplate), so a one-off broken link is never affected.
+ *
+ * NOTE: RUM's broken-link signal is traffic-gated, so a genuinely dead but rarely-clicked
+ * footer link (Privacy/Terms/Sitemap) can share this exact signature. Callers should treat
+ * suppression as advisory (shadow/observability first) rather than a guaranteed-safe drop.
+ *
+ * @param {Array} links - merged broken links (each with urlFrom, urlTo, itemType,
+ *   detectionSource)
+ * @param {object} opts
+ * @param {boolean} opts.rumProducedBrokenLinks - whether RUM detection produced at least
+ *   one validated broken link for this site
+ * @param {number} opts.minSourcePages - min distinct source pages for a target to count as
+ *   boilerplate
+ * @returns {{kept: Array, suppressed: Array}} partition of the input links
+ */
+export function identifyUncorroboratedBoilerplateLinks(
+  links,
+  { rumProducedBrokenLinks, minSourcePages } = {},
+) {
+  if (!Array.isArray(links) || links.length === 0 || !rumProducedBrokenLinks) {
+    return { kept: links, suppressed: [] };
+  }
+
+  const targetKey = (link) => `${normalizeComparableUrl(link.urlTo)}|${link.itemType || DEFAULT_ITEM_TYPE}`;
+
+  // Count distinct source pages per target among crawl-only links.
+  const sourcePagesByTarget = new Map();
+  for (const link of links) {
+    if (link.detectionSource !== 'crawl') {
+      continue; // eslint-disable-line no-continue
+    }
+    const key = targetKey(link);
+    let pages = sourcePagesByTarget.get(key);
+    if (!pages) {
+      pages = new Set();
+      sourcePagesByTarget.set(key, pages);
+    }
+    pages.add(normalizeComparableUrl(link.urlFrom));
+  }
+
+  const boilerplateTargets = new Set(
+    [...sourcePagesByTarget.entries()]
+      .filter(([, pages]) => pages.size >= minSourcePages)
+      .map(([key]) => key),
+  );
+
+  if (boilerplateTargets.size === 0) {
+    return { kept: links, suppressed: [] };
+  }
+
+  const kept = [];
+  const suppressed = [];
+  for (const link of links) {
+    if (link.detectionSource === 'crawl' && boilerplateTargets.has(targetKey(link))) {
+      suppressed.push(link);
+    } else {
+      kept.push(link);
+    }
+  }
+
+  return { kept, suppressed };
 }
