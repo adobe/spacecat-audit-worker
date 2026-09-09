@@ -1,3 +1,10 @@
+## [1.533.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.6...v1.533.7) (2026-09-09)
+
+
+### Bug Fixes
+
+* **toc:** exclude time-sensitive promotional headings from TOC extraction ([#2954](https://github.com/adobe/spacecat-audit-worker/issues/2954)) ([6f7078c](https://github.com/adobe/spacecat-audit-worker/commit/6f7078c7b5aa34aab214065735a5e65909a3f1c5))
+
 ## [1.533.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.5...v1.533.6) (2026-09-08)
 
 
