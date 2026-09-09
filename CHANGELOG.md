@@ -1,3 +1,10 @@
+# [1.534.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.7...v1.534.0) (2026-09-09)
+
+
+### Features
+
+* add new agentic bots and merge Research into Chatbots (LLMO-7325) ([#2950](https://github.com/adobe/spacecat-audit-worker/issues/2950)) ([8a44a06](https://github.com/adobe/spacecat-audit-worker/commit/8a44a06eea1533ea501b35a850e13231d631bf4a)), closes [adobe/project-elmo-ui#3095](https://github.com/adobe/project-elmo-ui/issues/3095)
+
 ## [1.533.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.6...v1.533.7) (2026-09-09)
 
 
