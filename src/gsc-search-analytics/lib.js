@@ -15,12 +15,12 @@ import { computeWindows, assessCompleteness, isValidFixDate } from './windows.js
 import { fetchWindow } from './fetch.js';
 import { indexRows, lookup } from './match.js';
 import { buildDelta } from './summarize.js';
+import { deriveFixedUrls } from './derive.js';
+// Shared caps (single source of truth): derive.js bounds its output to the same
+// numbers this file uses as the runtime abort cap, so they cannot drift apart.
+import { MAX_FIXED_URLS, MAX_DATE_GROUPS } from './constants.js';
 
 const SCHEMA_VERSION = 1;
-const MAX_FIXED_URLS = 500; // guard against an unbounded, Lambda-timeout-risking run
-// Each distinct fix date is one date-group = up to two paginated window pulls run
-// sequentially, so cap the number of groups to stay well inside the Lambda timeout.
-const MAX_DATE_GROUPS = 30;
 const toDate = (s) => new Date(`${s}T00:00:00Z`);
 const clip = (s) => String(s).slice(0, 300); // bound stored error text
 
@@ -74,10 +74,31 @@ function envelope(fields, finalUrl) {
  */
 export async function runGscSearchAnalytics(finalUrl, context, site, auditContext = {}) {
   const { log } = context;
-  const fixedUrls = auditContext.fixedUrls ?? auditContext.messageData?.fixedUrls;
+  let fixedUrls = auditContext.fixedUrls ?? auditContext.messageData?.fixedUrls;
+  let sourcing; // set only on the self-sourced path; surfaced in the final envelope
+
+  // Self-source when no explicit list is supplied: read the deploy-date range (and
+  // optional filters) from the Slack/API keyword args (messageData) or auditContext,
+  // and gather the site's DEPLOYED/PUBLISHED fixed URLs from the data-service.
+  if (!Array.isArray(fixedUrls) || fixedUrls.length === 0) {
+    const p = auditContext.messageData ?? auditContext;
+    const derived = await deriveFixedUrls(
+      site.getId(),
+      {
+        since: p.since, // single watermark: incremental when set, backfill when absent
+        from: p.from, // low-level overrides (tests / power users)
+        to: p.to,
+        fixStatuses: p.fixStatuses,
+        fixTypes: p.fixTypes,
+      },
+      context,
+    );
+    fixedUrls = derived.fixedUrls;
+    sourcing = derived.sourcing; // { mode, sourcedDateGroups, keptDateGroups, truncated }
+  }
 
   if (!Array.isArray(fixedUrls) || fixedUrls.length === 0) {
-    log.info(`gsc-search-analytics: no fixedUrls supplied for ${finalUrl}`);
+    log.info(`gsc-search-analytics: no fixedUrls supplied or derived for ${finalUrl}`);
     return envelope({
       connected: null, status: 'missing_fixed_urls', fixCount: 0, measuredCount: 0, fixes: [],
     }, finalUrl);
@@ -196,6 +217,6 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
 
   const measuredCount = fixes.filter((f) => f.status === 'measured').length;
   return envelope({
-    connected: true, status: 'ok', fixCount: fixes.length, measuredCount, fixes,
+    connected: true, status: 'ok', fixCount: fixes.length, measuredCount, fixes, ...(sourcing && { sourcing }),
   }, finalUrl);
 }

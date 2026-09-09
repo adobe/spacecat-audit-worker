@@ -12,6 +12,7 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
+import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { runGscSearchAnalytics } from '../../../src/gsc-search-analytics/lib.js';
 import { computeWindows } from '../../../src/gsc-search-analytics/windows.js';
@@ -36,8 +37,17 @@ const afterStartMs = (fixDate) => new Date(`${computeWindows(fixDate).after.star
 
 describe('runGscSearchAnalytics', () => {
   const finalUrl = 'https://krisshop.com';
-  const site = { getBaseURL: () => finalUrl };
-  const context = { log: { info() {}, warn() {}, error() {} } };
+  // getId feeds the self-source path (deriveFixedUrls(site.getId(), ...)); the explicit
+  // fixedUrls tests never call it. dataAccess lets the real derive.js return an empty list
+  // (no opportunities) when a test exercises the self-source path without stubbing derive.
+  const site = { getBaseURL: () => finalUrl, getId: () => 'site-id-123' };
+  const context = {
+    log: { info() {}, warn() {}, error() {} },
+    dataAccess: {
+      Opportunity: { allBySiteId: async () => [] },
+      FixEntity: { STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' } },
+    },
+  };
   const url = 'https://krisshop.com/products/x';
 
   afterEach(() => sinon.restore());
@@ -219,6 +229,42 @@ describe('runGscSearchAnalytics', () => {
     const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site);
     expect(auditResult.status).to.equal('missing_fixed_urls');
     expect(auditResult.connected).to.equal(null);
+  });
+
+  it('self-sources fixed URLs from a since watermark, and surfaces sourcing in the result', async () => {
+    const derived = {
+      fixedUrls: [{ url: 'https://krisshop.com/en/x.html', fixType: 'meta-tags', fixDate: '2026-05-04' }],
+      sourcing: {
+        mode: 'incremental', sourcedDateGroups: 1, keptDateGroups: 1, truncated: false,
+      },
+    };
+    const googleStub = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
+    const seen = {};
+    const { runGscSearchAnalytics: run } = await esmock('../../../src/gsc-search-analytics/lib.js', {
+      '../../../src/gsc-search-analytics/derive.js': {
+        deriveFixedUrls: async (_siteId, opts) => { seen.opts = opts; return derived; },
+      },
+      '@adobe/spacecat-shared-google-client': { default: { createFrom: async () => googleStub } },
+    });
+    const res = await run(finalUrl, context, site, { messageData: { since: '2026-05-01' } });
+    expect(seen.opts.since).to.equal('2026-05-01'); // watermark forwarded to derive
+    expect(res.auditResult.fixCount).to.be.greaterThan(0);
+    expect(res.auditResult.sourcing).to.include({ mode: 'incremental', truncated: false });
+  });
+
+  it('records missing_fixed_urls when derive yields nothing and no range given', async () => {
+    const { runGscSearchAnalytics: run } = await esmock('../../../src/gsc-search-analytics/lib.js', {
+      '../../../src/gsc-search-analytics/derive.js': {
+        deriveFixedUrls: async () => ({
+          fixedUrls: [],
+          sourcing: {
+            mode: 'backfill', sourcedDateGroups: 0, keptDateGroups: 0, truncated: false,
+          },
+        }),
+      },
+    });
+    const res = await run(finalUrl, context, site, {});
+    expect(res.auditResult.status).to.equal('missing_fixed_urls');
   });
 
   it('returns too_many_fixed_urls above the cap', async () => {
