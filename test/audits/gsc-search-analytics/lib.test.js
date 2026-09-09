@@ -87,6 +87,7 @@ describe('runGscSearchAnalytics', () => {
     const { auditResult, fullAuditRef } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
     expect(fullAuditRef).to.equal(finalUrl);
     expect(auditResult).to.include({ schemaVersion: 1, connected: true, status: 'ok' });
+    expect(auditResult.scopeResolved).to.equal(true); // Fix 4: scope resolved normally
     expect(auditResult.interpretation).to.match(/not a causal or attributed/);
     expect(auditResult.fixCount).to.equal(1);
     expect(auditResult.measuredCount).to.equal(1);
@@ -445,6 +446,162 @@ describe('runGscSearchAnalytics', () => {
     const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
     expect(auditResult.connected).to.equal(true);
     expect(auditResult.status).to.equal('ok');
+    expect(auditResult.scopeResolved).to.equal(false); // Fix 4: degraded scope is queryable
     expect(auditResult.fixes[0].status).to.equal('measured');
+  });
+
+  it('degrades to all-in-scope when scope resolution TIMES OUT (bounded race)', async () => {
+    // Fix 3: composeAuditURL hangs (never resolves). The ~8s race timeout must fire and route
+    // into the same degrade-to-all-in-scope path as a throw, so the run still completes.
+    const google = { getOrganicSearchData: sinon.stub().resolves(rowFor(url)) };
+    const { runGscSearchAnalytics: run } = await esmock('../../../src/gsc-search-analytics/lib.js', {
+      '@adobe/spacecat-shared-utils': { composeAuditURL: () => new Promise(() => {}), stripWWW },
+      '@adobe/spacecat-shared-google-client': { default: { createFrom: async () => google } },
+    });
+    // Pin "now" so the 2026-03-01 fix's windows are fully elapsed -> measured under fake time.
+    const clock = sinon.useFakeTimers({ now: new Date('2026-09-09T00:00:00Z').getTime() });
+    try {
+      const fixedUrls = [{ url, fixType: 'meta-tags', fixDate: '2026-03-01' }];
+      const promise = run(finalUrl, context, site, { fixedUrls });
+      await clock.tickAsync(8001); // advance past SCOPE_TIMEOUT_MS to fire the timeout
+      const { auditResult } = await promise;
+      expect(auditResult.status).to.equal('ok');
+      expect(auditResult.connected).to.equal(true);
+      expect(auditResult.scopeResolved).to.equal(false); // timed out -> degraded
+      expect(auditResult.fixes[0].status).to.equal('measured'); // treated as in scope
+    } finally {
+      clock.restore();
+    }
+  });
+
+  it('coerces a scalar fixTypes kwarg to a one-element array for derive', async () => {
+    // Fix 1: a single Slack value arrives as a string; derive.js gates on Array.isArray.
+    const seen = {};
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
+    const { runGscSearchAnalytics: run } = await esmock('../../../src/gsc-search-analytics/lib.js', {
+      '../../../src/gsc-search-analytics/derive.js': {
+        deriveFixedUrls: async (_siteId, opts) => {
+          seen.opts = opts;
+          return { fixedUrls: [], sourcing: { mode: 'incremental', truncated: false } };
+        },
+      },
+      '@adobe/spacecat-shared-google-client': { default: { createFrom: async () => google } },
+      '@adobe/spacecat-shared-utils': { composeAuditURL: async () => 'krisshop.com', stripWWW },
+    });
+    await run(finalUrl, context, site, { messageData: { fixTypes: 'meta-tags' } });
+    expect(seen.opts.fixTypes).to.deep.equal(['meta-tags']);
+  });
+
+  it('coerces a scalar fixStatuses kwarg to a one-element array for derive', async () => {
+    // Fix 1: a bare 'DEPLOYED' would otherwise iterate the string's characters in derive.
+    const seen = {};
+    const { runGscSearchAnalytics: run } = await esmock('../../../src/gsc-search-analytics/lib.js', {
+      '../../../src/gsc-search-analytics/derive.js': {
+        deriveFixedUrls: async (_siteId, opts) => {
+          seen.opts = opts;
+          return { fixedUrls: [], sourcing: { mode: 'backfill', truncated: false } };
+        },
+      },
+      '@adobe/spacecat-shared-utils': { composeAuditURL: async () => 'krisshop.com', stripWWW },
+    });
+    await run(finalUrl, context, site, { messageData: { fixStatuses: 'DEPLOYED' } });
+    expect(seen.opts.fixStatuses).to.deep.equal(['DEPLOYED']);
+  });
+
+  it('returns invalid_input (not sourcing_failed) for a malformed since', async () => {
+    // Fix 2: '2026-5-1' would throw a RangeError out of resolveBand -> opaque sourcing_failed.
+    // Validation short-circuits BEFORE derive/createFrom/composeAuditURL, so no stubs needed.
+    const res = await runGscSearchAnalytics(finalUrl, context, site, { messageData: { since: '2026-5-1' } });
+    expect(res.auditResult.status).to.equal('invalid_input');
+    expect(res.auditResult.connected).to.equal(null);
+    expect(res.auditResult.reason).to.match(/invalid since/);
+    expect(res.auditResult.sourcing).to.equal(undefined); // Fix 4: invalid_input carries no sourcing
+  });
+
+  it('keeps sourcing on the not_connected envelope when a self-sourced run fails createFrom', async () => {
+    // Fix 4: a self-sourced run that connected fine but then fails createFrom must not lose
+    // its sourcing telemetry.
+    const sourcing = {
+      mode: 'incremental', sourcedDateGroups: 1, keptDateGroups: 1, truncated: false,
+    };
+    const { runGscSearchAnalytics: run } = await esmock('../../../src/gsc-search-analytics/lib.js', {
+      '../../../src/gsc-search-analytics/derive.js': {
+        deriveFixedUrls: async () => ({
+          fixedUrls: [{ url: 'https://krisshop.com/en/x.html', fixType: 'meta-tags', fixDate: '2026-05-04' }],
+          sourcing,
+        }),
+      },
+      '@adobe/spacecat-shared-google-client': {
+        default: { createFrom: async () => { throw new Error('ResourceNotFoundException: no secret'); } },
+      },
+      '@adobe/spacecat-shared-utils': { composeAuditURL: async () => 'krisshop.com', stripWWW },
+    });
+    const res = await run(finalUrl, context, site, { messageData: { since: '2026-05-01' } });
+    expect(res.auditResult.status).to.equal('not_connected');
+    expect(res.auditResult.connected).to.equal(false);
+    expect(res.auditResult.sourcing).to.include({ mode: 'incremental', truncated: false });
+  });
+
+  it('skips both GSC pulls when a date-group is entirely out of scope (no wasted fetch)', async () => {
+    // Fix 5: every URL in the group is out of scope -> neither paginated pull should run.
+    scopeReturn = 'www.krisshop.com/en';
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const res = await runGscSearchAnalytics(finalUrl, context, site, {
+      fixedUrls: [{ url: 'https://www.krisshop.com/', fixType: 'meta-tags', fixDate: '2026-03-01' }],
+    });
+    const fix = res.auditResult.fixes[0];
+    expect(fix.status).to.equal('out_of_scope');
+    expect(google.getOrganicSearchData.callCount).to.equal(0); // both pulls skipped
+    // Fix 6: never queried -> windows/before/after/delta nulled so the row isn't misleading.
+    expect(fix.windows).to.equal(null);
+    expect(fix.before).to.equal(null);
+    expect(fix.after).to.equal(null);
+    expect(fix.delta).to.equal(null);
+  });
+
+  it('marks a fixed URL under a sibling path prefix (/enterprise vs /en) as out_of_scope', async () => {
+    // Fix 6: proves the startsWith(`${scopePath}/`) boundary — /en must NOT swallow /enterprise.
+    scopeReturn = 'www.krisshop.com/en';
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const res = await runGscSearchAnalytics(finalUrl, context, site, {
+      fixedUrls: [{ url: 'https://www.krisshop.com/enterprise/landing', fixType: 'meta-tags', fixDate: '2026-03-01' }],
+    });
+    expect(res.auditResult.fixes[0].status).to.equal('out_of_scope');
+  });
+
+  it('reclassifies a supplied non-/en URL as out_of_scope on the explicit fixedUrls path', async () => {
+    // Fix 6: scoping applies to the override path too — an operator-supplied out-of-scope URL
+    // is still out_of_scope, not blindly measured.
+    scopeReturn = 'www.krisshop.com/en';
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const res = await runGscSearchAnalytics(finalUrl, context, site, {
+      fixedUrls: [{ url: 'https://www.krisshop.com/fr/x', fixType: 'meta-tags', fixDate: '2026-03-01' }],
+    });
+    expect(res.auditResult.fixes[0].status).to.equal('out_of_scope');
+  });
+
+  it('fetches a MIXED date-group but marks only the out-of-scope URL out_of_scope (fields nulled)', async () => {
+    // Fix 5/6: a group with at least one in-scope URL still fetches; the out-of-scope member
+    // is classified out_of_scope with nulled windows/before/after/delta.
+    scopeReturn = 'www.krisshop.com/en';
+    const inUrl = 'https://www.krisshop.com/en/products/x';
+    const outUrl = 'https://www.krisshop.com/enterprise/y';
+    const google = { getOrganicSearchData: sinon.stub().resolves(rowFor(inUrl)) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const res = await runGscSearchAnalytics(finalUrl, context, site, {
+      fixedUrls: [
+        { url: inUrl, fixType: 'meta-tags', fixDate: '2026-03-01' },
+        { url: outUrl, fixType: 'meta-tags', fixDate: '2026-03-01' },
+      ],
+    });
+    const byUrl = Object.fromEntries(res.auditResult.fixes.map((f) => [f.url, f]));
+    expect(byUrl[inUrl].status).to.equal('measured'); // in-scope member still queried + measured
+    expect(byUrl[outUrl].status).to.equal('out_of_scope');
+    expect(byUrl[outUrl].windows).to.equal(null);
+    expect(byUrl[outUrl].delta).to.equal(null);
+    expect(google.getOrganicSearchData.callCount).to.equal(2); // mixed group DID fetch (2 pulls)
   });
 });
