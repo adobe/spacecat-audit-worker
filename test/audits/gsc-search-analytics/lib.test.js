@@ -14,7 +14,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { runGscSearchAnalytics } from '../../../src/gsc-search-analytics/lib.js';
+import { stripWWW } from '@adobe/spacecat-shared-utils';
 import { computeWindows } from '../../../src/gsc-search-analytics/windows.js';
 
 const iso = (offsetDays) => new Date(Date.now() + offsetDays * 86400000).toISOString().split('T')[0];
@@ -49,6 +49,27 @@ describe('runGscSearchAnalytics', () => {
     },
   };
   const url = 'https://krisshop.com/products/x';
+
+  // Task 3 added `const scope = await composeAuditURL(finalUrl)` to lib.js, which performs
+  // a LIVE HTTP GET. Load lib.js through esmock with composeAuditURL stubbed so no test
+  // ever hits the network. `scopeReturn` is mutable so a test can pick the resolved scope;
+  // GoogleClient stays REAL (each test still uses sinon.stub(GoogleClient, 'createFrom')),
+  // and stripWWW is passed through real so the scope math is genuine.
+  let runGscSearchAnalytics;
+  let scopeReturn = 'krisshop.com';
+
+  before(async () => {
+    ({ runGscSearchAnalytics } = await esmock('../../../src/gsc-search-analytics/lib.js', {
+      '@adobe/spacecat-shared-utils': {
+        composeAuditURL: async () => scopeReturn,
+        stripWWW,
+      },
+    }));
+  });
+
+  // Default scope = bare host -> scopePath '/', so every same-host fixed URL in the
+  // existing tests stays IN scope and keeps its measured/not_found/incomplete verdict.
+  beforeEach(() => { scopeReturn = 'krisshop.com'; });
 
   afterEach(() => sinon.restore());
 
@@ -175,7 +196,7 @@ describe('runGscSearchAnalytics', () => {
     expect(failFix.found).to.deep.equal({ before: false, after: false });
   });
 
-  it('warns on a host mismatch: rows returned but no fixed URL matched', async () => {
+  it('warns when rows returned but no in-scope fixed URL matched (host mismatch)', async () => {
     const warn = sinon.spy();
     const ctx = { log: { info() {}, warn, error() {} } };
     // GSC rows are on a different host than the supplied fixed URL -> nothing matches.
@@ -189,7 +210,7 @@ describe('runGscSearchAnalytics', () => {
     const { auditResult } = await runGscSearchAnalytics(finalUrl, ctx, site, { fixedUrls });
     expect(auditResult.fixes[0].status).to.equal('not_found');
     expect(warn.calledOnce).to.equal(true);
-    expect(warn.firstCall.args[0]).to.match(/host mismatch/);
+    expect(warn.firstCall.args[0]).to.match(/no in-scope fixed URL matched/);
   });
 
   it('flags truncation and reads not_found when the URL is past the page cap', async () => {
@@ -245,6 +266,7 @@ describe('runGscSearchAnalytics', () => {
         deriveFixedUrls: async (_siteId, opts) => { seen.opts = opts; return derived; },
       },
       '@adobe/spacecat-shared-google-client': { default: { createFrom: async () => googleStub } },
+      '@adobe/spacecat-shared-utils': { composeAuditURL: async () => 'krisshop.com', stripWWW },
     });
     const res = await run(finalUrl, context, site, { messageData: { since: '2026-05-01' } });
     expect(seen.opts.since).to.equal('2026-05-01'); // watermark forwarded to derive
@@ -262,6 +284,7 @@ describe('runGscSearchAnalytics', () => {
           },
         }),
       },
+      '@adobe/spacecat-shared-utils': { composeAuditURL: async () => 'krisshop.com', stripWWW },
     });
     const res = await run(finalUrl, context, site, {});
     expect(res.auditResult.status).to.equal('missing_fixed_urls');
@@ -274,6 +297,7 @@ describe('runGscSearchAnalytics', () => {
       '../../../src/gsc-search-analytics/derive.js': {
         deriveFixedUrls: async () => { throw new Error('db down'); },
       },
+      '@adobe/spacecat-shared-utils': { composeAuditURL: async () => 'krisshop.com', stripWWW },
     });
     const res = await run(finalUrl, context, site, { messageData: { since: '2026-05-01' } });
     expect(res.auditResult.status).to.equal('sourcing_failed');
@@ -298,5 +322,77 @@ describe('runGscSearchAnalytics', () => {
     }));
     const { auditResult } = await runGscSearchAnalytics(finalUrl, context, site, { fixedUrls });
     expect(auditResult.status).to.equal('too_many_date_groups');
+  });
+
+  it('marks a URL outside the resolved fetch scope as out_of_scope, not not_found', async () => {
+    // finalUrl resolves (composeAuditURL) to www.krisshop.com/en; the bare root is out of scope.
+    scopeReturn = 'www.krisshop.com/en';
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const res = await runGscSearchAnalytics(finalUrl, context, site, {
+      fixedUrls: [{ url: 'https://www.krisshop.com/', fixType: 'smoke', fixDate: '2026-01-15' }],
+    });
+    expect(res.auditResult.fixes[0].status).to.equal('out_of_scope');
+  });
+
+  it('measures in-scope URLs at and below the resolved locale path (exact + subpath)', async () => {
+    scopeReturn = 'www.krisshop.com/en';
+    const exactUrl = 'https://www.krisshop.com/en'; // pathname === scopePath
+    const subUrl = 'https://www.krisshop.com/en/products/x'; // pathname startsWith `${scopePath}/`
+    const google = {
+      getOrganicSearchData: sinon.stub().resolves({
+        data: {
+          rows: [
+            {
+              keys: [exactUrl], clicks: 5, impressions: 50, ctr: 0.1, position: 4,
+            },
+            {
+              keys: [subUrl], clicks: 5, impressions: 50, ctr: 0.1, position: 4,
+            },
+          ],
+        },
+      }),
+    };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const res = await runGscSearchAnalytics(finalUrl, context, site, {
+      fixedUrls: [
+        { url: exactUrl, fixType: 'meta-tags', fixDate: '2026-03-01' },
+        { url: subUrl, fixType: 'meta-tags', fixDate: '2026-03-01' },
+      ],
+    });
+    const byUrl = Object.fromEntries(res.auditResult.fixes.map((f) => [f.url, f.status]));
+    expect(byUrl[exactUrl]).to.equal('measured');
+    expect(byUrl[subUrl]).to.equal('measured');
+  });
+
+  it('marks a same-path but different-host URL as out_of_scope', async () => {
+    scopeReturn = 'www.krisshop.com/en';
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const res = await runGscSearchAnalytics(finalUrl, context, site, {
+      fixedUrls: [{ url: 'https://elsewhere.com/en/x', fixType: 'meta-tags', fixDate: '2026-03-01' }],
+    });
+    expect(res.auditResult.fixes[0].status).to.equal('out_of_scope');
+  });
+
+  it('treats every same-host URL as in scope when the base resolves to bare root', async () => {
+    scopeReturn = 'www.krisshop.com'; // no path segment -> scopePath '/'
+    const deepUrl = 'https://krisshop.com/de-de/deep/page';
+    const google = { getOrganicSearchData: sinon.stub().resolves(rowFor(deepUrl)) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const res = await runGscSearchAnalytics(finalUrl, context, site, {
+      fixedUrls: [{ url: deepUrl, fixType: 'meta-tags', fixDate: '2026-03-01' }],
+    });
+    expect(res.auditResult.fixes[0].status).to.equal('measured');
+  });
+
+  it('marks an unparseable URL as out_of_scope via the scope guard (try/catch)', async () => {
+    scopeReturn = 'www.krisshop.com/en';
+    const google = { getOrganicSearchData: sinon.stub().resolves(emptyRows()) };
+    sinon.stub(GoogleClient, 'createFrom').resolves(google);
+    const res = await runGscSearchAnalytics(finalUrl, context, site, {
+      fixedUrls: [{ url: 'not a url', fixType: 'meta-tags', fixDate: '2026-03-01' }],
+    });
+    expect(res.auditResult.fixes[0].status).to.equal('out_of_scope');
   });
 });

@@ -11,9 +11,10 @@
  */
 
 import GoogleClient from '@adobe/spacecat-shared-google-client';
+import { composeAuditURL, stripWWW } from '@adobe/spacecat-shared-utils';
 import { computeWindows, assessCompleteness, isValidFixDate } from './windows.js';
 import { fetchWindow } from './fetch.js';
-import { indexRows, lookup } from './match.js';
+import { indexRows, lookup, normalizeUrl } from './match.js';
 import { buildDelta } from './summarize.js';
 import { deriveFixedUrls } from './derive.js';
 // Shared caps (single source of truth): derive.js bounds its output to the same
@@ -146,6 +147,27 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
     }, finalUrl);
   }
 
+  // The GSC client scopes every query to `page contains composeAuditURL(finalUrl)` — for
+  // krisshop that resolves (following redirects) to www.krisshop.com/en. A fixed URL
+  // outside that host+path is never queried, so it must be distinguished from "queried,
+  // no data" (not_found).
+  const scope = await composeAuditURL(finalUrl); // e.g. "www.krisshop.com/en"
+  const slash = scope.indexOf('/');
+  const scopeHost = stripWWW((slash >= 0 ? scope.slice(0, slash) : scope).toLowerCase());
+  const scopePath = slash >= 0 ? scope.slice(slash) : '/';
+  const inScope = (url) => {
+    try {
+      const u = new URL(normalizeUrl(url));
+      // path-boundary safe: `/en` must not match `/enterprise`; a bare-root base
+      // (scopePath === '/') treats every same-host URL as in scope.
+      const p = u.pathname;
+      const pathOk = p === scopePath || p.startsWith(`${scopePath}/`) || scopePath === '/';
+      return stripWWW(u.host) === scopeHost && pathOk;
+    } catch {
+      return false;
+    }
+  };
+
   const now = new Date();
   const fixes = [];
   const byDate = new Map();
@@ -188,9 +210,13 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
           matchedAny = true;
         }
         let status;
-        // Completeness is checked FIRST: a not-yet-elapsed after-window legitimately
-        // returns no rows, which must read as 'incomplete', not 'not_found'.
-        if (!completeness.afterComplete || !completeness.beforeComplete) {
+        // out_of_scope is checked FIRST: a URL outside the GSC page-filter's host+path
+        // scope was never queried, so it must not masquerade as 'not_found'. Completeness
+        // is next: a not-yet-elapsed after-window legitimately returns no rows, which must
+        // read as 'incomplete', not 'not_found'.
+        if (!inScope(f.url)) {
+          status = 'out_of_scope';
+        } else if (!completeness.afterComplete || !completeness.beforeComplete) {
           status = 'incomplete';
         } else if (!found.before || !found.after) {
           status = 'not_found';
@@ -210,12 +236,16 @@ export async function runGscSearchAnalytics(finalUrl, context, site, auditContex
           dataQuality,
         });
       }
-      // Rows came back but none of this group's fixed URLs matched -> almost always a
-      // host mismatch (www/apex, or fixedUrls built from a different host than the GSC
-      // property). Surface it instead of silently reporting not_found.
+      // Prefer the real cause when any URL in this group is structurally out of scope
+      // (locale/path filtering); otherwise fall back to the host-mismatch signal — rows
+      // came back but no in-scope fixed URL matched (www/apex, or fixedUrls built from a
+      // different host than the GSC property).
       const rowsSeen = beforeMap.size + afterMap.size > 0;
-      if (!matchedAny && rowsSeen) {
-        log.warn(`gsc-search-analytics: ${fixDate} returned rows but no fixed URL matched for ${finalUrl} - likely host mismatch (www/apex or GSC property host)`);
+      const anyOutOfScope = group.some((f) => !inScope(f.url));
+      if (anyOutOfScope) {
+        log.warn(`gsc-search-analytics: ${fixDate} — one or more fixed URLs are outside the GSC fetch scope (${scope}); locale/path scoping, reported as out_of_scope for ${finalUrl}`);
+      } else if (!matchedAny && rowsSeen) {
+        log.warn(`gsc-search-analytics: ${fixDate} returned rows but no in-scope fixed URL matched for ${finalUrl}`);
       }
     } catch (e) {
       // A failure on one date-group must not wipe the others; leave a diagnostic entry.
