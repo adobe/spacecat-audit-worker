@@ -763,6 +763,9 @@ describe('CDN Analysis Handler', () => {
       expect(referralCall.args[0]).to.include("lower(response_content_type) LIKE 'text/html%'");
       expect(referralCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
       expect(referralCall.args[0]).to.include("NOT REGEXP_LIKE(url_extract_path(COALESCE(url, ''))");
+      // LLMO-7412: favicon requests return an HTML error page and would otherwise be
+      // counted as referral pageviews; they must be excluded from referral aggregation.
+      expect(referralCall.args[0]).to.include("AND NOT REGEXP_LIKE(url_extract_path(url), '(?i)^/favicon\\.ico(\\.html)?$')");
     });
 
     it('dispatcher-scheduled byocdn-other run with no recent files returns early', async () => {
