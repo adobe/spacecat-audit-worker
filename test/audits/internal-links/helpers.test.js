@@ -725,6 +725,21 @@ describe('identifyUncorroboratedBoilerplateLinks', () => {
     expect(suppressed).to.be.empty;
   });
 
+  it('falls back to the default item type when itemType is missing', () => {
+    const links = Array.from({ length: 11 }, (_, i) => ({
+      urlFrom: `${base}/page-${i}`,
+      urlTo: `${base}/support/privacy-notice/`,
+      detectionSource: 'crawl',
+      // itemType intentionally omitted -> exercises the DEFAULT_ITEM_TYPE fallback
+    }));
+    const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    expect(kept).to.be.empty;
+    expect(suppressed).to.have.lengthOf(11);
+  });
+
   it('handles empty / non-array input', () => {
     expect(identifyUncorroboratedBoilerplateLinks([], {
       rumProducedBrokenLinks: true, minSourcePages: 10,
