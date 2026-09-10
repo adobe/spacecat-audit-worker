@@ -19,7 +19,7 @@ import {
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
-import { PROVIDER_USER_AGENT_PATTERNS, buildAdobeInternalUaExclusion } from '../common/user-agent-classification.js';
+import { PROVIDER_USER_AGENT_PATTERNS, AGENTIC_TRAFFIC_PROVIDERS, buildAdobeInternalUaExclusion } from '../common/user-agent-classification.js';
 
 /* c8 ignore start */
 export const CDN_TYPES = {
@@ -611,28 +611,10 @@ export function buildDateFilter(startDate, endDate) {
  * Used by cdn-logs-report and page-citability audits
  */
 export function buildUserAgentFilter() {
-  const {
-    chatgpt,
-    perplexity,
-    googleai,
-    claude,
-    mistralai,
-    amazon,
-    parallel,
-    manus,
-    keenable,
-  } = PROVIDER_USER_AGENT_PATTERNS;
+  const clauses = AGENTIC_TRAFFIC_PROVIDERS
+    .map((key) => `REGEXP_LIKE(user_agent, '${PROVIDER_USER_AGENT_PATTERNS[key]}')`)
+    .join(' OR\n    ');
 
-  return `(
-    REGEXP_LIKE(user_agent, '${chatgpt}') OR
-    REGEXP_LIKE(user_agent, '${perplexity}') OR
-    REGEXP_LIKE(user_agent, '${googleai}') OR
-    REGEXP_LIKE(user_agent, '${claude}') OR
-    REGEXP_LIKE(user_agent, '${mistralai}') OR
-    REGEXP_LIKE(user_agent, '${amazon}') OR
-    REGEXP_LIKE(user_agent, '${parallel}') OR
-    REGEXP_LIKE(user_agent, '${manus}') OR
-    REGEXP_LIKE(user_agent, '${keenable}')
-  ) AND ${buildAdobeInternalUaExclusion()}`;
+  return `(\n    ${clauses}\n  ) AND ${buildAdobeInternalUaExclusion()}`;
 }
 /* c8 ignore end */

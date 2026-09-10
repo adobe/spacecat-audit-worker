@@ -15,6 +15,7 @@ import {
   buildUserAgentDisplaySQL,
   buildAgentTypeClassificationSQL,
   PROVIDER_USER_AGENT_PATTERNS,
+  AGENTIC_TRAFFIC_PROVIDERS,
   buildAdobeInternalUaExclusion,
 } from '../common/user-agent-classification.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../common/country-patterns.js';
@@ -25,8 +26,10 @@ import { validateCountryCode } from '../common/country-codes.js';
 // CONSTANTS
 // ============================================================================
 
-// LLM providers to track — subset of PROVIDER_USER_AGENT_PATTERNS (excludes search bots)
-const LLM_PROVIDERS = ['chatgpt', 'perplexity', 'claude', 'googleai', 'copilot'];
+// LLM providers to track. Derived from the Agentic Traffic tab's canonical set
+// (AGENTIC_TRAFFIC_PROVIDERS) so the error-pages surface full-matches the tab and the
+// two cannot drift. Search bots and copilot are already excluded by that set.
+const LLM_PROVIDERS = AGENTIC_TRAFFIC_PROVIDERS;
 
 export const LLM_USER_AGENT_PATTERNS = Object.fromEntries(
   LLM_PROVIDERS.map((key) => [key, PROVIDER_USER_AGENT_PATTERNS[key]]),
