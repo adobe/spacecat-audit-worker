@@ -67,6 +67,7 @@ describe('offsite-brand-presence-semrush', function () {
   const dataCall = () => fetchStub.getCalls().find((c) => !isLogin(c.args[0]));
   const loginCall = () => fetchStub.getCalls().find((c) => isLogin(c.args[0]));
   const dataCallCount = () => fetchStub.getCalls().filter((c) => !isLogin(c.args[0])).length;
+  const loginCallCount = () => fetchStub.getCalls().filter((c) => isLogin(c.args[0])).length;
 
   async function loadModule(overrides = {}) {
     return esmock('../../src/utils/offsite-brand-presence-semrush.js', {
@@ -172,6 +173,16 @@ describe('offsite-brand-presence-semrush', function () {
     expect(passedEnv.IMS_CLIENT_SECRET).to.equal('secret');
     expect(passedEnv.IMS_SCOPE).to.equal('scope');
     expect(passedEnv.IMS_HOST).to.equal('https://ims.example');
+  });
+
+  it('sets a placeholder IMS_CLIENT_CODE (createFrom requires it; client_credentials ignores it)', async () => {
+    await run(); // no SEMRUSH_S2S_CLIENT_CODE set
+    expect(imsCreateFrom.firstCall.args[0].env.IMS_CLIENT_CODE).to.equal('unused-for-client-credentials');
+  });
+
+  it('uses SEMRUSH_S2S_CLIENT_CODE for IMS_CLIENT_CODE when provided', async () => {
+    await run({ SEMRUSH_S2S_CLIENT_CODE: 'the-code' });
+    expect(imsCreateFrom.firstCall.args[0].env.IMS_CLIENT_CODE).to.equal('the-code');
   });
 
   it('exchanges the IMS token for a customer-scoped session token: POST login, Bearer IMS token, { imsOrgId } body', async () => {
@@ -584,6 +595,33 @@ describe('offsite-brand-presence-semrush', function () {
     expect(getImsOrgIdStub.firstCall.args[1]).to.deep.equal({});
   });
 
+  it('prefers a threaded imsOrgId and skips the getImsOrgId lookup', async () => {
+    await mod.loadCitedUrlsFromSemrush({
+      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(), imsOrgId: 'threaded@AdobeOrg',
+    });
+    expect(getImsOrgIdStub).to.not.have.been.called;
+    expect(JSON.parse(loginCall().args[1].body)).to.deep.equal({ imsOrgId: 'threaded@AdobeOrg' });
+  });
+
+  // --- session token caching (keyed by imsOrgId) ----------------------------
+
+  it('reuses a cached session token on a second call for the same imsOrgId (skips IMS mint + login)', async () => {
+    await run();
+    await run();
+    expect(getServiceAccessTokenV3.callCount).to.equal(1);
+    expect(loginCallCount()).to.equal(1);
+    expect(dataCallCount()).to.equal(2); // the data call still fires each time
+  });
+
+  it('re-mints the session token after the cached one expires (TTL)', async () => {
+    const clock = sandbox.useFakeTimers({ now: 1_000_000, toFake: ['Date'] });
+    await run();
+    clock.tick(11 * 60 * 1000); // past the 10-minute TTL
+    await run();
+    expect(loginCallCount()).to.equal(2);
+    expect(getServiceAccessTokenV3.callCount).to.equal(2);
+  });
+
   // --- IMS token minting (leg 2) --------------------------------------------
 
   it('returns null (ims_token_failed) when the IMS service token cannot be minted', async () => {
@@ -602,28 +640,49 @@ describe('offsite-brand-presence-semrush', function () {
 
   // --- session token exchange (leg 3) ---------------------------------------
 
-  it('returns null (session_token_failed) on a non-2xx login response (with a body)', async () => {
-    fetchStub.withArgs(sinon.match(isLogin)).resolves({ ok: false, status: 403, text: async () => 'nope' });
+  it('splits a 403 login denial into session_token_auth_failed, logs the body, but keeps it out of Slack', async () => {
+    const denyBody = 'Denied - reason=no-org-access secret=abc123';
+    fetchStub.withArgs(sinon.match(isLogin))
+      .resolves({ ok: false, status: 403, text: async () => denyBody });
     const diagnostics = {};
-    const result = await run({}, {}, undefined, diagnostics);
+    const onProgress = sandbox.stub().resolves();
+    const result = await run({}, {}, onProgress, diagnostics);
+
     expect(result).to.equal(null);
-    expect(diagnostics.fallbackReason).to.equal('session_token_failed');
+    expect(diagnostics.fallbackReason).to.equal('session_token_auth_failed');
     expect(dataCall()).to.equal(undefined); // never reaches the data call
-    expect(warnedWith(/Failed to exchange for an S2S session token/)).to.equal(true);
+    expect(warnedWith(/session-token exchange denied/)).to.equal(true);
+    // The untrusted upstream body is captured in the structured log...
+    expect(log.warn.getCalls().some((c) => c.args[0].includes(`responseBody="${denyBody}"`))).to.equal(true);
+    // ...but only the status (never the body) is forwarded to the user-facing Slack notify.
+    const slack = onProgress.getCalls().map((c) => c.args[0]);
+    expect(slack.some((m) => /S2S session token.*HTTP 403/.test(m))).to.equal(true);
+    expect(slack.some((m) => m.includes(denyBody))).to.equal(false);
   });
 
-  it('returns null (session_token_failed) on a non-2xx login response (no readable body)', async () => {
+  it('treats a 401 login denial as session_token_auth_failed too', async () => {
+    fetchStub.withArgs(sinon.match(isLogin)).resolves({ ok: false, status: 401 });
+    const diagnostics = {};
+    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('session_token_auth_failed');
+  });
+
+  it('returns null (session_token_failed) on a non-auth non-2xx login response (no readable body)', async () => {
     fetchStub.withArgs(sinon.match(isLogin)).resolves({ ok: false, status: 500 });
     const diagnostics = {};
     expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('session_token_failed');
+    expect(warnedWith(/Failed to exchange for an S2S session token/)).to.equal(true);
   });
 
-  it('returns null (session_token_failed) on a network error during login', async () => {
+  it('returns null (session_token_failed) on a network error during login (no status -> no HTTP suffix in Slack)', async () => {
     fetchStub.withArgs(sinon.match(isLogin)).rejects(new Error('login down'));
     const diagnostics = {};
-    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
+    const onProgress = sandbox.stub().resolves();
+    expect(await run({}, {}, onProgress, diagnostics)).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('session_token_failed');
+    const slack = onProgress.getCalls().map((c) => c.args[0]);
+    expect(slack.some((m) => /Failed to obtain an S2S session token — falling back/.test(m))).to.equal(true);
   });
 
   it('returns null (session_token_failed) when the login body is not parseable JSON', async () => {
