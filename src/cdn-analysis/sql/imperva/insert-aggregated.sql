@@ -22,6 +22,10 @@ FROM (
     s_computername AS host,
     0.0 AS time_to_first_byte,
     '{{serviceProvider}}' AS cdn_provider,
+    -- Pre-existing (not introduced by this change): the outer GROUP BY below
+    -- now groups by this actual expression rather than the literal '' the
+    -- original query grouped by, which only worked because s_computername is
+    -- effectively constant per query. Stored x_forwarded_host is unchanged.
     COALESCE(s_computername, '') as x_forwarded_host,
 
     '{{year}}' AS year,

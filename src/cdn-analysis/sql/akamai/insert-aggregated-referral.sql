@@ -1,17 +1,38 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
-WITH hosts AS (
+WITH raw_normalized AS (
+  -- Exposes the full canonical column set (matching the aggregated table's
+  -- schema: url, user_agent, referer, host, cdn_provider, x_forwarded_host)
+  -- so siteFilterClause - which can reference any of buildSiteFilters'
+  -- ALLOWED_FILTER_KEYS, including a path-derived url check for base URLs
+  -- with a path - always resolves, in every CTE that applies it.
+  -- `url` here is path-only (matching the canonical/aggregated schema
+  -- buildSiteFilters' path regex expects); `url_with_query` keeps the
+  -- path+query form the referral logic below needs for utm extraction.
+  SELECT
+    reqPath AS url,
+    CASE
+      WHEN queryStr IS NOT NULL AND trim(queryStr) NOT IN ('', '-')
+        THEN concat(reqPath, '?', queryStr)
+      ELSE reqPath
+    END AS url_with_query,
+    ua AS user_agent,
+    referer AS referer_raw,
+    try(url_extract_host(referer)) AS referer,
+    reqHost AS host,
+    '{{serviceProvider}}' AS cdn_provider,
+    COALESCE(reqHost, '') AS x_forwarded_host,
+    rspContentType AS content_type
+  FROM {{database}}.{{rawTable}}
+  WHERE year  = '{{year}}'
+    AND month = '{{month}}'
+    AND day   = '{{day}}'
+    {{hourFilter}}
+),
+
+hosts AS (
   -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
   SELECT DISTINCT host
-  FROM (
-    SELECT
-      reqHost AS host,
-      COALESCE(reqHost, '') AS x_forwarded_host
-    FROM {{database}}.{{rawTable}}
-    WHERE year  = '{{year}}'
-      AND month = '{{month}}'
-      AND day   = '{{day}}'
-      {{hourFilter}}
-  )
+  FROM raw_normalized
   WHERE
     -- scope known-first-party hosts to this site; the raw path can be shared
     -- across sites, so an unscoped list would treat another site's host as
@@ -20,35 +41,19 @@ WITH hosts AS (
 ),
 
 base AS (
-  -- normalize key fields and construct a full URL from path + query
   SELECT
-    url,
+    url_with_query AS url,
     host,
     referer_raw,
     user_agent,
     content_type
-  FROM (
-    SELECT
-      CASE
-        WHEN queryStr IS NOT NULL AND trim(queryStr) NOT IN ('', '-')
-          THEN concat(reqPath, '?', queryStr)
-        ELSE reqPath
-      END AS url,
-      reqHost AS host,
-      referer AS referer_raw,
-      ua AS user_agent,
-      rspContentType AS content_type,
-      COALESCE(reqHost, '') AS x_forwarded_host
-    FROM {{database}}.{{rawTable}}
-    WHERE year  = '{{year}}'
-      AND month = '{{month}}'
-      AND day   = '{{day}}'
-      {{hourFilter}}
-  )
+  FROM raw_normalized
   WHERE
     -- restrict to this site's own traffic; the raw path can be shared by
     -- multiple sites under the same org/CDN, so without this every site
     -- sharing the path would aggregate every other site's rows too.
+    -- (evaluated against raw_normalized's path-only `url`, not the
+    -- path+query value projected above as this CTE's own `url`.)
     {{siteFilterClause}}
 ),
 

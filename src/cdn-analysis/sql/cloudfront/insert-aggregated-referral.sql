@@ -1,17 +1,30 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
-WITH hosts AS (
+WITH raw_normalized AS (
+  -- Exposes the full canonical column set (matching the aggregated table's
+  -- schema: url, user_agent, referer, host, cdn_provider, x_forwarded_host)
+  -- so siteFilterClause - which can reference any of buildSiteFilters'
+  -- ALLOWED_FILTER_KEYS, including a path-derived url check for base URLs
+  -- with a path - always resolves, in every CTE that applies it.
+  SELECT
+    "cs-uri-stem"             AS url,
+    "cs(user-agent)"          AS user_agent,
+    "cs(referer)"             AS referer_raw,
+    try(url_extract_host("cs(referer)")) AS referer,
+    "x-host-header"           AS host,
+    '{{serviceProvider}}' AS cdn_provider,
+    COALESCE("x-host-header", '') AS x_forwarded_host,
+    "sc-content-type"         AS content_type
+  FROM {{database}}.{{rawTable}}
+  WHERE year  = '{{year}}'
+    AND month = '{{month}}'
+    AND day   = '{{day}}'
+    {{hourFilter}}
+),
+
+hosts AS (
   -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
   SELECT DISTINCT host
-  FROM (
-    SELECT
-      "x-host-header" AS host,
-      COALESCE("x-host-header", '') AS x_forwarded_host
-    FROM {{database}}.{{rawTable}}
-    WHERE year  = '{{year}}'
-      AND month = '{{month}}'
-      AND day   = '{{day}}'
-      {{hourFilter}}
-  )
+  FROM raw_normalized
   WHERE
     -- scope known-first-party hosts to this site; the raw path can be shared
     -- across sites, so an unscoped list would treat another site's host as
@@ -26,20 +39,7 @@ base AS (
     referer_raw,
     user_agent,
     content_type
-  FROM (
-    SELECT
-      "cs-uri-stem"             AS url,
-      "x-host-header"           AS host,
-      "cs(referer)"             AS referer_raw,
-      "cs(user-agent)"          AS user_agent,
-      "sc-content-type"         AS content_type,
-      COALESCE("x-host-header", '') AS x_forwarded_host
-    FROM {{database}}.{{rawTable}}
-    WHERE year  = '{{year}}'
-      AND month = '{{month}}'
-      AND day   = '{{day}}'
-      {{hourFilter}}
-  )
+  FROM raw_normalized
   WHERE
     -- restrict to this site's own traffic; the raw path can be shared by
     -- multiple sites under the same org/CDN, so without this every site
@@ -69,7 +69,7 @@ referrals_raw AS (
       ) THEN 'email'
       ELSE NULL
     END AS tracking_param,
-    
+
     -- device bucket from User-Agent
     CASE
       WHEN regexp_like(coalesce(user_agent, ''),
@@ -126,7 +126,7 @@ referrals_raw AS (
     )
 )
 
-SELECT 
+SELECT
   url,
   host,
   referrer,
@@ -137,7 +137,7 @@ SELECT
   date,
   cdn_provider,
   COALESCE(host, '') as x_forwarded_host,
-  
+
   -- Add partition columns as regular columns
   '{{year}}' AS year,
   '{{month}}' AS month,

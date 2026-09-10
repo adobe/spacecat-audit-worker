@@ -301,7 +301,13 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   // Reuse buildSiteFilters - the same host-matching logic the report layer already
   // uses - so aggregation honors per-site cdnlogsFilter overrides instead of assuming
   // raw host always equals the base URL (raw host values are not predictable upfront).
-  const siteFilterClause = buildSiteFilters(site.getConfig()?.getLlmoCdnlogsFilter(), site);
+  // Gated behind a kill switch (default off): this touches a data path that's hard to
+  // rebuild past raw-log retention, so it rolls out dev -> stage -> a few sites -> fleet
+  // rather than going live for every site on the next run.
+  const hostFilterFeatureEnabled = context?.env?.CDN_AGGREGATION_HOST_FILTER_ENABLED === 'true';
+  const siteFilterClause = hostFilterFeatureEnabled
+    ? buildSiteFilters(site.getConfig()?.getLlmoCdnlogsFilter(), site)
+    : 'TRUE';
   const siteId = site.getId();
   const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
@@ -513,19 +519,37 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
       // for a site whose host isn't confirmed yet (newly onboarded, filter still
       // being debugged), fall back to unfiltered aggregation rather than risk
       // silently locking real data out of the aggregated bucket.
-      // eslint-disable-next-line no-await-in-loop
-      const probeSql = await loadSql(cdnType, 'check-site-filter', {
-        database, rawTable, year, month, day, hour, hourFilter, siteFilterClause,
-      });
-      // eslint-disable-next-line no-await-in-loop
-      const probeRows = await athenaClient.query(
-        probeSql,
-        database,
-        `[Athena Query] Check site filter match for ${serviceProvider}`,
-      );
-      const filterConfirmed = Array.isArray(probeRows) && probeRows.length > 0;
-      if (!filterConfirmed) {
-        log.info(`${auditType} site filter matched no raw rows for siteId=${siteId}, serviceProvider=${serviceProvider} - aggregating without host filter until a matching host is confirmed`);
+      // Skip the probe entirely when the feature is off (siteFilterClause is
+      // already the 'TRUE' tautology) - no point spending an Athena query to
+      // confirm a filter we aren't going to apply.
+      let filterConfirmed = false;
+      if (hostFilterFeatureEnabled) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const probeSql = await loadSql(cdnType, 'check-site-filter', {
+            database, rawTable, year, month, day, hour, hourFilter, siteFilterClause,
+          });
+          // eslint-disable-next-line no-await-in-loop
+          const probeRows = await athenaClient.query(
+            probeSql,
+            database,
+            `[Athena Query] Check site filter match for ${serviceProvider}`,
+          );
+          // athenaClient.query() returns data rows only (no header row), so a
+          // non-empty array here means the LIMIT 1 probe actually matched.
+          filterConfirmed = Array.isArray(probeRows) && probeRows.length > 0;
+        } catch (error) {
+          // A transient probe failure (throttle, timeout) must not abort inserts
+          // that would otherwise have succeeded - degrade to the safe default
+          // (unfiltered) for this run instead of failing the whole iteration.
+          log.warn(`${auditType} site filter probe failed for siteId=${siteId}, serviceProvider=${serviceProvider}: ${error.message} - aggregating without host filter for this run`);
+        }
+      }
+      if (hostFilterFeatureEnabled && !filterConfirmed) {
+        // Elevated to warn (not info): the fallback intentionally keeps every row,
+        // so it also mutes the "raw logs present but aggregation empty" alarm below
+        // for this site - this is the only signal that a site is running unfiltered.
+        log.warn(`${auditType} site filter matched no raw rows for siteId=${siteId}, serviceProvider=${serviceProvider} - aggregating without host filter until a matching host is confirmed`);
       }
       const effectiveSiteFilterClause = filterConfirmed ? siteFilterClause : 'TRUE';
 
