@@ -1,3 +1,10 @@
+## [1.535.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.0...v1.535.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **broken-internal-links:** flag uncorroborated boilerplate crawl links (SITES-50131) ([#2955](https://github.com/adobe/spacecat-audit-worker/issues/2955)) ([1c52e20](https://github.com/adobe/spacecat-audit-worker/commit/1c52e20e2e333dc58dd78e32b5af86ab121dca16))
+
 # [1.535.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.534.3...v1.535.0) (2026-09-10)
 
 
