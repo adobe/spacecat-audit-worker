@@ -147,6 +147,8 @@ describe('internal-links config resolver', () => {
       'media',
     ]);
     expect(resolver.getExcludeCrossLocalePDP()).to.equal(false);
+    expect(resolver.getSuppressUncorroboratedBoilerplate()).to.equal(false);
+    expect(resolver.getBoilerplateMinSourcePages()).to.equal(10);
     expect(resolver.getMystiqueItemTypes()).to.deep.equal([
       'link',
       'form',
@@ -171,6 +173,22 @@ describe('internal-links config resolver', () => {
     }), {});
 
     expect(resolver.getExcludedElementClasses()).to.deep.equal(['no-audit', 'editorial']);
+  });
+
+  it('reads suppressUncorroboratedBoilerplate and boilerplateMinSourcePages overrides', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      suppressUncorroboratedBoilerplate: true,
+      boilerplateMinSourcePages: 25,
+    }), {});
+    expect(resolver.getSuppressUncorroboratedBoilerplate()).to.equal(true);
+    expect(resolver.getBoilerplateMinSourcePages()).to.equal(25);
+  });
+
+  it('floors boilerplateMinSourcePages at 5 for over-aggressive overrides', () => {
+    const resolver = new InternalLinksConfigResolver(createSite({
+      boilerplateMinSourcePages: 1,
+    }), {});
+    expect(resolver.getBoilerplateMinSourcePages()).to.equal(5);
   });
 
   it('returns excludeCrossLocalePDP from handler config when the value is set to true', () => {

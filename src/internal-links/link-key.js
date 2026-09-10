@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-const DEFAULT_ITEM_TYPE = 'link';
+export const DEFAULT_ITEM_TYPE = 'link';
 
 export function normalizeComparableUrl(url) {
   if (!url) {

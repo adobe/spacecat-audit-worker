@@ -267,6 +267,29 @@ export class InternalLinksConfigResolver {
     return getBooleanConfig(this.handlerConfig.excludeCrossLocalePDP, false);
   }
 
+  /**
+   * When true, DROP uncorroborated site-wide boilerplate broken internal links: a target
+   * flagged ONLY by the crawl detector across many pages, that RUM never observed a
+   * navigation to. Catches JS-intercepted nav/footer widgets whose static fallback href
+   * 404s (SITES-50131). See {@link identifyUncorroboratedBoilerplateLinks}.
+   *
+   * Defaults to FALSE (shadow mode): the audit still records what it WOULD suppress
+   * (`suppressedBoilerplateLinks` in the audit result) without removing anything, so the
+   * false-negative rate can be measured fleet-wide before enabling per-site.
+   */
+  getSuppressUncorroboratedBoilerplate() {
+    return getBooleanConfig(this.handlerConfig.suppressUncorroboratedBoilerplate, false);
+  }
+
+  /**
+   * Minimum distinct source pages a crawl-only target must appear on to be treated as
+   * site-wide boilerplate. Default 10; floored at 5 so an over-aggressive override cannot
+   * suppress targets that repeat on only a handful of pages.
+   */
+  getBoilerplateMinSourcePages() {
+    return Math.max(5, getPositiveIntConfig(this.handlerConfig.boilerplateMinSourcePages, 10));
+  }
+
   getBrightDataConfig() {
     return {
       validateUrls: this.handlerConfig.validateBrightDataUrls
