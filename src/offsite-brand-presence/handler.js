@@ -874,6 +874,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       site,
       previousWeeks,
       context,
+      // Already resolved above (and reused for DRS scraping) — thread it through so the
+      // loader doesn't independently re-fetch it and risk scoping the session token to a
+      // different org than the rest of this run.
+      imsOrgId,
       siteHostname,
       diagnostics: semrushDiagnostics,
       onProgress: (text) => postMessageOptional(

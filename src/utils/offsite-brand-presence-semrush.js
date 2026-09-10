@@ -19,6 +19,7 @@ import {
   SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
 } from './semrush-entitlement.js';
 import { getDateWindowForPreviousWeeks } from './offsite-brand-presence-postgrest.js';
+import { getImsOrgId } from './data-access.js';
 import { classifyAndNormalize } from './offsite-brand-presence-enrichment.js';
 import { computeBrandTokens, isExcludedCitedHost } from './offsite-audit-utils.js';
 import {
@@ -31,13 +32,26 @@ import {
 } from '../offsite-brand-presence/constants.js';
 
 /**
- * Default spacecat-api-service base URL. Its Elements proxy
- * (`src/controllers/elements.js`) serves the Semrush-backed Serenity
- * URL-Inspector endpoints at
- * `/v2/orgs/:spaceCatId/brands/:brandId/serenity/brand-presence/url-inspector/*`.
- * Overridable per-environment with `SPACECAT_API_URI`.
+ * Default spacecat-api-service base URL (host root, no path prefix). Its Elements proxy
+ * (`src/controllers/elements.js`) serves the Semrush-backed Serenity URL-Inspector
+ * endpoints at `/v2/orgs/:spaceCatId/brands/:brandId/serenity/brand-presence/url-inspector/*`.
+ *
+ * This MUST be the **LLMO** host, not the ASO host: the Fastly edge sets the `x-product`
+ * header from the request `Host`, and these are LLMO routes. Minting the S2S session token
+ * (and calling the data route) on the ASO host yields an ASO-context token that fails the
+ * per-product entitlement check even with a valid `brand:read` grant. Prod is
+ * `llmo.experiencecloud.live`; dev/CI is `llmo.experiencecloud.page` — override with
+ * `LLMO_API_BASE_URL`.
  */
-export const SPACECAT_API_DEFAULT_BASE_URL = 'https://spacecat.experiencecloud.live/api/v1';
+export const LLMO_API_DEFAULT_BASE_URL = 'https://llmo.experiencecloud.live';
+
+/**
+ * Path (relative to the LLMO host root) of the S2S login endpoint that exchanges the
+ * consumer's IMS access token for a short-lived, customer-scoped SpaceCat session token.
+ * The prod prefix is `/api/v1`; non-prod uses `/api/ci`, so the whole URL is overridable
+ * with `LLMO_S2S_LOGIN_URL` when the environment's prefix differs.
+ */
+export const S2S_LOGIN_DEFAULT_PATH = '/api/v1/auth/s2s/login';
 
 /**
  * `domain-urls` page size. One request (no `hostname`, `platform=all`) covers all three
@@ -54,12 +68,83 @@ export const PAGE_SIZE = 1000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
- * Max chars of a non-2xx response body to log. The body of a rejected
- * serenity/Semrush call identifies the rejecter — api-service `requireImsBearer`
- * ("...send the x-promise-token header instead") vs a Semrush upstream error —
- * which decides who owns the LLMO-6709 auth fix. Capped defensively.
+ * Max chars of a non-2xx response body to log. The body of a rejected serenity/Semrush
+ * call identifies the rejecter — an api-service auth/ACL denial vs a Semrush upstream
+ * error — which decides where an auth failure needs fixing. Capped defensively.
  */
 const ERROR_BODY_SNIPPET_MAX = 500;
+
+/**
+ * Default S2S session-token cache TTL. The api-service session token lives 15 min; we cache
+ * for a shorter window so a cached token is never handed to a data call at (or near) expiry.
+ * The cache is module-level, so a warm Lambda container reuses it across audit invocations —
+ * collapsing the IMS mint + login exchange to zero network calls for a brand whose customer
+ * org was minted recently. Overridable with `SEMRUSH_S2S_SESSION_TTL_MS` so the window can be
+ * retuned (e.g. if the login endpoint's token lifetime changes) without a code deploy.
+ */
+const SESSION_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Resolves the session-token cache TTL from env, falling back to the default. A non-positive
+ * or non-numeric override is ignored (fail-safe to the default rather than a 0/NaN TTL that
+ * would disable or corrupt caching).
+ *
+ * @param {object} env
+ * @returns {number} TTL in ms.
+ */
+function resolveSessionTtlMs(env) {
+  const override = Number(env?.SEMRUSH_S2S_SESSION_TTL_MS);
+  return Number.isFinite(override) && override > 0 ? override : SESSION_TOKEN_TTL_MS;
+}
+
+/**
+ * Module-level session-token cache, keyed by customer `imsOrgId` (the scope the token is
+ * minted for). Value: `{ token, expiresAt }`. Not keyed by brand/site — one customer-scoped
+ * session token authorizes every brand under that org. Only ever accessed with a truthy
+ * `imsOrgId` (the `no_ims_org_id` guard above the caching logic returns first), so the key
+ * space can't be polluted by a falsy key.
+ */
+const sessionTokenCache = new Map();
+
+/**
+ * @param {string} imsOrgId
+ * @param {number} nowMs
+ * @returns {string|null} the cached, still-valid session token for this org, or null.
+ */
+function getCachedSessionToken(imsOrgId, nowMs) {
+  const entry = sessionTokenCache.get(imsOrgId);
+  return entry && entry.expiresAt > nowMs ? entry.token : null;
+}
+
+/**
+ * Caches a freshly-minted session token. Opportunistically sweeps expired entries on each
+ * write so the map stays bounded by the number of distinct orgs seen within one TTL window
+ * (not the life of the warm container) — a slow leak this shape would otherwise cause.
+ *
+ * @param {string} imsOrgId
+ * @param {string} token
+ * @param {number} nowMs
+ * @param {number} ttlMs
+ */
+function cacheSessionToken(imsOrgId, token, nowMs, ttlMs) {
+  for (const [key, entry] of sessionTokenCache) {
+    if (entry.expiresAt <= nowMs) {
+      sessionTokenCache.delete(key);
+    }
+  }
+  sessionTokenCache.set(imsOrgId, { token, expiresAt: nowMs + ttlMs });
+}
+
+/**
+ * Drops the cached token for an org — called when a cached token is rejected downstream by
+ * the data call (401/403), so a revoked/rotated token can't be replayed for the rest of its
+ * TTL and the next run re-mints (restoring the pre-caching self-heal-on-next-invocation).
+ *
+ * @param {string} imsOrgId
+ */
+function evictSessionToken(imsOrgId) {
+  sessionTokenCache.delete(imsOrgId);
+}
 
 /**
  * Reads a non-2xx response body as a short diagnostic snippet. Never throws.
@@ -77,29 +162,100 @@ async function readErrorBodySnippet(response) {
 }
 
 /**
- * Mints an IMS service access token as an Authorization header value.
+ * Mints an IMS access token for the audit-worker's dedicated Semrush S2S consumer, as an
+ * Authorization header value.
  *
- * Uses the v2 `getServiceAccessToken()` (`authorization_code` grant) with the
- * worker's default IMS client — the same S2S path `commerce-product-enrichments`,
- * `vulnerabilities` and `permissions` use. The default client is provisioned for
- * `authorization_code`, NOT the `client_credentials` grant that
- * `getServiceAccessTokenV3()` requests (which returns IMS `400 unauthorized_client`
- * unless a dedicated client_credentials integration is configured, e.g. content-ai's
- * `CONTENTAI_*`). The scheme is normalised to `Bearer` (the endpoint may return
- * `token_type: "bearer"` lowercase, which a strict `startsWith('Bearer ')` parser
- * upstream would reject).
+ * Unlike the worker's default IMS client (provisioned for `authorization_code`), the S2S
+ * consumer is a dedicated `client_credentials` OAuth Server-to-Server integration — the
+ * same shape content-ai uses (`CONTENTAI_*`). Its credentials come from `SEMRUSH_S2S_*`
+ * env vars and are minted with `getServiceAccessTokenV3()` (the `client_credentials`
+ * grant). This IMS token is only the FIRST leg — it is not sent to the data route
+ * directly; it is exchanged for a customer-scoped session token (see
+ * `exchangeForSessionToken`).
+ *
+ * The scheme is normalised to `Bearer` (IMS may return `token_type: "bearer"` lowercase,
+ * which a strict `startsWith('Bearer ')` parser upstream would reject).
+ *
+ * Returns the full `Bearer <token>` header string (not a bare token) — named accordingly.
  *
  * @param {object} context - Lambda context (env + log).
  * @returns {Promise<string>} e.g. "Bearer eyJ...".
  * @throws {Error} when the token response has no access_token.
  */
-async function getAuthorizationHeader(context) {
-  const imsClient = ImsClient.createFrom(context);
-  const token = await imsClient.getServiceAccessToken();
+async function getImsAuthorizationHeader(context) {
+  const { env } = context;
+  const imsClient = ImsClient.createFrom({
+    ...context,
+    env: {
+      ...env,
+      IMS_HOST: env?.SEMRUSH_S2S_IMS_HOST,
+      IMS_CLIENT_ID: env?.SEMRUSH_S2S_CLIENT_ID,
+      IMS_CLIENT_SECRET: env?.SEMRUSH_S2S_CLIENT_SECRET,
+      IMS_SCOPE: env?.SEMRUSH_S2S_CLIENT_SCOPE,
+      // `ImsClient.createFrom` validates clientCode as required, but the client_credentials
+      // grant (`getServiceAccessTokenV3`) never sends it. Set it explicitly so a stripped
+      // env (or the default authorization_code client being retired) can't surface as a
+      // confusing `createFrom` throw masquerading as a token-mint failure.
+      IMS_CLIENT_CODE: env?.SEMRUSH_S2S_CLIENT_CODE || 'unused-for-client-credentials',
+    },
+  });
+  const token = await imsClient.getServiceAccessTokenV3();
   if (!token?.access_token) {
-    throw new Error('IMS service token response missing access_token');
+    throw new Error('IMS S2S token response missing access_token');
   }
   return `Bearer ${token.access_token}`;
+}
+
+/**
+ * Exchanges the consumer's IMS access token for a short-lived (15-min), customer-scoped
+ * SpaceCat session token via the S2S login endpoint. The returned session token is a JWT
+ * whose `tenants` claim names `imsOrgId` — this is what api-service's
+ * `hasAccess(organization)` actually checks to authorize the domain-urls read as an S2S
+ * consumer. Both this call and the subsequent data call must hit the LLMO host (see
+ * `LLMO_API_DEFAULT_BASE_URL`).
+ *
+ * On a non-2xx response the thrown error carries `.status` and `.responseBody` so the
+ * caller can (a) split an authz denial (401/403 — a static config problem retries won't
+ * fix) from a transient/other failure, and (b) log the full body while keeping it OUT of
+ * any user-facing (Slack) message — the login endpoint's error body is untrusted upstream
+ * content. The error `.message` deliberately holds only the status, never the body.
+ *
+ * @param {object} params
+ * @param {string} params.loginUrl - Fully-qualified S2S login URL.
+ * @param {string} params.imsAuthorization - `Bearer <ims-token>` from
+ *   `getImsAuthorizationHeader`.
+ * @param {string} params.imsOrgId - Target customer IMS org id (e.g. `...@AdobeOrg`).
+ * @returns {Promise<string>} the session token (raw JWT, no scheme prefix).
+ * @throws {Error} on network error, non-2xx (with `.status`/`.responseBody`), unparseable
+ *   body, or a missing sessionToken.
+ */
+async function exchangeForSessionToken({ loginUrl, imsAuthorization, imsOrgId }) {
+  const response = await fetch(loginUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: imsAuthorization,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ imsOrgId }),
+    timeout: FETCH_TIMEOUT_MS,
+  });
+  if (!response.ok) {
+    const error = new Error(`s2s login returned ${response.status}`);
+    error.status = response.status;
+    error.responseBody = await readErrorBodySnippet(response);
+    throw error;
+  }
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    throw new Error('s2s login response was not parseable JSON');
+  }
+  if (!body?.sessionToken) {
+    throw new Error('s2s login response missing sessionToken');
+  }
+  return body.sessionToken;
 }
 
 /**
@@ -154,9 +310,11 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
       peer: PEER.SEMRUSH, direction: 'inbound', status: response.status, responseBody, durationMs,
     };
     if (authFailure) {
-      // Distinct branch so a rejected service token is visible instead of being
-      // masked as "Semrush returned nothing" (LLMO-6709 verification).
-      olog.warn('data_acquisition_bp_data_semrush_read', 'Service token rejected for domain-urls; verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)', {
+      // Distinct branch so a rejected session token is visible instead of being
+      // masked as "Semrush returned nothing". On the S2S path a 401/403 here means the
+      // session token expired/was invalid, or the consumer lacks `brand:read` / its
+      // token's `tenants` claim doesn't name this org.
+      olog.warn('data_acquisition_bp_data_semrush_read', 'S2S session token rejected for domain-urls; verify the consumer has brand:read and the session token names this org', {
         ...logFields, reason: 'auth_rejected', outcome: OUTCOME.DEGRADED,
       });
     } else {
@@ -267,6 +425,11 @@ function classifyRow(row, siteHostname, brandTokens) {
  * @param {object} params.site - Site model (`getOrganizationId()`).
  * @param {Array<{week:number, year:number}>} params.previousWeeks
  * @param {object} params.context - Lambda context (env, log, dataAccess).
+ * @param {string} [params.imsOrgId] - Customer IMS org id (`...@AdobeOrg`) the session token
+ *   is scoped to. The handler already resolves this (for DRS scraping too), so it threads it
+ *   in to avoid a second, independently-fetched lookup that could scope the session token to
+ *   a different org than the rest of the run. Falls back to `getImsOrgId(site, ...)` only when
+ *   the caller omits it.
  * @param {string} [params.siteHostname] - www-stripped site hostname for owned-URL filtering.
  * @param {function(string): Promise<*>} [params.onProgress] - Optional best-effort progress
  *   callback (e.g. a Slack thread reply), invoked with a short human-readable status string at
@@ -276,7 +439,8 @@ function classifyRow(row, siteHostname, brandTokens) {
  * @param {object} [params.diagnostics] - Optional out-param, mutated in place. On a null
  *   return, set to `{ fallbackReason }` with a specific code (`no_organization_id`,
  *   `no_active_brand`, `brand_resolution_failed`, `not_entitled`, `entitlement_check_failed`,
- *   `no_date_window`, `ims_token_failed`, `domain_urls_auth_failed`, or `domain_urls_failed`).
+ *   `no_date_window`, `no_ims_org_id`, `ims_token_failed`, `session_token_auth_failed`,
+ *   `session_token_failed`, `domain_urls_auth_failed`, or `domain_urls_failed`).
  *   The two entitlement reasons additionally set `entitlementReason` to the granular cause
  *   from `resolveSemrushEntitlement` (`flag_disabled` | `no_workspace` | `no_client` |
  *   `check_failed`) — `fallbackReason` alone cannot distinguish a confirmed non-entitlement
@@ -286,14 +450,14 @@ function classifyRow(row, siteHostname, brandTokens) {
  * @returns {Promise<Map<string, {count:number, domain:string|null}> | null>}
  */
 export async function loadCitedUrlsFromSemrush({
-  site, previousWeeks, context, siteHostname, onProgress, diagnostics,
+  site, previousWeeks, context, imsOrgId: providedImsOrgId, siteHostname, onProgress, diagnostics,
 }) {
   const { log, env } = context;
   const startedAt = Date.now();
   const siteId = site?.getId?.();
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
   const elapsed = () => Date.now() - startedAt;
-  const baseUrl = env?.SPACECAT_API_URI || SPACECAT_API_DEFAULT_BASE_URL;
+  const baseUrl = env?.LLMO_API_BASE_URL || LLMO_API_DEFAULT_BASE_URL;
 
   const notify = async (text) => {
     if (typeof onProgress !== 'function') {
@@ -401,28 +565,99 @@ export async function loadCitedUrlsFromSemrush({
   }
   const { startDate, endDate } = dateWindow;
 
-  let authorization;
-  try {
-    authorization = await getAuthorizationHeader(context);
-  } catch (error) {
-    olog.warn('data_acquisition_bp_data_semrush_read', 'Failed to obtain IMS service token', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'ims_token_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
-    }, error);
-    await notify(`:x: Failed to obtain an IMS service token (\`${error.message}\`) — falling back to the legacy source.`);
-    setDiagnostics({ fallbackReason: 'ims_token_failed' });
+  // S2S auth (3 legs). api-service serves the Semrush-backed domain-urls route to S2S
+  // consumers, not to raw IMS service tokens (which carry no `tenants`/org membership and
+  // are rejected by the IMS path). So we:
+  //   1. resolve the customer's IMS org id (the session token must be scoped to it),
+  //   2. mint the consumer's own IMS token (client_credentials),
+  //   3. exchange it for a 15-min session token whose `tenants` claim names that org.
+  // The domain-urls call then presents that session token.
+
+  // Leg 1: the customer IMS org id (…@AdobeOrg) — distinct from spaceCatId (the SpaceCat
+  // org UUID used in the route path). This is what the session token's `tenants` claim,
+  // and thus api-service's hasAccess(organization), is keyed on. The handler already
+  // resolves this (and reuses it for DRS scraping), so prefer the threaded value; the
+  // lookup is only a fallback for callers that don't provide it.
+  const imsOrgId = providedImsOrgId || await getImsOrgId(site, context.dataAccess || {}, log);
+  if (!imsOrgId) {
+    olog.warn('data_acquisition_bp_data_semrush_read', 'Could not resolve customer IMS org id; skipping Semrush source', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'no_ims_org_id', outcome: OUTCOME.DEGRADED,
+    });
+    await notify(':x: Could not resolve the customer IMS org id — falling back to the legacy source.');
+    setDiagnostics({ fallbackReason: 'no_ims_org_id' });
     return null;
   }
 
+  // Legs 2 + 3 — mint the consumer IMS token (client_credentials), then exchange it for a
+  // customer-scoped session token. Both are skipped on a warm-container cache hit: one
+  // customer-scoped token authorizes every brand under the org, so it is cached by imsOrgId
+  // with a TTL under the 15-min server expiry.
+  const nowMs = Date.now();
+  let sessionToken = getCachedSessionToken(imsOrgId, nowMs);
+  // Tracked so that a downstream 401/403 on the data call can distinguish "our cached token
+  // went stale mid-window" (evict + self-heal next run) from "a freshly-minted token was
+  // rejected" (the consumer registration / grant is actually broken).
+  const sessionTokenFromCache = sessionToken !== null;
+  if (!sessionToken) {
+    // Leg 2: the consumer's IMS access token (dedicated client_credentials integration).
+    let imsAuthorization;
+    try {
+      imsAuthorization = await getImsAuthorizationHeader(context);
+    } catch (error) {
+      olog.warn('data_acquisition_bp_data_semrush_read', 'Failed to obtain IMS service token', {
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'ims_token_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
+      }, error);
+      await notify(`:x: Failed to obtain an IMS service token (\`${error.message}\`) — falling back to the legacy source.`);
+      setDiagnostics({ fallbackReason: 'ims_token_failed' });
+      return null;
+    }
+
+    // Leg 3: exchange it for a customer-scoped SpaceCat session token via the LLMO host.
+    const loginUrl = env?.LLMO_S2S_LOGIN_URL || `${baseUrl}${S2S_LOGIN_DEFAULT_PATH}`;
+    try {
+      sessionToken = await exchangeForSessionToken({ loginUrl, imsAuthorization, imsOrgId });
+    } catch (error) {
+      // Split an authz denial (401/403 — a static config problem retries won't fix: missing
+      // brand:read, or the token's tenants claim doesn't name this org) from a transient/
+      // other failure, mirroring fetchDomainUrls' authFailure branch.
+      const authFailure = error.status === 401 || error.status === 403;
+      const reason = authFailure ? 'session_token_auth_failed' : 'session_token_failed';
+      olog.warn(
+        'data_acquisition_bp_data_semrush_read',
+        authFailure
+          ? 'S2S session-token exchange denied (401/403); verify the consumer has brand:read and the token names this org'
+          : 'Failed to exchange for an S2S session token',
+        {
+          peer: PEER.SEMRUSH,
+          direction: 'inbound',
+          orgId: spaceCatId,
+          brandId: brand.brandId,
+          status: error.status,
+          responseBody: error.responseBody,
+          durationMs: elapsed(),
+          reason,
+          outcome: OUTCOME.DEGRADED,
+          ...errorField(error),
+        },
+        error,
+      );
+      // Forward only the status to Slack — the login endpoint's error body is untrusted
+      // upstream content and must never be echoed into a user-facing channel (it stays in
+      // the structured `responseBody` log field above).
+      await notify(`:x: Failed to obtain an S2S session token${error.status ? ` (HTTP ${error.status})` : ''} — falling back to the legacy source.`);
+      setDiagnostics({ fallbackReason: reason });
+      return null;
+    }
+    cacheSessionToken(imsOrgId, sessionToken, nowMs, resolveSessionTtlMs(env));
+  }
+
   const headers = {
-    Authorization: authorization,
+    // The customer-scoped S2S session token authorizes the read as an S2S consumer; it is
+    // self-contained (no x-promise-token / IMS-forwarding needed on this path).
+    Authorization: `Bearer ${sessionToken}`,
     // GET has no body — advertise the desired representation with Accept rather
     // than Content-Type (some proxies buffer/reject a Content-Type on a bodyless GET).
     Accept: 'application/json',
-    // The api-service Elements proxy authenticates IMS callers directly and
-    // forwards this Bearer to Semrush (resolveElementsImsToken fallback), so a
-    // promise token is not required for a service caller. Forward one only if
-    // the platform later threads it onto the context (non-IMS callers).
-    ...(context.promiseToken ? { 'x-promise-token': context.promiseToken } : {}),
   };
 
   const url = buildDomainUrlsUrl({
@@ -435,8 +670,21 @@ export async function loadCitedUrlsFromSemrush({
 
   const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE);
   if (!result.ok) {
+    if (result.authFailure) {
+      // The session token was rejected by the data call — evict it so a revoked/rotated
+      // token can't be replayed from the cache for the rest of its TTL; the next run
+      // re-mints. `wasCachedToken` lets ops tell a mid-window staleness (self-heals next
+      // run) from a genuinely broken registration (a freshly-minted token rejected).
+      evictSessionToken(imsOrgId);
+    }
     olog.warn('data_acquisition_bp_data_semrush_read', 'domain-urls request failed; using legacy fallback', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), reason: 'domain_urls_failed', outcome: OUTCOME.DEGRADED,
+      peer: PEER.SEMRUSH,
+      direction: 'inbound',
+      orgId: spaceCatId,
+      durationMs: elapsed(),
+      reason: 'domain_urls_failed',
+      outcome: OUTCOME.DEGRADED,
+      ...(result.authFailure && { wasCachedToken: sessionTokenFromCache }),
     });
     await notify(':x: `domain-urls` request failed — falling back to the legacy source.');
     setDiagnostics({
