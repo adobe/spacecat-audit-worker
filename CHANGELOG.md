@@ -1,3 +1,15 @@
+# [1.535.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.534.3...v1.535.0) (2026-09-10)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** reconcile agentic LLM provider set with Agentic Traffic tab ([#2960](https://github.com/adobe/spacecat-audit-worker/issues/2960)) ([8799731](https://github.com/adobe/spacecat-audit-worker/commit/879973193b607496ba85dcaf25b15013ab5a5151))
+
+
+### Features
+
+* **offsite-brand-presence:** retrieve Semrush URLs via S2S session-token flow (LLMO-6709) ([#2958](https://github.com/adobe/spacecat-audit-worker/issues/2958)) ([9b4ef36](https://github.com/adobe/spacecat-audit-worker/commit/9b4ef36f016d08b0569e3f3dc9707ad3eede4a45)), closes [#3217](https://github.com/adobe/spacecat-audit-worker/issues/3217) [#3217](https://github.com/adobe/spacecat-audit-worker/issues/3217)
+
 ## [1.534.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.534.2...v1.534.3) (2026-09-10)
 
 
