@@ -50,15 +50,19 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    host — the legacy top-cited gate, now applied per URL rather than per domain rollup.
    Citations are clamped (`Math.max(0, …)`) and zero-citation URLs are dropped.
 5. **Auth = IMS service bearer via v2 `getServiceAccessToken()` (`authorization_code`
-   grant), default IMS client.** This is the same S2S path `commerce-product-enrichments`,
-   `vulnerabilities` and `permissions` use. v3 `getServiceAccessTokenV3()`
-   (`client_credentials`) was tried first but returns IMS **`400 unauthorized_client`** —
-   the worker's default IMS client is only provisioned for `authorization_code`; only a
-   dedicated integration (content-ai's `CONTENTAI_*`) is registered for `client_credentials`.
-   The token is forwarded unchanged to Semrush; no `x-promise-token` for a service caller.
-   **Open risk (LLMO-6709):** the proxy is designed around a real *user* IMS token, so whether
-   Semrush accepts the worker's *service* token is unverified — the flag stays off until
-   confirmed end-to-end (use `enableSemrush:true` on one canary run, per Decision 7, to test).
+   grant), default IMS client.** ⚠️ **Superseded by Decision 9 (LLMO-6709 resolved).** This
+   originally minted a raw IMS *service* token and forwarded it unchanged to Semrush. That
+   token carries no `tenants`/org membership, so api-service's IMS path rejects it (401/403) —
+   the `domain-urls-auth-failed` fallbacks. The auth mechanism is now the S2S consumer
+   session-token flow; see Decision 9. Retained for history:
+   > This is the same S2S path `commerce-product-enrichments`, `vulnerabilities` and
+   > `permissions` use. v3 `getServiceAccessTokenV3()` (`client_credentials`) was tried first
+   > but returns IMS **`400 unauthorized_client`** — the worker's default IMS client is only
+   > provisioned for `authorization_code`; only a dedicated integration (content-ai's
+   > `CONTENTAI_*`) is registered for `client_credentials`. The token is forwarded unchanged
+   > to Semrush; no `x-promise-token` for a service caller.
+   > **Open risk (LLMO-6709):** the proxy is designed around a real *user* IMS token, so
+   > whether Semrush accepts the worker's *service* token is unverified.
 6. **`PAGE_SIZE` is a fixed constant (1000).** The response is sorted by
    citations globally across every host, so a low-citation bucket can be starved by too
    small a page — a generous page is cheap since it's one request either way. 1000 is the
@@ -236,6 +240,37 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    checked against, since the sibling repo can ship the exact mechanism being ruled out
    before the review round closes.
 
+9. **Auth = S2S consumer session-token flow (LLMO-6709, supersedes Decision 5).**
+   api-service ([adobe/spacecat-api-service#3217](https://github.com/adobe/spacecat-api-service/pull/3217))
+   exposes the Semrush-backed brand-presence routes (`domain-urls` included) to **S2S
+   consumers** — authorized by the existing `hasAccess(organization)` check against the
+   caller's session-token `tenants` claim — rather than to raw IMS service tokens. The loader
+   now does a 3-leg exchange:
+   1. resolve the **customer IMS org id** (threaded in from the handler, which already
+      resolves it for DRS scraping — falling back to `getImsOrgId(site, …)` only when a
+      caller omits it, so the session token is never scoped to a different org than the run);
+   2. mint the **consumer's own** IMS token via `getServiceAccessTokenV3()`
+      (`client_credentials`) using dedicated `SEMRUSH_S2S_*` credentials (the same shape
+      content-ai's `CONTENTAI_*` uses; `IMS_CLIENT_CODE` is set to a placeholder because
+      `createFrom` validates it as required but the `client_credentials` grant never sends it);
+   3. exchange it at `POST /api/v1/auth/s2s/login` (`{ imsOrgId }`) for a 15-min,
+      customer-scoped session token, then present that as `Bearer` on the `domain-urls` call.
+   Both the login and data calls must hit the **LLMO host** (`LLMO_API_BASE_URL`, default
+   `llmo.experiencecloud.live`; `LLMO_S2S_LOGIN_URL` overrides the login URL for non-prod
+   path prefixes) because the Fastly edge sets `x-product` from the host. `x-promise-token`
+   forwarding is dropped (the session token is self-contained). The session token is cached
+   module-level keyed by `imsOrgId` (TTL under 15 min), so a warm container reuses it across
+   invocations for the same customer org, collapsing the mint+login to zero network calls.
+   New fallback reasons: `no_ims_org_id`, `ims_token_failed`, `session_token_auth_failed`
+   (401/403 — a static config problem: missing `brand:read` or wrong tenant), and
+   `session_token_failed` (transient/other). The login endpoint's error body is captured in
+   the structured log (`responseBody`) but never forwarded to Slack. **Infra required:**
+   register the worker as an S2S consumer with `brand:read` (multi-org scope), set
+   `SEMRUSH_S2S_*` + `LLMO_API_BASE_URL`, and — producer-side — `SEMRUSH_ADMIN_ELEMENT_API_KEY`
+   / `SEO_API_BASE_URL` in Vault per PR #3217. Until an org has a resolvable `imsOrgId`,
+   Semrush is skipped (`no_ims_org_id`) and the run uses the legacy source — consistent with
+   DRS scraping, which already requires `imsOrgId`.
+
 ## Consequences
 
 - Enabling the flag can never silently zero out offsite (fallback), but the fallback
@@ -267,23 +302,28 @@ override (`enableSemrush`, Decision 7) is the intended tool for step 1: run a si
 request against the real Semrush proxy on one site and confirm the auth path works
 end-to-end before flipping the env var fleet-wide.
 
-1. **Auth/authz verified (LLMO-6709).** Confirm the worker's **service** IMS token is
-   accepted by the Semrush proxy end-to-end. Confirm `tracingFetch` does not emit the
-   `Authorization` header into traces/spans (service-bearer leak).
+1. **Auth/authz verified (LLMO-6709) — now the S2S consumer session-token flow (Decision 9).**
+   Confirm the worker is registered as an S2S consumer with `brand:read`, `SEMRUSH_S2S_*` +
+   `LLMO_API_BASE_URL` are set, and the producer-side Vault keys are provisioned; then confirm
+   the login exchange + `domain-urls` read succeed end-to-end on one canary org. Confirm
+   `tracingFetch` does not emit the `Authorization` header (IMS token or session token) into
+   traces/spans.
 2. **`dataSource` shipped** (this PR) — so parity can be measured.
 3. **Shadow-run parity on a canary site (LLMO-6711)** — top-70 overlap per bucket vs legacy.
 4. **Fleet enable** per environment — **US markets only** until region scoping (LLMO-6710) closes.
 
 ## Configuration / client-convention debt (to resolve before the 3rd caller)
 
-This loader reads `SPACECAT_API_URI` and mints an **IMS service bearer**; `brand-resolver.js`
-reads `SPACECAT_API_BASE_URL` and uses **`x-api-key`** — for the *same* spacecat-api-service.
-The IMS scheme is justified here (the Elements proxy must forward a bearer to Semrush), but
-**two base-URL env vars + two auth schemes** can drift (one caller repointed to stage/prod, the
-other not → IMS traffic to an untrusted issuer → 401 → silent legacy fallback). Documented as
-debt: pick one base-URL env var and one api-service client convention (a shared helper) **before
-the `cited-domains` follow-up adds a third caller** that copies whichever it finds first. A
-tracking ticket will be filed before this debt is resolved; not required to close this PR.
+This loader reads `LLMO_API_BASE_URL` and uses the **S2S consumer session-token** flow
+(Decision 9); `brand-resolver.js` reads `SPACECAT_API_BASE_URL` and uses **`x-api-key`** — for
+the *same* spacecat-api-service. The session-token scheme is required here (only S2S consumers
+may read the Semrush-backed routes), but **two base-URL env vars + two auth schemes** can drift
+(one caller repointed to stage/prod, the other not → traffic to the wrong host/issuer → 401 →
+silent legacy fallback). Documented as debt: pick one base-URL env var and one api-service
+client convention (a shared helper) **before the next S2S-backed source adds a third caller**
+that copies whichever it finds first — the org-id → IMS-token → session-token sequence in
+particular is a good extraction candidate the moment a second consumer needs it. A tracking
+ticket will be filed before this debt is resolved; not required to close this PR.
 
 ## Alternatives Considered
 
