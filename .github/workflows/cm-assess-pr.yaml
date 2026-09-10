@@ -1,0 +1,24 @@
+name: cm-assess-pr
+
+# Runs when a PR is MERGED into a deploy branch — a merged PR is a production change, so this is
+# the moment to guarantee it carries change-management info. Ensures a machine-readable
+# cm-assessment block exists (baseline standard/unnoticeable/minor if none, escalated by the
+# cmr:high-risk label), which release-cm then aggregates onto the release. Idempotent: never
+# overwrites an author/agent (cmr skill) block. Post-merge only — it never blocks a PR; a green
+# run is the "CM info is attached" check.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main, master, prod, production]   # default branch + prod, if the repo has one
+
+permissions:
+  contents: read
+  pull-requests: write   # to attach the block to the merged PR
+
+jobs:
+  cm-assess-pr:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      # Pin to a full commit SHA once mysticat-ci publishes the action; using @v3 until then.
+      - uses: adobe/mysticat-ci/.github/actions/cm-assess-pr@v3

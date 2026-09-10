@@ -1,0 +1,4 @@
+# ServiceNow change-management binding for this repo.
+# serviceIds = the Technical Service(s) this repo deploys (the CMR target).
+# See mysticat-architecture: platform/reference/repository-service-binding.md
+serviceIds: [572776]   # Analysis (Audit)
