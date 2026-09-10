@@ -22,13 +22,16 @@
  * using only the worker's EXISTING default IMS client, does api-service already grant this
  * worker access — and via which path?
  *
- * It runs two probes back-to-back and emits one structured Splunk log line per step (event
+ * It runs three probes back-to-back and emits one structured Splunk log line per step (event
  * `data_acquisition_bp_semrush_auth_probe`, distinct `probe`/`step`/`status` fields), so each
  * outcome is independently greppable:
  *   - `login_existing_ims`: mint an IMS token from the worker's existing default client, POST
  *     it to /auth/s2s/login, and (if a session token comes back) call domain-urls with it.
  *   - `direct_ims`: call domain-urls with the raw existing IMS bearer, no login exchange
  *     (this exercises api-service's IMS path, not the S2S path).
+ *   - `apikey_direct`: call domain-urls with the scoped `x-api-key` (`SPACECAT_API_KEY`, the
+ *     credential `brand-resolver.js` already uses against /v2/orgs/...). Independent of IMS —
+ *     if the route accepts it, that's access with zero new registration.
  *
  * It is best-effort and side-effect-free: it NEVER throws to the caller and NEVER influences
  * the audit result — it only writes logs. Remove this file (and its handler call site) once
@@ -70,17 +73,19 @@ async function readBodySnippet(response) {
 }
 
 /**
- * Calls the domain-urls endpoint with the given Authorization header and logs the outcome
- * under a `probe`/`step=domain_urls` line. Returns nothing — this is telemetry only.
+ * Calls the domain-urls endpoint with the given auth headers and logs the outcome under a
+ * `probe`/`step=domain_urls` line. `authHeaders` is the credential to test (e.g.
+ * `{ Authorization: 'Bearer ...' }` or `{ 'x-api-key': '...' }`); `Accept` is added here.
+ * Returns nothing — this is telemetry only.
  */
 async function probeDomainUrls({
-  olog, probe, authorization, url,
+  olog, probe, authHeaders, url,
 }) {
   const startedAt = Date.now();
   let response;
   try {
     response = await fetch(url, {
-      headers: { Authorization: authorization, Accept: 'application/json' },
+      headers: { ...authHeaders, Accept: 'application/json' },
       timeout: FETCH_TIMEOUT_MS,
     });
   } catch (error) {
@@ -154,7 +159,7 @@ async function probeLoginExistingIms({
     peer: PEER.SEMRUSH, direction: 'inbound', probe, step: 'login', status, authorized: true, hasSessionToken: true, durationMs,
   });
   await probeDomainUrls({
-    olog, probe, authorization: `Bearer ${sessionToken}`, url: domainUrlsUrl,
+    olog, probe, authHeaders: { Authorization: `Bearer ${sessionToken}` }, url: domainUrlsUrl,
   });
 }
 
@@ -209,10 +214,10 @@ export async function runSemrushAuthProbes({
       peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, imsClientId: env?.IMS_CLIENT_ID, baseUrl,
     });
 
-    // Mint ONE IMS token from the worker's EXISTING default IMS client (v2
-    // authorization_code — the grant the default client is provisioned for), reused by both
-    // probes. `imsClientId` is logged (identifier, not a secret) to answer "which client id
-    // did we actually authenticate as".
+    // Probes A + B use an IMS token minted from the worker's EXISTING default IMS client (v2
+    // authorization_code — the grant the default client is provisioned for). `imsClientId` is
+    // logged (identifier, not a secret) to answer "which client id did we authenticate as".
+    // A mint failure only skips A + B; Probe C (x-api-key) is independent and still runs.
     let imsAuthorization;
     try {
       const imsClient = ImsClient.createFrom(context);
@@ -225,16 +230,31 @@ export async function runSemrushAuthProbes({
       olog.warn(PROBE_EVENT, 'Auth probe could not mint an IMS token from the existing default client', {
         peer: PEER.SEMRUSH, direction: 'inbound', step: 'ims_mint', imsClientId: env?.IMS_CLIENT_ID, reason: 'ims_mint_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
       });
-      return;
     }
 
     // Probe A, then Probe B — sequentially, so each result is clearly attributable.
-    await probeLoginExistingIms({
-      olog, loginUrl, imsAuthorization, imsOrgId, domainUrlsUrl,
-    });
-    await probeDomainUrls({
-      olog, probe: 'direct_ims', authorization: imsAuthorization, url: domainUrlsUrl,
-    });
+    if (imsAuthorization) {
+      await probeLoginExistingIms({
+        olog, loginUrl, imsAuthorization, imsOrgId, domainUrlsUrl,
+      });
+      await probeDomainUrls({
+        olog, probe: 'direct_ims', authHeaders: { Authorization: imsAuthorization }, url: domainUrlsUrl,
+      });
+    }
+
+    // Probe C — the scoped api key (`SPACECAT_API_KEY`, the credential `brand-resolver.js`
+    // already uses against /v2/orgs/...). Independent of IMS; needs no login. If the route
+    // accepts it, this is access with zero new registration.
+    const apiKey = env?.SPACECAT_API_KEY;
+    if (apiKey) {
+      await probeDomainUrls({
+        olog, probe: 'apikey_direct', authHeaders: { 'x-api-key': apiKey }, url: domainUrlsUrl,
+      });
+    } else {
+      olog.warn(PROBE_EVENT, 'Auth probe [apikey_direct] skipped — SPACECAT_API_KEY not configured', {
+        peer: PEER.SEMRUSH, direction: 'inbound', probe: 'apikey_direct', step: 'domain_urls', reason: 'apikey_not_configured', outcome: OUTCOME.SKIP,
+      });
+    }
   } catch (error) {
     // A diagnostic must never affect the audit — swallow everything.
     olog.warn(PROBE_EVENT, 'Auth probe crashed (swallowed — audit unaffected)', {

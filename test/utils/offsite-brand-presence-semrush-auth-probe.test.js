@@ -254,6 +254,34 @@ describe('offsite-brand-presence-semrush-auth-probe', function () {
     expect(warnWith(/domain-urls request failed \(network\)/)).to.equal(true);
   });
 
+  // --- probe C (x-api-key) --------------------------------------------------
+
+  it('runs probe C (x-api-key) against domain-urls when SPACECAT_API_KEY is set', async () => {
+    await run({ SPACECAT_API_KEY: 'the-key' });
+    // A (session token) + B (direct IMS) + C (api key) = 3 domain-urls calls.
+    expect(dataCalls().length).to.equal(3);
+    const probeC = dataCalls()[2];
+    expect(probeC.args[0]).to.contain('/domain-urls'); // same LLMO-host route as A/B
+    expect(probeC.args[1].headers['x-api-key']).to.equal('the-key');
+    expect(probeC.args[1].headers).to.not.have.property('Authorization');
+    expect(infoWith(/apikey_direct\] domain-urls: HTTP 200 \(authorized\)/)).to.equal(true);
+  });
+
+  it('skips probe C and logs when SPACECAT_API_KEY is not configured', async () => {
+    await run(); // no api key
+    expect(warnWith(/apikey_direct\] skipped — SPACECAT_API_KEY not configured/)).to.equal(true);
+    expect(dataCalls().length).to.equal(2); // only A and B
+  });
+
+  it('runs probe C even when the IMS mint fails (it is independent of IMS)', async () => {
+    getServiceAccessToken.rejects(new Error('ims down'));
+    await run({ SPACECAT_API_KEY: 'the-key' });
+    expect(warnWith(/could not mint an IMS token/)).to.equal(true);
+    expect(loginCalls().length).to.equal(0); // probe A skipped (no IMS token)
+    expect(dataCalls().length).to.equal(1); // only probe C hit domain-urls
+    expect(dataCalls()[0].args[1].headers['x-api-key']).to.equal('the-key');
+  });
+
   // --- crash safety ---------------------------------------------------------
 
   it('swallows any unexpected error and never throws (audit unaffected)', async () => {
