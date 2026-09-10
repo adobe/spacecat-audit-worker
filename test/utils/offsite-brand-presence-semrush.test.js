@@ -25,6 +25,8 @@ use(sinonChai);
 
 const ORG_ID = 'e07a0aae-b794-41f6-9622-a602203c5a3e';
 const BRAND_ID = 'cb84e91a-f7e9-488b-8220-e0d031941cd7';
+const IMS_ORG_ID = '899D173E60B73D8B0A495C0A@AdobeOrg';
+const SESSION_TOKEN = 'sess-jwt-token';
 const PREVIOUS_WEEKS = [{ week: 29, year: 2026 }, { week: 28, year: 2026 }];
 
 const YT_URL = 'https://www.youtube.com/watch?v=abc';
@@ -33,6 +35,7 @@ const RD_URL = 'https://www.reddit.com/r/Lovesac/comments/1/pros_cons';
 const CITED_URL = 'https://example.org/page';
 
 const okJson = (body) => ({ ok: true, status: 200, json: async () => body });
+const isLogin = (u) => String(u).includes('/auth/s2s/login');
 
 describe('offsite-brand-presence-semrush', function () {
   this.timeout(10000);
@@ -42,8 +45,9 @@ describe('offsite-brand-presence-semrush', function () {
   let fetchStub;
   let resolveBrandResultForSite;
   let resolveSemrushEntitlement;
-  let getServiceAccessToken;
+  let getServiceAccessTokenV3;
   let imsCreateFrom;
+  let getImsOrgIdStub;
   let mod;
 
   const SITE_ID = '5b0d4d6e-3d2e-4a5b-8e2a-9b6f7c9c1e2a';
@@ -52,14 +56,24 @@ describe('offsite-brand-presence-semrush', function () {
     getId: () => SITE_ID,
     getConfig: () => ({ getBrandKeywords: () => [] }),
   };
-  const makeContext = (env = {}, extra = {}) => ({ log, env, ...extra });
+  const makeContext = (env = {}, extra = {}) => ({
+    log, env, dataAccess: {}, ...extra,
+  });
   const warnedWith = (re) => log.warn.getCalls().some((c) => re.test(c.args[0]));
+
+  // Both the S2S login POST and the domain-urls GET go through the same `fetch`. The login
+  // call is matched by URL (withArgs) and resolves a session token by default; each test's
+  // `fetchStub.resolves(...)` sets the DATA-call response only.
+  const dataCall = () => fetchStub.getCalls().find((c) => !isLogin(c.args[0]));
+  const loginCall = () => fetchStub.getCalls().find((c) => isLogin(c.args[0]));
+  const dataCallCount = () => fetchStub.getCalls().filter((c) => !isLogin(c.args[0])).length;
 
   async function loadModule(overrides = {}) {
     return esmock('../../src/utils/offsite-brand-presence-semrush.js', {
       '@adobe/spacecat-shared-ims-client': { ImsClient: { createFrom: imsCreateFrom } },
       '../../src/utils/brand-resolver.js': { resolveBrandResultForSite },
       '../../src/utils/semrush-entitlement.js': { resolveSemrushEntitlement },
+      '../../src/utils/data-access.js': { getImsOrgId: getImsOrgIdStub },
       '@adobe/spacecat-shared-utils': { ...spacecatSharedUtils, tracingFetch: fetchStub },
       ...overrides,
     });
@@ -80,6 +94,10 @@ describe('offsite-brand-presence-semrush', function () {
       info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(),
     };
     fetchStub = sandbox.stub();
+    // The login leg always succeeds by default; tests override it explicitly when they
+    // exercise a login failure. The default (non-login) behavior is the data response.
+    fetchStub.withArgs(sinon.match(isLogin)).resolves(okJson({ sessionToken: SESSION_TOKEN }));
+    fetchStub.resolves(okJson({ urls: [] }));
     resolveBrandResultForSite = sandbox.stub()
       .resolves({ brand: { brandId: BRAND_ID }, resolved: true });
     resolveSemrushEntitlement = sandbox.stub()
@@ -89,8 +107,9 @@ describe('offsite-brand-presence-semrush', function () {
         reason: SEMRUSH_ENTITLEMENT_REASONS.ENTITLED,
         mode: 'subworkspace',
       });
-    getServiceAccessToken = sandbox.stub().resolves({ token_type: 'Bearer', access_token: 'tok' });
-    imsCreateFrom = sandbox.stub().returns({ getServiceAccessToken });
+    getServiceAccessTokenV3 = sandbox.stub().resolves({ token_type: 'Bearer', access_token: 'tok' });
+    imsCreateFrom = sandbox.stub().returns({ getServiceAccessTokenV3 });
+    getImsOrgIdStub = sandbox.stub().resolves(IMS_ORG_ID);
     mod = await loadModule();
   });
 
@@ -100,12 +119,12 @@ describe('offsite-brand-presence-semrush', function () {
 
   // --- happy path -----------------------------------------------------------
 
-  it('makes exactly ONE domain-urls request (no hostname, platform=all)', async () => {
-    fetchStub.resolves(okJson({ urls: [] }));
+  it('makes exactly ONE domain-urls request (no hostname, platform=all) after an S2S login', async () => {
     await run();
 
-    expect(fetchStub.callCount).to.equal(1);
-    const [url] = fetchStub.firstCall.args;
+    expect(dataCallCount()).to.equal(1);
+    expect(loginCall()).to.not.equal(undefined);
+    const [url] = dataCall().args;
     expect(new URL(url).searchParams.has('hostname')).to.equal(false);
     expect(new URL(url).searchParams.get('platform')).to.equal('all');
   });
@@ -126,42 +145,66 @@ describe('offsite-brand-presence-semrush', function () {
     expect(allUrls.get(CITED_URL)).to.deep.equal({ count: 5, domain: null });
   });
 
-  it('sends Authorization+Accept+timeout, no Content-Type, no x-promise-token by default', async () => {
-    fetchStub.resolves(okJson({ urls: [] }));
+  // --- S2S auth (IMS token -> session token) --------------------------------
+
+  it('sends the session token (not the IMS token) as Bearer, with Accept and a timeout, and no Content-Type on the data call', async () => {
     await run();
 
-    const [url, opts] = fetchStub.firstCall.args;
-    expect(url).to.contain(`${mod.SPACECAT_API_DEFAULT_BASE_URL}/v2/orgs/${ORG_ID}/brands/${BRAND_ID}`);
-    expect(opts.headers.Authorization).to.equal('Bearer tok');
+    const [url, opts] = dataCall().args;
+    expect(url).to.contain(`${mod.LLMO_API_DEFAULT_BASE_URL}/v2/orgs/${ORG_ID}/brands/${BRAND_ID}`);
+    expect(opts.headers.Authorization).to.equal(`Bearer ${SESSION_TOKEN}`);
     expect(opts.headers.Accept).to.equal('application/json');
     expect(opts.headers).to.not.have.property('Content-Type');
-    expect(opts.headers).to.not.have.property('x-promise-token');
     expect(opts.timeout).to.equal(10000);
   });
 
-  it('normalizes a lowercase token_type to Bearer', async () => {
-    getServiceAccessToken.resolves({ token_type: 'bearer', access_token: 'tok' });
-    fetchStub.resolves(okJson({ urls: [] }));
+  it('mints the consumer IMS token via getServiceAccessTokenV3 (client_credentials) with SEMRUSH_S2S_* creds', async () => {
+    await run({
+      SEMRUSH_S2S_IMS_HOST: 'https://ims.example',
+      SEMRUSH_S2S_CLIENT_ID: 'cid',
+      SEMRUSH_S2S_CLIENT_SECRET: 'secret',
+      SEMRUSH_S2S_CLIENT_SCOPE: 'scope',
+    });
+
+    expect(getServiceAccessTokenV3).to.have.been.calledOnce;
+    const passedEnv = imsCreateFrom.firstCall.args[0].env;
+    expect(passedEnv.IMS_CLIENT_ID).to.equal('cid');
+    expect(passedEnv.IMS_CLIENT_SECRET).to.equal('secret');
+    expect(passedEnv.IMS_SCOPE).to.equal('scope');
+    expect(passedEnv.IMS_HOST).to.equal('https://ims.example');
+  });
+
+  it('exchanges the IMS token for a customer-scoped session token: POST login, Bearer IMS token, { imsOrgId } body', async () => {
     await run();
-    expect(fetchStub.firstCall.args[1].headers.Authorization).to.equal('Bearer tok');
+
+    const [url, opts] = loginCall().args;
+    expect(url).to.equal(`${mod.LLMO_API_DEFAULT_BASE_URL}${mod.S2S_LOGIN_DEFAULT_PATH}`);
+    expect(opts.method).to.equal('POST');
+    expect(opts.headers.Authorization).to.equal('Bearer tok');
+    expect(opts.headers['Content-Type']).to.equal('application/json');
+    expect(JSON.parse(opts.body)).to.deep.equal({ imsOrgId: IMS_ORG_ID });
   });
 
-  it('forwards x-promise-token when present on the context', async () => {
-    fetchStub.resolves(okJson({ urls: [] }));
-    await run({}, { promiseToken: 'ptok' });
-    expect(fetchStub.firstCall.args[1].headers['x-promise-token']).to.equal('ptok');
+  it('always normalizes the consumer IMS token to a Bearer scheme (even when IMS returns lowercase)', async () => {
+    getServiceAccessTokenV3.resolves({ token_type: 'bearer', access_token: 'tok' });
+    await run();
+    expect(loginCall().args[1].headers.Authorization).to.equal('Bearer tok');
   });
 
-  it('honours the SPACECAT_API_URI override', async () => {
-    fetchStub.resolves(okJson({ urls: [] }));
-    await run({ SPACECAT_API_URI: 'https://stage.example/api' });
-    expect(fetchStub.firstCall.args[0]).to.contain('https://stage.example/api/v2/orgs/');
+  it('honours the LLMO_API_BASE_URL override for both the login and the data call', async () => {
+    await run({ LLMO_API_BASE_URL: 'https://stage.example' });
+    expect(dataCall().args[0]).to.contain('https://stage.example/v2/orgs/');
+    expect(loginCall().args[0]).to.equal(`https://stage.example${mod.S2S_LOGIN_DEFAULT_PATH}`);
+  });
+
+  it('honours the LLMO_S2S_LOGIN_URL override for the login call', async () => {
+    await run({ LLMO_S2S_LOGIN_URL: 'https://llmo.experiencecloud.page/api/ci/auth/s2s/login' });
+    expect(loginCall().args[0]).to.equal('https://llmo.experiencecloud.page/api/ci/auth/s2s/login');
   });
 
   it('always requests PAGE_SIZE', async () => {
-    fetchStub.resolves(okJson({ urls: [] }));
     await run();
-    expect(new URL(fetchStub.firstCall.args[0]).searchParams.get('pageSize')).to.equal(String(mod.PAGE_SIZE));
+    expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal(String(mod.PAGE_SIZE));
   });
 
   // --- filtering / scope ----------------------------------------------------
@@ -362,7 +405,8 @@ describe('offsite-brand-presence-semrush', function () {
   // --- request-level fallback (returns null) --------------------------------
 
   it('falls back (null) on a network error', async () => {
-    fetchStub.rejects(new Error('network down'));
+    // Login (withArgs from beforeEach) still resolves; only the data call rejects.
+    fetchStub.withArgs(sinon.match((u) => !isLogin(u))).rejects(new Error('network down'));
     const diagnostics = {};
     const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
@@ -381,17 +425,16 @@ describe('offsite-brand-presence-semrush', function () {
     const diagnostics = {};
     const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
-    expect(warnedWith(/Service token rejected/)).to.equal(true);
+    expect(warnedWith(/session token rejected/i)).to.equal(true);
     expect(diagnostics.fallbackReason).to.equal('domain_urls_auth_failed');
   });
 
   it('logs the response body on a 401 so the rejecter (api-service vs Semrush) is identifiable', async () => {
-    const proxyMsg = 'Elements proxy requires IMS authentication; send the x-promise-token header instead';
+    const proxyMsg = 'Denied - reason=no-org-access';
     fetchStub.resolves({ ok: false, status: 401, text: async () => proxyMsg });
     const result = await run();
     expect(result).to.equal(null);
-    expect(warnedWith(/Service token rejected/)).to.equal(true);
-    // The captured body identifies the rejecter (api-service vs Semrush) — LLMO-6709.
+    expect(warnedWith(/session token rejected/i)).to.equal(true);
     expect(log.warn.getCalls().some((c) => c.args[0].includes(`responseBody="${proxyMsg}"`))).to.equal(true);
   });
 
@@ -399,8 +442,6 @@ describe('offsite-brand-presence-semrush', function () {
     fetchStub.resolves({ ok: false, status: 500, text: async () => '' });
     const result = await run();
     expect(result).to.equal(null);
-    // Empty values are dropped by the offsite-logging taxonomy, so no responseBody token
-    // is emitted at all — the status is still captured.
     expect(log.warn.getCalls().some((c) => c.args[0].includes('status=500') && !c.args[0].includes('responseBody='))).to.equal(true);
   });
 
@@ -409,7 +450,7 @@ describe('offsite-brand-presence-semrush', function () {
     const diagnostics = {};
     const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
-    expect(warnedWith(/Service token rejected/)).to.equal(true);
+    expect(warnedWith(/session token rejected/i)).to.equal(true);
     expect(diagnostics.fallbackReason).to.equal('domain_urls_auth_failed');
   });
 
@@ -464,7 +505,8 @@ describe('offsite-brand-presence-semrush', function () {
     expect(diagnostics.fallbackReason).to.equal(SEMRUSH_NOT_ENTITLED_REASON);
     expect(diagnostics.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE);
     expect(fetchStub).to.not.have.been.called;
-    expect(getServiceAccessToken).to.not.have.been.called;
+    expect(getServiceAccessTokenV3).to.not.have.been.called;
+    expect(getImsOrgIdStub).to.not.have.been.called;
     expect(log.warn).to.have.been.calledWithMatch(/Brand not entitled for Semrush.*entitlementReason=no_workspace/);
     expect(onProgress).to.have.been.calledWith(
       ':information_source: Brand is not entitled for Semrush — falling back to the legacy source.',
@@ -491,8 +533,6 @@ describe('offsite-brand-presence-semrush', function () {
   });
 
   it('passes the resolved orgId/brandId to the entitlement check and proceeds when entitled', async () => {
-    fetchStub.resolves(okJson({ urls: [] }));
-
     await run();
 
     expect(resolveSemrushEntitlement).to.have.been.calledOnce;
@@ -508,16 +548,98 @@ describe('offsite-brand-presence-semrush', function () {
     expect(result).to.equal(null);
   });
 
-  it('returns null when the IMS service token cannot be minted', async () => {
-    getServiceAccessToken.rejects(new Error('ims down'));
-    expect(await run()).to.equal(null);
+  // --- IMS org id resolution (leg 1) ----------------------------------------
+
+  it('returns null (no_ims_org_id) and never mints a token when the customer IMS org id cannot be resolved', async () => {
+    getImsOrgIdStub.resolves(null);
+    const diagnostics = {};
+    const onProgress = sandbox.stub().resolves();
+
+    const result = await run({}, {}, onProgress, diagnostics);
+
+    expect(result).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('no_ims_org_id');
+    expect(getServiceAccessTokenV3).to.not.have.been.called;
+    expect(fetchStub).to.not.have.been.called;
+    expect(warnedWith(/Could not resolve customer IMS org id/)).to.equal(true);
+    expect(onProgress).to.have.been.calledWith(
+      ':x: Could not resolve the customer IMS org id — falling back to the legacy source.',
+    );
+  });
+
+  it('passes the site and dataAccess through to getImsOrgId', async () => {
+    const dataAccess = { Organization: {} };
+    await mod.loadCitedUrlsFromSemrush({
+      site, previousWeeks: PREVIOUS_WEEKS, context: { log, env: {}, dataAccess },
+    });
+    expect(getImsOrgIdStub).to.have.been.calledOnce;
+    expect(getImsOrgIdStub.firstCall.args[0]).to.equal(site);
+    expect(getImsOrgIdStub.firstCall.args[1]).to.equal(dataAccess);
+  });
+
+  it('defaults dataAccess to an empty object when the context omits it', async () => {
+    await mod.loadCitedUrlsFromSemrush({
+      site, previousWeeks: PREVIOUS_WEEKS, context: { log, env: {} },
+    });
+    expect(getImsOrgIdStub.firstCall.args[1]).to.deep.equal({});
+  });
+
+  // --- IMS token minting (leg 2) --------------------------------------------
+
+  it('returns null (ims_token_failed) when the IMS service token cannot be minted', async () => {
+    getServiceAccessTokenV3.rejects(new Error('ims down'));
+    const diagnostics = {};
+    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('ims_token_failed');
     expect(warnedWith(/Failed to obtain IMS service token/)).to.equal(true);
   });
 
   it('returns null when the IMS token response has no access_token', async () => {
-    getServiceAccessToken.resolves({ token_type: 'Bearer' });
+    getServiceAccessTokenV3.resolves({ token_type: 'Bearer' });
     expect(await run()).to.equal(null);
-    expect(warnedWith(/access_token/)).to.equal(true);
+    expect(warnedWith(/Failed to obtain IMS service token/)).to.equal(true);
+  });
+
+  // --- session token exchange (leg 3) ---------------------------------------
+
+  it('returns null (session_token_failed) on a non-2xx login response (with a body)', async () => {
+    fetchStub.withArgs(sinon.match(isLogin)).resolves({ ok: false, status: 403, text: async () => 'nope' });
+    const diagnostics = {};
+    const result = await run({}, {}, undefined, diagnostics);
+    expect(result).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('session_token_failed');
+    expect(dataCall()).to.equal(undefined); // never reaches the data call
+    expect(warnedWith(/Failed to exchange for an S2S session token/)).to.equal(true);
+  });
+
+  it('returns null (session_token_failed) on a non-2xx login response (no readable body)', async () => {
+    fetchStub.withArgs(sinon.match(isLogin)).resolves({ ok: false, status: 500 });
+    const diagnostics = {};
+    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('session_token_failed');
+  });
+
+  it('returns null (session_token_failed) on a network error during login', async () => {
+    fetchStub.withArgs(sinon.match(isLogin)).rejects(new Error('login down'));
+    const diagnostics = {};
+    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('session_token_failed');
+  });
+
+  it('returns null (session_token_failed) when the login body is not parseable JSON', async () => {
+    fetchStub.withArgs(sinon.match(isLogin)).resolves({
+      ok: true, status: 200, json: async () => { throw new Error('bad json'); },
+    });
+    const diagnostics = {};
+    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('session_token_failed');
+  });
+
+  it('returns null (session_token_failed) when the login response has no sessionToken', async () => {
+    fetchStub.withArgs(sinon.match(isLogin)).resolves(okJson({ notAToken: true }));
+    const diagnostics = {};
+    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('session_token_failed');
   });
 
   // --- progress notifications (onProgress) -----------------------------------
@@ -550,7 +672,6 @@ describe('offsite-brand-presence-semrush', function () {
   });
 
   it('logs a warning and does not throw when onProgress rejects', async () => {
-    fetchStub.resolves(okJson({ urls: [] }));
     const onProgress = sandbox.stub().rejects(new Error('slack down'));
 
     const allUrls = await run({}, {}, onProgress);
