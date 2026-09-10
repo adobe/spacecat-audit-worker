@@ -75,18 +75,34 @@ const FETCH_TIMEOUT_MS = 10_000;
 const ERROR_BODY_SNIPPET_MAX = 500;
 
 /**
- * S2S session-token cache TTL. The api-service session token lives 15 min; we cache for a
- * shorter window so a cached token is never handed to a data call at (or near) expiry. The
- * cache is module-level, so a warm Lambda container reuses it across audit invocations —
+ * Default S2S session-token cache TTL. The api-service session token lives 15 min; we cache
+ * for a shorter window so a cached token is never handed to a data call at (or near) expiry.
+ * The cache is module-level, so a warm Lambda container reuses it across audit invocations —
  * collapsing the IMS mint + login exchange to zero network calls for a brand whose customer
- * org was minted recently.
+ * org was minted recently. Overridable with `SEMRUSH_S2S_SESSION_TTL_MS` so the window can be
+ * retuned (e.g. if the login endpoint's token lifetime changes) without a code deploy.
  */
 const SESSION_TOKEN_TTL_MS = 10 * 60 * 1000;
 
 /**
+ * Resolves the session-token cache TTL from env, falling back to the default. A non-positive
+ * or non-numeric override is ignored (fail-safe to the default rather than a 0/NaN TTL that
+ * would disable or corrupt caching).
+ *
+ * @param {object} env
+ * @returns {number} TTL in ms.
+ */
+function resolveSessionTtlMs(env) {
+  const override = Number(env?.SEMRUSH_S2S_SESSION_TTL_MS);
+  return Number.isFinite(override) && override > 0 ? override : SESSION_TOKEN_TTL_MS;
+}
+
+/**
  * Module-level session-token cache, keyed by customer `imsOrgId` (the scope the token is
  * minted for). Value: `{ token, expiresAt }`. Not keyed by brand/site — one customer-scoped
- * session token authorizes every brand under that org.
+ * session token authorizes every brand under that org. Only ever accessed with a truthy
+ * `imsOrgId` (the `no_ims_org_id` guard above the caching logic returns first), so the key
+ * space can't be polluted by a falsy key.
  */
 const sessionTokenCache = new Map();
 
@@ -101,12 +117,33 @@ function getCachedSessionToken(imsOrgId, nowMs) {
 }
 
 /**
+ * Caches a freshly-minted session token. Opportunistically sweeps expired entries on each
+ * write so the map stays bounded by the number of distinct orgs seen within one TTL window
+ * (not the life of the warm container) — a slow leak this shape would otherwise cause.
+ *
  * @param {string} imsOrgId
  * @param {string} token
  * @param {number} nowMs
+ * @param {number} ttlMs
  */
-function cacheSessionToken(imsOrgId, token, nowMs) {
-  sessionTokenCache.set(imsOrgId, { token, expiresAt: nowMs + SESSION_TOKEN_TTL_MS });
+function cacheSessionToken(imsOrgId, token, nowMs, ttlMs) {
+  for (const [key, entry] of sessionTokenCache) {
+    if (entry.expiresAt <= nowMs) {
+      sessionTokenCache.delete(key);
+    }
+  }
+  sessionTokenCache.set(imsOrgId, { token, expiresAt: nowMs + ttlMs });
+}
+
+/**
+ * Drops the cached token for an org — called when a cached token is rejected downstream by
+ * the data call (401/403), so a revoked/rotated token can't be replayed for the rest of its
+ * TTL and the next run re-mints (restoring the pre-caching self-heal-on-next-invocation).
+ *
+ * @param {string} imsOrgId
+ */
+function evictSessionToken(imsOrgId) {
+  sessionTokenCache.delete(imsOrgId);
 }
 
 /**
@@ -557,6 +594,10 @@ export async function loadCitedUrlsFromSemrush({
   // with a TTL under the 15-min server expiry.
   const nowMs = Date.now();
   let sessionToken = getCachedSessionToken(imsOrgId, nowMs);
+  // Tracked so that a downstream 401/403 on the data call can distinguish "our cached token
+  // went stale mid-window" (evict + self-heal next run) from "a freshly-minted token was
+  // rejected" (the consumer registration / grant is actually broken).
+  const sessionTokenFromCache = sessionToken !== null;
   if (!sessionToken) {
     // Leg 2: the consumer's IMS access token (dedicated client_credentials integration).
     let imsAuthorization;
@@ -607,7 +648,7 @@ export async function loadCitedUrlsFromSemrush({
       setDiagnostics({ fallbackReason: reason });
       return null;
     }
-    cacheSessionToken(imsOrgId, sessionToken, nowMs);
+    cacheSessionToken(imsOrgId, sessionToken, nowMs, resolveSessionTtlMs(env));
   }
 
   const headers = {
@@ -629,8 +670,21 @@ export async function loadCitedUrlsFromSemrush({
 
   const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE);
   if (!result.ok) {
+    if (result.authFailure) {
+      // The session token was rejected by the data call — evict it so a revoked/rotated
+      // token can't be replayed from the cache for the rest of its TTL; the next run
+      // re-mints. `wasCachedToken` lets ops tell a mid-window staleness (self-heals next
+      // run) from a genuinely broken registration (a freshly-minted token rejected).
+      evictSessionToken(imsOrgId);
+    }
     olog.warn('data_acquisition_bp_data_semrush_read', 'domain-urls request failed; using legacy fallback', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), reason: 'domain_urls_failed', outcome: OUTCOME.DEGRADED,
+      peer: PEER.SEMRUSH,
+      direction: 'inbound',
+      orgId: spaceCatId,
+      durationMs: elapsed(),
+      reason: 'domain_urls_failed',
+      outcome: OUTCOME.DEGRADED,
+      ...(result.authFailure && { wasCachedToken: sessionTokenFromCache }),
     });
     await notify(':x: `domain-urls` request failed — falling back to the legacy source.');
     setDiagnostics({

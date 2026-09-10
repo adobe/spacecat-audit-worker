@@ -622,6 +622,72 @@ describe('offsite-brand-presence-semrush', function () {
     expect(getServiceAccessTokenV3.callCount).to.equal(2);
   });
 
+  it('evicts a cached session token when the data call rejects it (401), so the next run re-mints', async () => {
+    let dataResponse = okJson({ urls: [] });
+    fetchStub.withArgs(sinon.match((u) => !isLogin(u))).callsFake(async () => dataResponse);
+
+    await run(); // call 1: mint + login + data(200) -> caches the token
+    dataResponse = { ok: false, status: 401 };
+    await run(); // call 2: cache HIT, data(401) -> evict + fallback (no new login)
+    dataResponse = okJson({ urls: [] });
+    const third = await run(); // call 3: cache empty (evicted) -> re-mint + login
+
+    expect(loginCallCount()).to.equal(2); // call 1 and call 3; call 2 reused then evicted
+    expect(getServiceAccessTokenV3.callCount).to.equal(2);
+    expect(third).to.not.equal(null);
+    // The stale-cache signal is logged so ops can tell it apart from a broken registration.
+    expect(log.warn.getCalls().some((c) => c.args[0].includes('wasCachedToken=true'))).to.equal(true);
+  });
+
+  it('does not evict on a non-auth data failure (500) — only auth rejections poison the token', async () => {
+    let dataResponse = okJson({ urls: [] });
+    fetchStub.withArgs(sinon.match((u) => !isLogin(u))).callsFake(async () => dataResponse);
+
+    await run(); // caches
+    dataResponse = { ok: false, status: 500 };
+    await run(); // cache hit, data(500) -> NOT evicted
+    dataResponse = okJson({ urls: [] });
+    await run(); // still cached -> hit, no re-mint
+
+    expect(loginCallCount()).to.equal(1);
+  });
+
+  it('keeps unexpired entries for other orgs when caching a new one (bounded sweep)', async () => {
+    const call = (imsOrgId) => mod.loadCitedUrlsFromSemrush({
+      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(), imsOrgId,
+    });
+    await call('orgA@AdobeOrg'); // mint + cache A
+    await call('orgB@AdobeOrg'); // mint + cache B (sweep sees A unexpired -> keeps it)
+    await call('orgA@AdobeOrg'); // A still cached -> hit, no re-mint
+
+    expect(loginCallCount()).to.equal(2); // A and B; the 3rd (A) reused the cache
+  });
+
+  it('honours SEMRUSH_S2S_SESSION_TTL_MS as the cache window', async () => {
+    const clock = sandbox.useFakeTimers({ now: 1_000_000, toFake: ['Date'] });
+    await run({ SEMRUSH_S2S_SESSION_TTL_MS: '60000' }); // 60s TTL (well under the 10-min default)
+    clock.tick(30 * 1000);
+    await run({ SEMRUSH_S2S_SESSION_TTL_MS: '60000' });
+    expect(loginCallCount()).to.equal(1); // 30s < 60s -> still cached
+    clock.tick(40 * 1000);
+    await run({ SEMRUSH_S2S_SESSION_TTL_MS: '60000' });
+    // 70s > 60s -> expired, re-mint (the default 10min TTL would still have it cached).
+    expect(loginCallCount()).to.equal(2);
+  });
+
+  it('ignores an invalid SEMRUSH_S2S_SESSION_TTL_MS (non-numeric or non-positive) and uses the default', async () => {
+    const callWith = (ttl, imsOrgId) => mod.loadCitedUrlsFromSemrush({
+      site,
+      previousWeeks: PREVIOUS_WEEKS,
+      context: makeContext({ SEMRUSH_S2S_SESSION_TTL_MS: ttl }),
+      imsOrgId,
+    });
+    await callWith('nonsense', 'orgN@AdobeOrg'); // NaN -> default
+    await callWith('0', 'orgZ@AdobeOrg'); // finite but <= 0 -> default
+    // Distinct orgs => both are cache misses => both exercise resolveSessionTtlMs's fallback.
+    expect(loginCallCount()).to.equal(2);
+  });
+
   // --- IMS token minting (leg 2) --------------------------------------------
 
   it('returns null (ims_token_failed) when the IMS service token cannot be minted', async () => {
