@@ -1,3 +1,10 @@
+## [1.534.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.534.1...v1.534.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **toc:** correct TOC opportunity description to reflect on-page placement ([#2926](https://github.com/adobe/spacecat-audit-worker/issues/2926)) ([abaffa8](https://github.com/adobe/spacecat-audit-worker/commit/abaffa879e317553b499c9f429fcc4d72d076cd1))
+
 ## [1.534.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.534.0...v1.534.1) (2026-09-09)
 
 
