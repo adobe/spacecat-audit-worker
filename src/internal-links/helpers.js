@@ -408,22 +408,24 @@ export function calculatePriority(links) {
  *   one validated broken link for this site
  * @param {number} opts.minSourcePages - min distinct source pages for a target to count as
  *   boilerplate
- * @returns {{kept: Array, suppressed: Array}} partition of the input links
+ * @returns {{kept: Array, suppressed: Array, suppressedTargets: string[]}} partition of the
+ *   input links plus the distinct normalized target URLs that were flagged
  */
 export function identifyUncorroboratedBoilerplateLinks(
   links,
   { rumProducedBrokenLinks, minSourcePages } = {},
 ) {
   if (!Array.isArray(links) || links.length === 0 || !rumProducedBrokenLinks) {
-    return { kept: links, suppressed: [] };
+    return { kept: links, suppressed: [], suppressedTargets: [] };
   }
 
   const targetKey = (link) => `${normalizeComparableUrl(link.urlTo)}|${link.itemType || DEFAULT_ITEM_TYPE}`;
 
-  // Count distinct source pages per target among crawl-only links.
+  // Count distinct source pages per target among crawl-only links. Links without a real
+  // urlTo are skipped so malformed rows can never collapse into a single "undefined" key.
   const sourcePagesByTarget = new Map();
   for (const link of links) {
-    if (link.detectionSource !== 'crawl') {
+    if (link.detectionSource !== 'crawl' || !link.urlTo) {
       continue; // eslint-disable-line no-continue
     }
     const key = targetKey(link);
@@ -442,18 +444,20 @@ export function identifyUncorroboratedBoilerplateLinks(
   );
 
   if (boilerplateTargets.size === 0) {
-    return { kept: links, suppressed: [] };
+    return { kept: links, suppressed: [], suppressedTargets: [] };
   }
 
   const kept = [];
   const suppressed = [];
+  const suppressedTargets = new Set();
   for (const link of links) {
-    if (link.detectionSource === 'crawl' && boilerplateTargets.has(targetKey(link))) {
+    if (link.detectionSource === 'crawl' && link.urlTo && boilerplateTargets.has(targetKey(link))) {
       suppressed.push(link);
+      suppressedTargets.add(normalizeComparableUrl(link.urlTo));
     } else {
       kept.push(link);
     }
   }
 
-  return { kept, suppressed };
+  return { kept, suppressed, suppressedTargets: [...suppressedTargets] };
 }

@@ -17,9 +17,12 @@ import {
   isLinkInaccessible,
   identifyUncorroboratedBoilerplateLinks,
 } from './helpers.js';
-import { normalizeComparableUrl } from './link-key.js';
 import { isWithinAuditScope } from './subpath-filter.js';
 import { isSharedInternalResource } from './scope-utils.js';
+
+// Cap the number of distinct target URLs recorded in the audit result's
+// suppressedBoilerplateLinks observability field to keep the payload bounded.
+const MAX_SUPPRESSED_TARGETS_RECORDED = 50;
 
 function isOnAuditHost(url, baseURL) {
   try {
@@ -273,36 +276,37 @@ export function createFinalizeCrawlDetection({
 
         finalLinks = mergeAndDeduplicate(crawlAndLinkCheckerMerged, rumLinks, log);
         log.info(`After 3-way merge (crawl+linkchecker+RUM): ${finalLinks.length} unique broken links`);
+
+        // Classify uncorroborated site-wide boilerplate broken links so we can record what
+        // would be suppressed (observability). Only actually remove them when the suppression
+        // flag is enabled for the site; otherwise this is shadow mode. Lives inside the crawl
+        // branch because it is a no-op on the RUM-only path (there are no crawl-only links).
+        const { kept, suppressed, suppressedTargets } = identifyUncorroboratedBoilerplateLinks(
+          finalLinks,
+          {
+            rumProducedBrokenLinks: rumLinks.length > 0,
+            minSourcePages: config.getBoilerplateMinSourcePages(),
+          },
+        );
+        if (suppressed.length > 0) {
+          const suppressionApplied = config.getSuppressUncorroboratedBoilerplate();
+          suppressedBoilerplateLinks = {
+            count: suppressed.length,
+            distinctTargets: suppressedTargets.length,
+            targets: suppressedTargets.slice(0, MAX_SUPPRESSED_TARGETS_RECORDED),
+            applied: suppressionApplied,
+          };
+          log.info(
+            `Uncorroborated boilerplate: ${suppressed.length} crawl-only suggestion(s) across `
+            + `${suppressedTargets.length} site-wide target(s) (>= ${config.getBoilerplateMinSourcePages()} pages, `
+            + `no RUM/LinkChecker corroboration); applied=${suppressionApplied}`,
+          );
+          if (suppressionApplied) {
+            finalLinks = kept;
+          }
+        }
       } else {
         log.info('No crawl results to merge, using RUM-only results');
-      }
-
-      // Always classify uncorroborated site-wide boilerplate broken links so we can record
-      // what would be suppressed (observability). Only actually remove them when the
-      // suppression flag is enabled for the site; otherwise this is shadow mode.
-      const { kept, suppressed } = identifyUncorroboratedBoilerplateLinks(finalLinks, {
-        rumProducedBrokenLinks: rumLinks.length > 0,
-        minSourcePages: config.getBoilerplateMinSourcePages(),
-      });
-      const suppressionApplied = config.getSuppressUncorroboratedBoilerplate();
-      if (suppressed.length > 0) {
-        const distinctTargets = [
-          ...new Set(suppressed.map((l) => normalizeComparableUrl(l.urlTo))),
-        ];
-        suppressedBoilerplateLinks = {
-          count: suppressed.length,
-          distinctTargets: distinctTargets.length,
-          targets: distinctTargets,
-          applied: suppressionApplied,
-        };
-        log.info(
-          `Uncorroborated boilerplate: ${suppressed.length} crawl-only suggestion(s) across `
-          + `${distinctTargets.length} site-wide target(s) (>= ${config.getBoilerplateMinSourcePages()} pages, `
-          + `no RUM/LinkChecker corroboration); applied=${suppressionApplied}`,
-        );
-        if (suppressionApplied) {
-          finalLinks = kept;
-        }
       }
 
       const beforeStatusFilter = finalLinks.length;

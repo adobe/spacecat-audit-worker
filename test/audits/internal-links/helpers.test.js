@@ -725,6 +725,63 @@ describe('identifyUncorroboratedBoilerplateLinks', () => {
     expect(suppressed).to.be.empty;
   });
 
+  it('flags multiple distinct boilerplate targets simultaneously', () => {
+    const links = [
+      ...boilerplate('/support/privacy-notice/', 12),
+      ...boilerplate('/support/terms/', 11),
+      {
+        urlFrom: `${base}/blog/a`,
+        urlTo: `${base}/one-off-404/`,
+        itemType: 'link',
+        detectionSource: 'crawl',
+      },
+    ];
+    const { kept, suppressed, suppressedTargets } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    expect(suppressed).to.have.lengthOf(23);
+    expect(kept).to.have.lengthOf(1);
+    expect(kept[0].urlTo).to.equal(`${base}/one-off-404/`);
+    expect(suppressedTargets).to.have.members([
+      `${base}/support/privacy-notice`,
+      `${base}/support/terms`,
+    ]);
+    expect(suppressedTargets).to.have.lengthOf(2);
+  });
+
+  it('never flags links corroborated by LinkChecker (crawl+linkchecker)', () => {
+    const links = boilerplate('/real-broken/', 20, { detectionSource: 'crawl+linkchecker' });
+    const { kept, suppressed, suppressedTargets } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    expect(kept).to.have.lengthOf(20);
+    expect(suppressed).to.be.empty;
+    expect(suppressedTargets).to.be.empty;
+  });
+
+  it('skips links with a falsy urlTo (never groups them into an "undefined" target)', () => {
+    const links = [
+      ...boilerplate('/support/privacy-notice/', 11), // real boilerplate -> flagged
+      ...Array.from({ length: 3 }, (_, i) => ({
+        urlFrom: `${base}/malformed-${i}`,
+        urlTo: undefined, // malformed row -> must be ignored, not grouped
+        itemType: 'link',
+        detectionSource: 'crawl',
+      })),
+    ];
+    const { kept, suppressed, suppressedTargets } = identifyUncorroboratedBoilerplateLinks(links, {
+      rumProducedBrokenLinks: true,
+      minSourcePages: 10,
+    });
+    expect(suppressed).to.have.lengthOf(11);
+    expect(suppressedTargets).to.deep.equal([`${base}/support/privacy-notice`]);
+    // the 3 malformed links are kept, not collapsed into a spurious boilerplate target
+    expect(kept).to.have.lengthOf(3);
+    expect(kept.every((l) => l.urlTo === undefined)).to.be.true;
+  });
+
   it('falls back to the default item type when itemType is missing', () => {
     const links = Array.from({ length: 11 }, (_, i) => ({
       urlFrom: `${base}/page-${i}`,
@@ -743,9 +800,9 @@ describe('identifyUncorroboratedBoilerplateLinks', () => {
   it('handles empty / non-array input', () => {
     expect(identifyUncorroboratedBoilerplateLinks([], {
       rumProducedBrokenLinks: true, minSourcePages: 10,
-    })).to.deep.equal({ kept: [], suppressed: [] });
+    })).to.deep.equal({ kept: [], suppressed: [], suppressedTargets: [] });
     expect(identifyUncorroboratedBoilerplateLinks(undefined, {}))
-      .to.deep.equal({ kept: undefined, suppressed: [] });
+      .to.deep.equal({ kept: undefined, suppressed: [], suppressedTargets: [] });
   });
 });
 
