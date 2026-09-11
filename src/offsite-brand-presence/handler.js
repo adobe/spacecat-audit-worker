@@ -18,7 +18,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { loadCitedUrlsFromSemrush } from '../utils/offsite-brand-presence-semrush.js';
-import { runSemrushAuthProbes } from '../utils/offsite-brand-presence-semrush-auth-probe.js';
 import { SEMRUSH_ENTITLEMENT_SKIP_REASONS } from '../utils/semrush-entitlement.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
@@ -830,19 +829,6 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   olog.start('audit_orchestration_spacecat_request_received', 'Audit started', {
     weeks: weekLabels, ...resolveTriggerFields(auditContext),
   });
-
-  // TEMPORARY (LLMO-6709): S2S auth diagnostic. When enabled for this run (per-run Slack
-  // `semrushAuthProbe:true`, or fleet env `OFFSITE_SEMRUSH_AUTH_PROBE=true`), probe whether the
-  // worker's EXISTING IMS client already has api-service access — via the S2S login exchange
-  // and via a direct IMS call — emitting Splunk logs only. Best-effort; never affects the audit.
-  const semrushAuthProbeEnabled = auditContext?.messageData?.semrushAuthProbe === true
-    || auditContext?.messageData?.semrushAuthProbe === 'true'
-    || context.env?.OFFSITE_SEMRUSH_AUTH_PROBE === 'true';
-  if (semrushAuthProbeEnabled) {
-    await runSemrushAuthProbes({
-      site, previousWeeks, context, imsOrgId,
-    });
-  }
 
   let siteHostname;
   try {

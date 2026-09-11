@@ -38,7 +38,6 @@ describe('Offsite Brand Presence Handler', function () {
   let sandbox;
   let mockLoadBrandPresenceData;
   let mockLoadCitedUrlsFromSemrush;
-  let mockRunSemrushAuthProbes;
   let mockGetPreviousWeeks;
   let mockSubmitScrapeJob;
   let mockDrsIsConfigured;
@@ -62,7 +61,6 @@ describe('Offsite Brand Presence Handler', function () {
 
     mockLoadBrandPresenceData = sandbox.stub();
     mockLoadCitedUrlsFromSemrush = sandbox.stub().resolves(null);
-    mockRunSemrushAuthProbes = sandbox.stub().resolves();
     mockGetPreviousWeeks = sandbox.stub().returns([
       { week: DEFAULT_WEEK, year: DEFAULT_YEAR },
       { week: DEFAULT_WEEK_2, year: DEFAULT_YEAR },
@@ -78,9 +76,6 @@ describe('Offsite Brand Presence Handler', function () {
       },
       '../../src/utils/offsite-brand-presence-semrush.js': {
         loadCitedUrlsFromSemrush: mockLoadCitedUrlsFromSemrush,
-      },
-      '../../src/utils/offsite-brand-presence-semrush-auth-probe.js': {
-        runSemrushAuthProbes: mockRunSemrushAuthProbes,
       },
       '@adobe/spacecat-shared-drs-client': {
         default: {
@@ -351,28 +346,6 @@ describe('Offsite Brand Presence Handler', function () {
           .and(sinon.match(/peer=semrush/))
           .and(sinon.match(/reason=semrush_failed/)),
       );
-    });
-
-    it('runs the S2S auth probe when the per-run Slack override semrushAuthProbe:true is set', async () => {
-      await offsiteBrandPresenceRunner(
-        FINAL_URL, context, site, { messageData: { semrushAuthProbe: true } },
-      );
-      expect(mockRunSemrushAuthProbes).to.have.been.calledOnce;
-      const args = mockRunSemrushAuthProbes.firstCall.args[0];
-      expect(args.site).to.equal(site);
-      expect(args).to.have.property('imsOrgId');
-      expect(args).to.have.property('previousWeeks');
-    });
-
-    it('runs the S2S auth probe when the env flag OFFSITE_SEMRUSH_AUTH_PROBE=true is set', async () => {
-      context.env.OFFSITE_SEMRUSH_AUTH_PROBE = 'true';
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site, {});
-      expect(mockRunSemrushAuthProbes).to.have.been.calledOnce;
-    });
-
-    it('does not run the S2S auth probe by default', async () => {
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site, {});
-      expect(mockRunSemrushAuthProbes).to.not.have.been.called;
     });
 
     it('falls back to legacy when an ENV-enabled Semrush run fails (no hard stop)', async () => {
