@@ -1,3 +1,10 @@
+## [1.537.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.1...v1.537.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** domain-urls timeout 60s, page size 50 (LLMO-6709) ([#2968](https://github.com/adobe/spacecat-audit-worker/issues/2968)) ([fb8bd35](https://github.com/adobe/spacecat-audit-worker/commit/fb8bd3500258058375e5bc40349289391b146cb8)), closes [#2967](https://github.com/adobe/spacecat-audit-worker/issues/2967)
+
 ## [1.537.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.0...v1.537.1) (2026-09-11)
 
 
