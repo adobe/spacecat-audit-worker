@@ -15,6 +15,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 // Use the REAL applyScopeToOpportunity (see cited-analysis test for rationale).
 import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
 import { MockContextBuilder } from '../../shared.js';
@@ -38,6 +39,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
   let fetchAnalysisStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
+  let syncOffsiteUrlIndexStub;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
@@ -72,6 +74,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
     fetchAnalysisStub = sandbox.stub();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
+    syncOffsiteUrlIndexStub = sandbox.stub().resolves();
 
     handler = await esmock('../../../src/wikipedia-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
@@ -79,6 +82,9 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       },
       '../../../src/common/opportunity.js': {
         convertToOpportunity: convertToOpportunityStub,
+      },
+      '../../../src/common/offsite-url-index.js': {
+        syncOffsiteUrlIndex: syncOffsiteUrlIndexStub,
       },
       '../../../src/utils/analysis-fetch.js': {
         fetchAnalysisFromPresignedUrl: fetchAnalysisStub,
@@ -154,6 +160,14 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Run processed successfully/));
+
+      // The forward-only URL index is wired in after persist with the run's ids.
+      expect(syncOffsiteUrlIndexStub).to.have.been.calledOnce;
+      const urlIndexArg = syncOffsiteUrlIndexStub.firstCall.args[0];
+      expect(urlIndexArg.context).to.equal(context);
+      expect(urlIndexArg.opportunity).to.equal(mockOpportunity);
+      expect(urlIndexArg.auditType).to.equal(Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS);
+      expect(urlIndexArg.olog).to.be.an('object');
     });
 
     it('should create guidance with industry analysis', async () => {

@@ -15,6 +15,7 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
+import { syncOffsiteUrlIndex } from '../common/offsite-url-index.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
@@ -276,6 +277,11 @@ export default async function handler(message, context) {
       });
       throw error;
     }
+
+    // Forward-only source-URL index (best-effort; never fails the audit).
+    await syncOffsiteUrlIndex({
+      context, opportunity, auditType: AUDIT_TYPE, olog: ologOpp,
+    });
 
     ologOpp.success('audit_persistence_end', 'Run processed successfully', {
       count: suggestions.length, companyName,

@@ -15,6 +15,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 // Import the REAL applyScopeToOpportunity so the handler test exercises the production
 // implementation, not a stand-in. A regression in the real function (e.g. silently
 // clearing scope on a transient resolver failure) must be visible here.
@@ -33,6 +34,7 @@ describe('Cited Analysis Guidance Handler', () => {
   let handler;
   let syncSuggestionsStub;
   let convertToOpportunityStub;
+  let syncOffsiteUrlIndexStub;
   let fetchAnalysisStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
@@ -76,6 +78,7 @@ describe('Cited Analysis Guidance Handler', () => {
 
     syncSuggestionsStub = sandbox.stub().resolves();
     convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
+    syncOffsiteUrlIndexStub = sandbox.stub().resolves();
     fetchAnalysisStub = sandbox.stub();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     // Default: brand resolved with no match. Per-test cases override.
@@ -148,6 +151,9 @@ describe('Cited Analysis Guidance Handler', () => {
     handler = await esmock('../../../src/cited-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
         syncSuggestions: syncSuggestionsStub,
+      },
+      '../../../src/common/offsite-url-index.js': {
+        syncOffsiteUrlIndex: syncOffsiteUrlIndexStub,
       },
       '../../../src/common/offsite-refresh.js': {
         persistOffsiteOpportunity: convertToOpportunityStub,
@@ -236,6 +242,14 @@ describe('Cited Analysis Guidance Handler', () => {
           .and(sinon.match(/event=audit_persistence_end/))
           .and(sinon.match(/outcome=success/)),
       );
+
+      // The forward-only URL index is wired in after persist with this audit's type.
+      expect(syncOffsiteUrlIndexStub).to.have.been.calledOnce;
+      const urlIndexArg = syncOffsiteUrlIndexStub.firstCall.args[0];
+      expect(urlIndexArg.context).to.equal(context);
+      expect(urlIndexArg.opportunity).to.equal(mockOpportunity);
+      expect(urlIndexArg.auditType).to.equal(Audit.AUDIT_TYPES.CITED_ANALYSIS);
+      expect(urlIndexArg.olog).to.be.an('object');
     });
 
     it('logs the Mystique LLM cost when opportunity.llmUsage is present', async () => {
