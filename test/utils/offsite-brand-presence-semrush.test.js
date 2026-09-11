@@ -36,6 +36,8 @@ const CITED_URL = 'https://example.org/page';
 
 const okJson = (body) => ({ ok: true, status: 200, json: async () => body });
 const isLogin = (u) => String(u).includes('/auth/s2s/login');
+// Builds a JWT-shaped token (`header.payload.signature`) whose payload encodes `claims`.
+const makeJwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
 
 describe('offsite-brand-presence-semrush', function () {
   this.timeout(10000);
@@ -704,6 +706,40 @@ describe('offsite-brand-presence-semrush', function () {
     expect(warnedWith(/Failed to obtain IMS service token/)).to.equal(true);
   });
 
+  it('logs non-secret IMS config on ims_token_failed (host, clientId, scope, secret presence)', async () => {
+    getServiceAccessTokenV3.rejects(new Error('ims down'));
+    await run({
+      SEMRUSH_S2S_IMS_HOST: 'ims-na1.adobelogin.com',
+      SEMRUSH_S2S_CLIENT_ID: 'cid',
+      SEMRUSH_S2S_CLIENT_SECRET: 'sec',
+      SEMRUSH_S2S_CLIENT_SCOPE: 'openid,AdobeID',
+    });
+    expect(warnedWith(/imsHost=ims-na1\.adobelogin\.com/)).to.equal(true);
+    expect(warnedWith(/imsClientId=cid/)).to.equal(true);
+    expect(warnedWith(/imsScope=openid,AdobeID/)).to.equal(true);
+    expect(warnedWith(/hasClientSecret=true/)).to.equal(true);
+  });
+
+  it('flags a scheme in SEMRUSH_S2S_IMS_HOST on ims_token_failed (the ENOTFOUND https bug)', async () => {
+    getServiceAccessTokenV3.rejects(new Error('getaddrinfo ENOTFOUND https'));
+    await run({ SEMRUSH_S2S_IMS_HOST: 'https://ims-na1.adobelogin.com' });
+    expect(warnedWith(/imsHostHasScheme=true/)).to.equal(true);
+  });
+
+  it('flags whitespace in SEMRUSH_S2S_CLIENT_SCOPE on ims_token_failed', async () => {
+    getServiceAccessTokenV3.rejects(new Error('invalid_scope'));
+    await run({ SEMRUSH_S2S_CLIENT_SCOPE: 'openid, AdobeID' });
+    expect(warnedWith(/imsScopeHasSpaces=true/)).to.equal(true);
+  });
+
+  it('reports hasClientSecret=false and no gotcha flags when config is absent', async () => {
+    getServiceAccessTokenV3.rejects(new Error('ims down'));
+    await run();
+    expect(warnedWith(/hasClientSecret=false/)).to.equal(true);
+    expect(warnedWith(/imsHostHasScheme=/)).to.equal(false);
+    expect(warnedWith(/imsScopeHasSpaces=/)).to.equal(false);
+  });
+
   // --- session token exchange (leg 3) ---------------------------------------
 
   it('splits a 403 login denial into session_token_auth_failed, logs the body, but keeps it out of Slack', async () => {
@@ -765,6 +801,47 @@ describe('offsite-brand-presence-semrush', function () {
     const diagnostics = {};
     expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('session_token_failed');
+  });
+
+  // --- granted consumer identity (decoded from the session token) ------------
+
+  const grantLine = () => log.info.getCalls()
+    .map((c) => c.args[0])
+    .find((m) => /Obtained S2S session token/.test(m));
+
+  it('logs the granted consumer identity decoded from the session token', async () => {
+    fetchStub.withArgs(sinon.match(isLogin)).resolves(okJson({
+      sessionToken: makeJwt({
+        client_id: 'consumer-cid', is_s2s_consumer: true, sub: 's2s:consumer-cid', tenants: [{ id: 'o1' }, { id: 'o2' }], consumerId: 'cons-123',
+      }),
+    }));
+    await run();
+    expect(grantLine()).to.match(/consumerClientId=consumer-cid/);
+    expect(grantLine()).to.match(/isS2sConsumer=true/);
+    expect(grantLine()).to.match(/consumerId=cons-123/);
+    expect(grantLine()).to.match(/tenantCount=2/);
+  });
+
+  it('reads a snake_case consumer_id claim and omits tenantCount when tenants are absent', async () => {
+    fetchStub.withArgs(sinon.match(isLogin)).resolves(okJson({
+      sessionToken: makeJwt({ client_id: 'cid', consumer_id: 'snake-1' }),
+    }));
+    await run();
+    expect(grantLine()).to.match(/consumerId=snake-1/);
+    expect(grantLine()).to.not.match(/tenantCount=/);
+  });
+
+  it('logs the grant line but no consumer fields for an opaque (non-JWT) token', async () => {
+    await run(); // default SESSION_TOKEN has no payload segment
+    expect(grantLine()).to.be.a('string');
+    expect(grantLine()).to.not.match(/consumerClientId=/);
+  });
+
+  it('tolerates a token whose payload is not valid JSON (decode swallowed)', async () => {
+    fetchStub.withArgs(sinon.match(isLogin)).resolves(okJson({ sessionToken: 'h.@@@notjson@@@.s' }));
+    const result = await run();
+    expect(result).to.not.equal(null); // still proceeds to the data call
+    expect(grantLine()).to.not.match(/consumerClientId=/);
   });
 
   // --- progress notifications (onProgress) -----------------------------------
