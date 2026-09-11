@@ -1,3 +1,10 @@
+## [1.537.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.0...v1.537.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** send the /api/v1 gateway prefix on the domain-urls call (LLMO-6709) ([#2967](https://github.com/adobe/spacecat-audit-worker/issues/2967)) ([7edc2e9](https://github.com/adobe/spacecat-audit-worker/commit/7edc2e997aeb8d4c25e3f82611ae478116d169c7)), closes [#2965](https://github.com/adobe/spacecat-audit-worker/issues/2965)
+
 # [1.537.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.536.0...v1.537.0) (2026-09-11)
 
 
