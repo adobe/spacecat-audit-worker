@@ -353,7 +353,7 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
   } catch (error) {
     olog.warn('data_acquisition_bp_data_semrush_read', 'Fetch failed for domain-urls', {
-      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, reason: 'fetch_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
+      peer: PEER.SEMRUSH, direction: 'inbound', requestUrl: url, durationMs: Date.now() - startedAt, reason: 'fetch_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
     }, error);
     return {
       rows: [], ok: false, authFailure: false, truncated: false,
@@ -367,7 +367,7 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     // vs Semrush upstream) — the key signal for the LLMO-6709 auth gate.
     const responseBody = await readErrorBodySnippet(response);
     const logFields = {
-      peer: PEER.SEMRUSH, direction: 'inbound', status: response.status, responseBody, durationMs,
+      peer: PEER.SEMRUSH, direction: 'inbound', requestUrl: url, status: response.status, responseBody, durationMs,
     };
     if (authFailure) {
       // Distinct branch so a rejected session token is visible instead of being

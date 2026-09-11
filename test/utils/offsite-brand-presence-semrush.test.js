@@ -449,6 +449,8 @@ describe('offsite-brand-presence-semrush', function () {
     expect(result).to.equal(null);
     expect(warnedWith(/session token rejected/i)).to.equal(true);
     expect(log.warn.getCalls().some((c) => c.args[0].includes(`responseBody="${proxyMsg}"`))).to.equal(true);
+    // The exact request URL is logged (org/brand/dates/params) to diagnose a malformed request.
+    expect(warnedWith(/requestUrl="[^"]*\/domain-urls\?[^"]*"/)).to.equal(true);
   });
 
   it('handles an empty/unreadable error body on a non-2xx response', async () => {
