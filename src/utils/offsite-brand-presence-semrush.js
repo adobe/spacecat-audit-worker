@@ -55,18 +55,29 @@ export const LLMO_API_DEFAULT_BASE_URL = 'https://llmo.experiencecloud.live';
 export const LLMO_API_DEFAULT_PREFIX = '/api/v1';
 
 /**
- * `domain-urls` page size. One request (no `hostname`, `platform=all`) covers all three
- * buckets (youtube.com, reddit.com, cited third-party), sorted by citations globally, so
- * this needs to be generous or a low-citation bucket gets starved. 1000 is the server-side
- * clamp (`domain-urls` in spacecat-api-service), so this is the max we can actually get.
+ * `domain-urls` page size — the top N sources by citations (globally, across youtube.com /
+ * reddit.com / cited third-party). Deliberately small to cap the response size and latency of
+ * this heavy proxied query. The server clamp is 1000; we intentionally request far fewer.
+ *
+ * NOTE: because the page is a single citations-sorted list spanning all three buckets, a small
+ * page can starve a low-citation bucket (e.g. reddit on a press-heavy site) — see ADR 002,
+ * Decision 6. Raise this if a bucket is being starved.
  */
-export const PAGE_SIZE = 1000;
+export const PAGE_SIZE = 50;
 
 /**
- * Per-request timeout so a hung upstream can't stall the whole audit past the Lambda's
- * own timeout.
+ * Per-request timeout for the fast calls (the S2S login exchange) so a hung upstream can't
+ * stall the whole audit past the Lambda's own timeout (900s).
  */
 const FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Timeout for the `domain-urls` data call specifically. This is a heavy query (all hosts,
+ * `platform=all`, proxied api-service → Semrush v4-raw), routinely slower than the 10s login
+ * timeout — 10s was aborting it mid-flight (`Request timeout after 10000ms`). The Lambda
+ * budget is 900s, so 60s is safe headroom.
+ */
+const DOMAIN_URLS_TIMEOUT_MS = 60_000;
 
 /**
  * Max chars of a non-2xx response body to log. The body of a rejected serenity/Semrush
@@ -347,11 +358,11 @@ export function buildDomainUrlsUrl({
  *   full page came back (LLMO-6711 shadow-run parity signal — a starved run is visible on
  *   `diagnostics` without grepping logs).
  */
-async function fetchDomainUrls(url, headers, olog, pageSize) {
+async function fetchDomainUrls(url, headers, olog, pageSize, timeoutMs) {
   let response;
   const startedAt = Date.now();
   try {
-    response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
+    response = await fetch(url, { headers, timeout: timeoutMs });
   } catch (error) {
     olog.warn('data_acquisition_bp_data_semrush_read', 'Fetch failed for domain-urls', {
       peer: PEER.SEMRUSH, direction: 'inbound', requestUrl: url, durationMs: Date.now() - startedAt, reason: 'fetch_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
@@ -742,7 +753,7 @@ export async function loadCitedUrlsFromSemrush({
   });
   await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
-  const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE);
+  const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE, DOMAIN_URLS_TIMEOUT_MS);
   if (!result.ok) {
     if (result.authFailure) {
       // The session token was rejected by the data call — evict it so a revoked/rotated

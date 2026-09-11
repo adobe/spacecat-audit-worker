@@ -162,7 +162,13 @@ describe('offsite-brand-presence-semrush', function () {
     expect(opts.headers.Authorization).to.equal(`Bearer ${SESSION_TOKEN}`);
     expect(opts.headers.Accept).to.equal('application/json');
     expect(opts.headers).to.not.have.property('Content-Type');
-    expect(opts.timeout).to.equal(10000);
+    expect(opts.timeout).to.equal(60000); // domain-urls timeout (heavy query)
+  });
+
+  it('uses the short login timeout on the login call and the longer one on the data call', async () => {
+    await run();
+    expect(loginCall().args[1].timeout).to.equal(10000);
+    expect(dataCall().args[1].timeout).to.equal(60000);
   });
 
   it('mints the consumer IMS token via getServiceAccessTokenV3 (client_credentials) with SEMRUSH_S2S_* creds', async () => {
@@ -232,9 +238,10 @@ describe('offsite-brand-presence-semrush', function () {
     expect(loginCall().args[0]).to.equal('https://llmo.experiencecloud.page/api/ci/auth/s2s/login');
   });
 
-  it('always requests PAGE_SIZE', async () => {
+  it('requests the hardcoded PAGE_SIZE (50)', async () => {
     await run();
-    expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal(String(mod.PAGE_SIZE));
+    expect(mod.PAGE_SIZE).to.equal(50);
+    expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal('50');
   });
 
   // --- filtering / scope ----------------------------------------------------
