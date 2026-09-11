@@ -46,12 +46,13 @@ import {
 export const LLMO_API_DEFAULT_BASE_URL = 'https://llmo.experiencecloud.live';
 
 /**
- * Path (relative to the LLMO host root) of the S2S login endpoint that exchanges the
- * consumer's IMS access token for a short-lived, customer-scoped SpaceCat session token.
- * The prod prefix is `/api/v1`; non-prod uses `/api/ci`, so the whole URL is overridable
- * with `LLMO_S2S_LOGIN_URL` when the environment's prefix differs.
+ * API gateway prefix in front of the host root. The LLMO Fastly edge routes api-service
+ * under this prefix — the internal routes are registered bare (`/v2/orgs/...`,
+ * `/auth/s2s/login`), and both the login AND the data call must carry the prefix externally
+ * (confirmed against the UI's own network calls, which use `/api/v1/v2/...`). Prod is
+ * `/api/v1`; non-prod uses `/api/ci` — override with `LLMO_API_PREFIX`.
  */
-export const S2S_LOGIN_DEFAULT_PATH = '/api/v1/auth/s2s/login';
+export const LLMO_API_DEFAULT_PREFIX = '/api/v1';
 
 /**
  * `domain-urls` page size. One request (no `hostname`, `platform=all`) covers all three
@@ -517,7 +518,10 @@ export async function loadCitedUrlsFromSemrush({
   const siteId = site?.getId?.();
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
   const elapsed = () => Date.now() - startedAt;
+  // Host root + gateway prefix. The LLMO edge routes api-service under `/api/v1` (prod) —
+  // both the login and the data call carry it, matching the UI's own `/api/v1/v2/...` calls.
   const baseUrl = env?.LLMO_API_BASE_URL || LLMO_API_DEFAULT_BASE_URL;
+  const apiBaseUrl = `${baseUrl}${env?.LLMO_API_PREFIX || LLMO_API_DEFAULT_PREFIX}`;
 
   const notify = async (text) => {
     if (typeof onProgress !== 'function') {
@@ -673,7 +677,7 @@ export async function loadCitedUrlsFromSemrush({
     }
 
     // Leg 3: exchange it for a customer-scoped SpaceCat session token via the LLMO host.
-    const loginUrl = env?.LLMO_S2S_LOGIN_URL || `${baseUrl}${S2S_LOGIN_DEFAULT_PATH}`;
+    const loginUrl = env?.LLMO_S2S_LOGIN_URL || `${apiBaseUrl}/auth/s2s/login`;
     try {
       sessionToken = await exchangeForSessionToken({ loginUrl, imsAuthorization, imsOrgId });
     } catch (error) {
@@ -726,7 +730,12 @@ export async function loadCitedUrlsFromSemrush({
   };
 
   const url = buildDomainUrlsUrl({
-    baseUrl, spaceCatId, brandId: brand.brandId, startDate, endDate, pageSize: PAGE_SIZE,
+    baseUrl: apiBaseUrl,
+    spaceCatId,
+    brandId: brand.brandId,
+    startDate,
+    endDate,
+    pageSize: PAGE_SIZE,
   });
   olog.start('data_acquisition_bp_data_semrush_read', 'Querying domain-urls (all hosts, all platforms)', {
     peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, requestUrl: url, pageSize: PAGE_SIZE,
