@@ -1,3 +1,15 @@
+# [1.537.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.536.0...v1.537.0) (2026-09-11)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** declare missing SEMRUSH_S2S_* template params ([#2962](https://github.com/adobe/spacecat-audit-worker/issues/2962)) ([7da0f83](https://github.com/adobe/spacecat-audit-worker/commit/7da0f839c9e8a5560bed907d3f198bc7c9aec7e1)), closes [#2958](https://github.com/adobe/spacecat-audit-worker/issues/2958)
+
+
+### Features
+
+* **offsite-brand-presence:** richer diagnostics for Semrush S2S auth (LLMO-6709) ([#2965](https://github.com/adobe/spacecat-audit-worker/issues/2965)) ([631535a](https://github.com/adobe/spacecat-audit-worker/commit/631535ad764eb25273f8357bb4394250eccbf1b3))
+
 # [1.536.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.3...v1.536.0) (2026-09-11)
 
 
