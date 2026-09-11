@@ -1,3 +1,17 @@
+## [1.535.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.2...v1.535.3) (2026-09-11)
+
+
+### Bug Fixes
+
+* **toc:** remove [Beta] label from TOC opportunity title ([#2835](https://github.com/adobe/spacecat-audit-worker/issues/2835)) ([2035a72](https://github.com/adobe/spacecat-audit-worker/commit/2035a72e6fd53fa1635770e1dfc5d55a9fc6c75a))
+
+## [1.535.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.1...v1.535.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v4.29.1 ([#2961](https://github.com/adobe/spacecat-audit-worker/issues/2961)) ([9bef593](https://github.com/adobe/spacecat-audit-worker/commit/9bef5936c9a255b52b3f2b4d6c4ec4b5ec5ff99f))
+
 ## [1.535.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.0...v1.535.1) (2026-09-10)
 
 

@@ -15,7 +15,7 @@ import { DATA_SOURCES } from '../common/constants.js';
 const OpptyDataForTOC = {
   runbook: '',
   origin: 'AUTOMATION',
-  title: '[Beta] Add Table of Content',
+  title: 'Add Table of Content',
   description: 'Ensure a table of contents (TOC) is present on each page. Proper TOC implementation improves accessibility and helps search engines and generative engines understand page content. Suggestions are generated based on page heading (H1, H2) structure, so pages with correct heading structure will produce accurate TOC suggestions.',
   guidance: {
     steps: [
