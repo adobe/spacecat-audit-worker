@@ -207,6 +207,66 @@ async function getImsAuthorizationHeader(context) {
 }
 
 /**
+ * Non-secret IMS config fields for the `ims_token_failed` diagnostic log, so a misconfig is
+ * obvious from the log line alone rather than needing a repro. Every field below is safe to
+ * log: `imsHost`/`imsClientId`/`imsScope` are identifiers/config (not credentials), and the
+ * client secret is reported only as a presence boolean (`hasClientSecret`), never its value.
+ * The two derived flags target the exact mistakes seen in practice — a scheme in the host
+ * (`https://ims...` → `getaddrinfo ENOTFOUND https`) and whitespace in the scope
+ * (`invalid_scope`) — and are emitted only when true, so they stand out.
+ *
+ * @param {object} [env]
+ * @returns {object} log fields
+ */
+function imsConfigDiagnostics(env) {
+  const imsHost = env?.SEMRUSH_S2S_IMS_HOST;
+  const imsScope = env?.SEMRUSH_S2S_CLIENT_SCOPE;
+  return {
+    imsHost,
+    imsClientId: env?.SEMRUSH_S2S_CLIENT_ID,
+    imsScope,
+    hasClientSecret: Boolean(env?.SEMRUSH_S2S_CLIENT_SECRET),
+    ...(/^https?:\/\//i.test(imsHost || '') && { imsHostHasScheme: true }),
+    ...(/\s/.test(imsScope || '') && { imsScopeHasSpaces: true }),
+  };
+}
+
+/**
+ * Decodes the non-sensitive identity claims from an S2S session-token JWT for logging, so a
+ * run's logs show WHICH consumer identity (and tenant scope) api-service actually granted —
+ * the client-side counterpart to api-service's own `[s2s] granted clientId=... consumerId=...`
+ * line. Reads the JWT payload only (never the signature) and never logs the token itself.
+ * Never throws — returns `{}` for a malformed/opaque token, so nothing is logged then.
+ *
+ * The token carries `client_id`/`is_s2s_consumer`/`tenants`; `consumerId`/`consumer_id` are
+ * logged defensively only if the real token includes them (it's primarily a server-side id).
+ *
+ * @param {string} sessionToken - raw JWT (`header.payload.signature`).
+ * @returns {object} selected claim fields (empty when undecodable).
+ */
+function decodeS2sConsumerClaims(sessionToken) {
+  try {
+    const payload = String(sessionToken).split('.')[1];
+    if (!payload) {
+      return {};
+    }
+    const json = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const claims = JSON.parse(json);
+    const tenants = Array.isArray(claims.tenants) ? claims.tenants : undefined;
+    return {
+      consumerClientId: claims.client_id,
+      consumerSub: claims.sub,
+      isS2sConsumer: claims.is_s2s_consumer,
+      ...(claims.consumerId !== undefined && { consumerId: claims.consumerId }),
+      ...(claims.consumer_id !== undefined && { consumerId: claims.consumer_id }),
+      ...(tenants && { tenantCount: tenants.length }),
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Exchanges the consumer's IMS access token for a short-lived (15-min), customer-scoped
  * SpaceCat session token via the S2S login endpoint. The returned session token is a JWT
  * whose `tenants` claim names `imsOrgId` — this is what api-service's
@@ -293,7 +353,7 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
   } catch (error) {
     olog.warn('data_acquisition_bp_data_semrush_read', 'Fetch failed for domain-urls', {
-      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, reason: 'fetch_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
+      peer: PEER.SEMRUSH, direction: 'inbound', requestUrl: url, durationMs: Date.now() - startedAt, reason: 'fetch_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
     }, error);
     return {
       rows: [], ok: false, authFailure: false, truncated: false,
@@ -307,7 +367,7 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     // vs Semrush upstream) — the key signal for the LLMO-6709 auth gate.
     const responseBody = await readErrorBodySnippet(response);
     const logFields = {
-      peer: PEER.SEMRUSH, direction: 'inbound', status: response.status, responseBody, durationMs,
+      peer: PEER.SEMRUSH, direction: 'inbound', requestUrl: url, status: response.status, responseBody, durationMs,
     };
     if (authFailure) {
       // Distinct branch so a rejected session token is visible instead of being
@@ -605,7 +665,7 @@ export async function loadCitedUrlsFromSemrush({
       imsAuthorization = await getImsAuthorizationHeader(context);
     } catch (error) {
       olog.warn('data_acquisition_bp_data_semrush_read', 'Failed to obtain IMS service token', {
-        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'ims_token_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'ims_token_failed', outcome: OUTCOME.DEGRADED, ...imsConfigDiagnostics(env), ...errorField(error),
       }, error);
       await notify(`:x: Failed to obtain an IMS service token (\`${error.message}\`) — falling back to the legacy source.`);
       setDiagnostics({ fallbackReason: 'ims_token_failed' });
@@ -649,6 +709,11 @@ export async function loadCitedUrlsFromSemrush({
       return null;
     }
     cacheSessionToken(imsOrgId, sessionToken, nowMs, resolveSessionTtlMs(env));
+    // Log the consumer identity we were granted (decoded from the token's claims, never the
+    // token itself) — the client-side match to api-service's `[s2s] granted ...` audit line.
+    olog.success('data_acquisition_bp_data_semrush_read', 'Obtained S2S session token', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, ...decodeS2sConsumerClaims(sessionToken),
+    });
   }
 
   const headers = {
@@ -664,7 +729,7 @@ export async function loadCitedUrlsFromSemrush({
     baseUrl, spaceCatId, brandId: brand.brandId, startDate, endDate, pageSize: PAGE_SIZE,
   });
   olog.start('data_acquisition_bp_data_semrush_read', 'Querying domain-urls (all hosts, all platforms)', {
-    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, pageSize: PAGE_SIZE,
+    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, requestUrl: url, pageSize: PAGE_SIZE,
   });
   await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
@@ -726,6 +791,7 @@ export async function loadCitedUrlsFromSemrush({
     direction: 'inbound',
     orgId: spaceCatId,
     brandId: brand.brandId,
+    requestUrl: url,
     receivedCount: result.rows.length,
     uniqueUrlCount: allUrls.size,
     droppedCount: result.rows.length - allUrls.size,
