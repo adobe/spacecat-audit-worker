@@ -131,7 +131,9 @@ export async function analyze(message, context) {
 async function readSnapshot(scrapeResult, context) {
   const { s3Client, env, log } = context;
   const key = scrapeResult?.location || scrapeResult?.metadata?.path;
-  if (!hasText(key)) return null;
+  if (!hasText(key)) {
+    return null;
+  }
   const obj = await getObjectFromKey(s3Client, env.S3_SCRAPER_BUCKET_NAME, key, log);
   // The stored object nests the eval output under `scrapeResult` (see content-scraper).
   return obj?.scrapeResult ? { ...obj.scrapeResult, finalUrl: obj.finalUrl } : null;

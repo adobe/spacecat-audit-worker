@@ -21,7 +21,9 @@ import { BUCKET } from './constants.js';
  * @returns {string|null} The normalized hostname, or null if the URL is unparseable.
  */
 export function hostOf(url) {
-  if (!hasText(url)) return null;
+  if (!hasText(url)) {
+    return null;
+  }
   try {
     const withProto = url.startsWith('http') ? url : `https://${url}`;
     return new URL(withProto).hostname.toLowerCase().replace(/^www\./, '');
@@ -40,7 +42,9 @@ export function hostOf(url) {
  */
 export function hostMatchesDomain(host, domain) {
   const normalizedDomain = (domain || '').toLowerCase().replace(/^www\./, '');
-  if (!host || !normalizedDomain) return false;
+  if (!host || !normalizedDomain) {
+    return false;
+  }
   return host === normalizedDomain || host.endsWith(`.${normalizedDomain}`);
 }
 

@@ -23,7 +23,9 @@
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const median = (values) => {
   const sorted = values.map(num).sort((a, b) => a - b);
-  if (sorted.length === 0) return 0;
+  if (sorted.length === 0) {
+    return 0;
+  }
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
@@ -177,7 +179,9 @@ export function computeSeoGap(target, competitors, factors = FACTORS) {
   const byDimension = factorResults.reduce((acc, r) => {
     acc[r.dimension] = acc[r.dimension] || { total: 0, gaps: 0 };
     acc[r.dimension].total += 1;
-    if (r.gap) acc[r.dimension].gaps += 1;
+    if (r.gap) {
+      acc[r.dimension].gaps += 1;
+    }
     return acc;
   }, {});
 
