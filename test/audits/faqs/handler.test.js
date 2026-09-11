@@ -46,10 +46,8 @@ describe('FAQs Handler', () => {
     createLLMOSharepointClientStub = sandbox.stub().resolves({ client: 'mock' });
     readFromSharePointStub = sandbox.stub();
     validateContentAIStub = sandbox.stub().resolves({
-      uid: 'test-uid-123',
-      indexName: 'test-index',
-      genSearchEnabled: true,
-      isWorking: true,
+      contentSourceName: 'test-source',
+      isSearchWorking: true,
     });
 
     // Mock Excel workbook structure
@@ -205,12 +203,10 @@ describe('FAQs Handler', () => {
       expect(result.fullAuditRef).to.equal('https://adobe.com');
     });
 
-    it('should return failure when Content AI configuration does not exist', async () => {
+    it('should return failure when a Content AI source does not exist', async () => {
       validateContentAIStub.resolves({
-        uid: null,
-        indexName: null,
-        genSearchEnabled: false,
-        isWorking: false,
+        contentSourceName: null,
+        isSearchWorking: false,
       });
 
       const excelJsMock = await esmock('../../../src/faqs/handler.js', {
@@ -227,16 +223,14 @@ describe('FAQs Handler', () => {
       const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(false);
-      expect(result.auditResult.error).to.equal('Content AI configuration not found');
-      expect(log.warn).to.have.been.calledWith('[FAQ] Content AI configuration does not exist for this site, skipping audit');
+      expect(result.auditResult.error).to.equal('Content AI source not found');
+      expect(log.warn).to.have.been.calledWith('[FAQ] Content AI source does not exist for this site, skipping audit');
     });
 
     it('should return failure when Content AI search endpoint is not working', async () => {
       validateContentAIStub.resolves({
-        uid: 'test-uid-123',
-        indexName: 'test-index',
-        genSearchEnabled: true,
-        isWorking: false,
+        contentSourceName: 'test-source',
+        isSearchWorking: false,
       });
 
       const excelJsMock = await esmock('../../../src/faqs/handler.js', {
@@ -254,33 +248,7 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.error).to.equal('Content AI search endpoint validation failed');
-      expect(log.warn).to.have.been.calledWith('[FAQ] Content AI search endpoint is not working for index test-index, skipping audit');
-    });
-
-    it('should return failure when Content AI generative search is not enabled', async () => {
-      validateContentAIStub.resolves({
-        uid: 'test-uid-123',
-        indexName: 'test-index',
-        genSearchEnabled: false,
-        isWorking: true,
-      });
-
-      const excelJsMock = await esmock('../../../src/faqs/handler.js', {
-        '../../../src/utils/report-uploader.js': {
-          createLLMOSharepointClient: createLLMOSharepointClientStub,
-          readFromSharePoint: readFromSharePointStub,
-        },
-        '../../../src/faqs/utils.js': {
-          validateContentAI: validateContentAIStub,
-        },
-      });
-
-      const runner = excelJsMock.default.runner;
-      const result = await runner('https://adobe.com', context, site);
-
-      expect(result.auditResult.success).to.equal(false);
-      expect(result.auditResult.error).to.equal('Content AI generative search not enabled');
-      expect(log.warn).to.have.been.calledWith('[FAQ] Content AI generative search not enabled for index test-index, skipping audit');
+      expect(log.warn).to.have.been.calledWith('[FAQ] Content AI search endpoint is not working for source test-source, skipping audit');
     });
 
     it('should return failure when no prompts are found', async () => {

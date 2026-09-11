@@ -198,78 +198,49 @@ export function getJsonFaqSuggestion(suggestions, options = {}) {
 }
 
 /**
- * Validates if Content AI configuration exists and is working for a site
- * by checking for the configuration and testing the search endpoint
+ * Validates if a Content AI source exists and is searchable for a site.
  * @param {Object} site - The site object
  * @param {Object} context - The context object with env and log
- * @returns {Promise<{uid: string|null, indexName: string|null,
- *   genSearchEnabled: boolean, isWorking: boolean}>}
+ * @returns {Promise<{contentSourceName: string|null, isSearchWorking: boolean}>}
  */
 export async function validateContentAI(site, context) {
   const { log } = context;
+  let contentSourceName = null;
 
   try {
-    // Initialize Content AI client once (token generated once)
     const client = new ContentAIClient(context);
     await client.initialize();
 
-    const existingConf = await client.getConfigurationForSite(site);
+    contentSourceName = await client.resolveContentSourceName(site);
     const baseURL = site.getBaseURL();
 
-    if (!existingConf) {
-      log.warn(`[ContentAI] No configuration found for site ${baseURL}`);
+    if (!contentSourceName) {
+      log.warn(`[ContentAI] No content source found for site ${baseURL}`);
       return {
-        uid: null,
-        indexName: null,
-        genSearchEnabled: false,
-        isWorking: false,
+        contentSourceName: null,
+        isSearchWorking: false,
       };
     }
 
-    // Extract UID and index name from configuration
-    const uid = existingConf.uid || null;
-    const indexStep = existingConf.steps?.find((step) => step.type === 'index');
-    const indexName = indexStep?.name;
-
-    if (!indexName) {
-      log.warn(`[ContentAI] No index name found in configuration for site ${baseURL}`);
-      return {
-        uid,
-        indexName: null,
-        genSearchEnabled: false,
-        isWorking: false,
-      };
-    }
-
-    log.info(`[ContentAI] Found configuration with UID: ${uid}, index name: ${indexName}`);
-
-    // Check if generative search is enabled (generative step exists and is not empty)
-    const generativeStep = existingConf.steps?.find((step) => step.type === 'generative');
-    const genSearchEnabled = !!(generativeStep && Object.keys(generativeStep).length > 1);
-
-    // Test the search endpoint with a simple query (reuses token from client)
-    const searchOptions = {
-      numCandidates: 3,
+    log.info(`[ContentAI] Found content source: ${contentSourceName}`);
+    await client.searchContentSource(contentSourceName, 'website', {
       boost: 1,
-    };
-    const searchResponse = await client.runSemanticSearch('website', 'vector', indexName, searchOptions, 1);
-
-    const isWorking = searchResponse.ok;
-    log.info(`[ContentAI] Search endpoint validation: ${searchResponse.status} (${isWorking ? 'working' : 'not working'})`);
+      qualityConfig: {
+        quality: 'FAST',
+        size: 1,
+      },
+    }, 1);
+    log.info('[ContentAI] Content source search validation succeeded');
 
     return {
-      uid,
-      indexName,
-      genSearchEnabled,
-      isWorking,
+      contentSourceName,
+      isSearchWorking: true,
     };
   } catch (error) {
     log.error(`[ContentAI] Validation failed: ${error.message}`);
     return {
-      uid: null,
-      indexName: null,
-      genSearchEnabled: false,
-      isWorking: false,
+      contentSourceName,
+      isSearchWorking: false,
     };
   }
 }
