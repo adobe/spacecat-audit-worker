@@ -1,3 +1,10 @@
+## [1.535.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.2...v1.535.3) (2026-09-11)
+
+
+### Bug Fixes
+
+* **toc:** remove [Beta] label from TOC opportunity title ([#2835](https://github.com/adobe/spacecat-audit-worker/issues/2835)) ([2035a72](https://github.com/adobe/spacecat-audit-worker/commit/2035a72e6fd53fa1635770e1dfc5d55a9fc6c75a))
+
 ## [1.535.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.1...v1.535.2) (2026-09-11)
 
 
