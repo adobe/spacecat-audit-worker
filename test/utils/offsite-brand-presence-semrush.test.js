@@ -130,6 +130,10 @@ describe('offsite-brand-presence-semrush', function () {
     const [url] = dataCall().args;
     expect(new URL(url).searchParams.has('hostname')).to.equal(false);
     expect(new URL(url).searchParams.get('platform')).to.equal('all');
+    // requestUrl is logged on both the start and the success (Bucketed) lines.
+    const infoLines = log.info.getCalls().map((c) => c.args[0]);
+    expect(infoLines.some((m) => /Querying domain-urls.*requestUrl="[^"]*\/domain-urls\?/.test(m))).to.equal(true);
+    expect(infoLines.some((m) => /Bucketed domain-urls response.*requestUrl="[^"]*\/domain-urls\?/.test(m))).to.equal(true);
   });
 
   it('splits the single response into youtube / reddit / cited buckets', async () => {

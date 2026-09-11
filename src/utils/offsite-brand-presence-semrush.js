@@ -729,7 +729,7 @@ export async function loadCitedUrlsFromSemrush({
     baseUrl, spaceCatId, brandId: brand.brandId, startDate, endDate, pageSize: PAGE_SIZE,
   });
   olog.start('data_acquisition_bp_data_semrush_read', 'Querying domain-urls (all hosts, all platforms)', {
-    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, pageSize: PAGE_SIZE,
+    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, requestUrl: url, pageSize: PAGE_SIZE,
   });
   await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
@@ -791,6 +791,7 @@ export async function loadCitedUrlsFromSemrush({
     direction: 'inbound',
     orgId: spaceCatId,
     brandId: brand.brandId,
+    requestUrl: url,
     receivedCount: result.rows.length,
     uniqueUrlCount: allUrls.size,
     droppedCount: result.rows.length - allUrls.size,
