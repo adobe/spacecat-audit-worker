@@ -1,3 +1,10 @@
+# [1.536.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.3...v1.536.0) (2026-09-11)
+
+
+### Features
+
+* **offsite-brand-presence:** temporary S2S auth diagnostic probe (LLMO-6709) ([#2963](https://github.com/adobe/spacecat-audit-worker/issues/2963)) ([f47e2eb](https://github.com/adobe/spacecat-audit-worker/commit/f47e2eba415df4adb18055827cf404f3f57dbe8a)), closes [#2958](https://github.com/adobe/spacecat-audit-worker/issues/2958)
+
 ## [1.535.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.2...v1.535.3) (2026-09-11)
 
 
