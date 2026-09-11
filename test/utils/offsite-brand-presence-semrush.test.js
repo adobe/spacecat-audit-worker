@@ -158,7 +158,7 @@ describe('offsite-brand-presence-semrush', function () {
     await run();
 
     const [url, opts] = dataCall().args;
-    expect(url).to.contain(`${mod.LLMO_API_DEFAULT_BASE_URL}/v2/orgs/${ORG_ID}/brands/${BRAND_ID}`);
+    expect(url).to.contain(`${mod.LLMO_API_DEFAULT_BASE_URL}${mod.LLMO_API_DEFAULT_PREFIX}/v2/orgs/${ORG_ID}/brands/${BRAND_ID}`);
     expect(opts.headers.Authorization).to.equal(`Bearer ${SESSION_TOKEN}`);
     expect(opts.headers.Accept).to.equal('application/json');
     expect(opts.headers).to.not.have.property('Content-Type');
@@ -195,7 +195,7 @@ describe('offsite-brand-presence-semrush', function () {
     await run();
 
     const [url, opts] = loginCall().args;
-    expect(url).to.equal(`${mod.LLMO_API_DEFAULT_BASE_URL}${mod.S2S_LOGIN_DEFAULT_PATH}`);
+    expect(url).to.equal(`${mod.LLMO_API_DEFAULT_BASE_URL}${mod.LLMO_API_DEFAULT_PREFIX}/auth/s2s/login`);
     expect(opts.method).to.equal('POST');
     expect(opts.headers.Authorization).to.equal('Bearer tok');
     expect(opts.headers['Content-Type']).to.equal('application/json');
@@ -210,8 +210,21 @@ describe('offsite-brand-presence-semrush', function () {
 
   it('honours the LLMO_API_BASE_URL override for both the login and the data call', async () => {
     await run({ LLMO_API_BASE_URL: 'https://stage.example' });
-    expect(dataCall().args[0]).to.contain('https://stage.example/v2/orgs/');
-    expect(loginCall().args[0]).to.equal(`https://stage.example${mod.S2S_LOGIN_DEFAULT_PATH}`);
+    expect(dataCall().args[0]).to.contain('https://stage.example/api/v1/v2/orgs/');
+    expect(loginCall().args[0]).to.equal('https://stage.example/api/v1/auth/s2s/login');
+  });
+
+  it('carries the /api/v1 gateway prefix on both the login and data URLs by default', async () => {
+    await run();
+    expect(loginCall().args[0]).to.contain('/api/v1/auth/s2s/login');
+    expect(dataCall().args[0]).to.contain('/api/v1/v2/orgs/');
+  });
+
+  it('honours the LLMO_API_PREFIX override (e.g. non-prod /api/ci) on both URLs', async () => {
+    await run({ LLMO_API_PREFIX: '/api/ci' });
+    expect(loginCall().args[0]).to.contain('/api/ci/auth/s2s/login');
+    expect(dataCall().args[0]).to.contain('/api/ci/v2/orgs/');
+    expect(dataCall().args[0]).to.not.contain('/api/v1/');
   });
 
   it('honours the LLMO_S2S_LOGIN_URL override for the login call', async () => {
