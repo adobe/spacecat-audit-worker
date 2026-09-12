@@ -16,7 +16,7 @@ jobs:
   release-cm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4        # for .snow.yml
+      - uses: actions/checkout@v7        # for .snow.yml
         with:
           persist-credentials: false
       # Pin to a full commit SHA once mysticat-ci publishes the action (supply-chain
