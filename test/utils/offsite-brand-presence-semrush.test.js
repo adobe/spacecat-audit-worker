@@ -178,6 +178,11 @@ describe('offsite-brand-presence-semrush', function () {
     expect(dataCall().args[1].timeout).to.equal(60000);
   });
 
+  it('clamps OFFSITE_SEMRUSH_TIMEOUT_MS to the 2-minute ceiling', async () => {
+    await run({ OFFSITE_SEMRUSH_TIMEOUT_MS: '600000' }); // 10 min requested
+    expect(dataCall().args[1].timeout).to.equal(120000); // clamped to 2 min
+  });
+
   it('mints the consumer IMS token via getServiceAccessTokenV3 (client_credentials) with SEMRUSH_S2S_* creds', async () => {
     await run({
       SEMRUSH_S2S_IMS_HOST: 'https://ims.example',
@@ -264,6 +269,11 @@ describe('offsite-brand-presence-semrush', function () {
   it('ignores a non-positive OFFSITE_SEMRUSH_PAGE_SIZE and uses the default', async () => {
     await run({ OFFSITE_SEMRUSH_PAGE_SIZE: '0' });
     expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal('1000');
+  });
+
+  it('clamps a fractional OFFSITE_SEMRUSH_PAGE_SIZE up to 1 (never sends pageSize=0)', async () => {
+    await run({ OFFSITE_SEMRUSH_PAGE_SIZE: '0.5' }); // floors to 0 without the lower clamp
+    expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal('1');
   });
 
   // --- filtering / scope ----------------------------------------------------
@@ -452,6 +462,18 @@ describe('offsite-brand-presence-semrush', function () {
     await run({}, {}, undefined, diagnostics);
     expect(warnedWith(/full page/)).to.equal(false);
     expect(diagnostics.truncated).to.equal(false);
+  });
+
+  it('detects truncation against an overridden (non-default) OFFSITE_SEMRUSH_PAGE_SIZE', async () => {
+    // A full page at the OVERRIDDEN ceiling must still flag truncation — guards against a
+    // future refactor closing the truncation check over the PAGE_SIZE constant.
+    const rows = Array.from({ length: 5 }, (_, i) => ({ url: `${YT_URL}${i}`, citations: 1 }));
+    fetchStub.resolves(okJson({ urls: rows }));
+    const diagnostics = {};
+    await run({ OFFSITE_SEMRUSH_PAGE_SIZE: '5' }, {}, undefined, diagnostics);
+    expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal('5');
+    expect(warnedWith(/full page/)).to.equal(true);
+    expect(diagnostics.truncated).to.equal(true);
   });
 
   it('warns on an exactly-PAGE_SIZE page (>= boundary, not >)', async () => {
@@ -768,10 +790,24 @@ describe('offsite-brand-presence-semrush', function () {
     expect(warnedWith(/hasClientSecret=true/)).to.equal(true);
   });
 
-  it('reports hasClientSecret=false when the secret is absent', async () => {
+  it('reports hasClientSecret=false and no gotcha flags when config is absent', async () => {
     getServiceAccessTokenV3.rejects(new Error('ims down'));
     await run();
     expect(warnedWith(/hasClientSecret=false/)).to.equal(true);
+    expect(warnedWith(/imsHostHasScheme=/)).to.equal(false);
+    expect(warnedWith(/imsScopeHasSpaces=/)).to.equal(false);
+  });
+
+  it('flags a scheme in SEMRUSH_S2S_IMS_HOST on ims_token_failed (the ENOTFOUND https bug)', async () => {
+    getServiceAccessTokenV3.rejects(new Error('getaddrinfo ENOTFOUND https'));
+    await run({ SEMRUSH_S2S_IMS_HOST: 'https://ims-na1.adobelogin.com' });
+    expect(warnedWith(/imsHostHasScheme=true/)).to.equal(true);
+  });
+
+  it('flags whitespace in SEMRUSH_S2S_CLIENT_SCOPE on ims_token_failed', async () => {
+    getServiceAccessTokenV3.rejects(new Error('invalid_scope'));
+    await run({ SEMRUSH_S2S_CLIENT_SCOPE: 'openid, AdobeID' });
+    expect(warnedWith(/imsScopeHasSpaces=true/)).to.equal(true);
   });
 
   // --- session token exchange (leg 3) ---------------------------------------

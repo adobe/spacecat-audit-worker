@@ -290,7 +290,9 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
       — 10s was aborting it (`Request timeout after 10000ms`). It now has its own
       `SEMRUSH_TIMEOUT_MS = 60s` (a generic offsite-Semrush data-request timeout; the login
       exchange keeps the 10s `FETCH_TIMEOUT_MS`); the Lambda budget is 900s, so 60s is safe
-      headroom. Overridable via `OFFSITE_SEMRUSH_TIMEOUT_MS` (invalid/absent → the 60s default).
+      headroom. Overridable via `OFFSITE_SEMRUSH_TIMEOUT_MS` (invalid/absent → the 60s default),
+      clamped to a 2-min ceiling (`SEMRUSH_TIMEOUT_MAX_MS`) so an override can't approach the
+      900s budget and turn a clean degrade into a hard Lambda kill.
 
 ## Consequences
 

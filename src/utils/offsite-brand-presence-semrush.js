@@ -64,8 +64,10 @@ export const LLMO_API_DEFAULT_PREFIX = '/api/v1';
 export const PAGE_SIZE = 1000;
 
 /**
- * Resolves the requested page size from env: a positive integer clamped to `[1, PAGE_SIZE]`
- * (the server's own clamp), falling back to `PAGE_SIZE` for an absent/invalid override.
+ * Resolves the requested page size from env: an integer clamped to `[1, PAGE_SIZE]` (the
+ * server's own clamp), falling back to `PAGE_SIZE` for an absent/invalid override. The lower
+ * clamp matters: a fractional override like `0.5` is finite and `> 0` but floors to `0`, which
+ * would send `pageSize=0` and make an empty response look like a legitimate zero-URL run.
  *
  * @param {object} [env]
  * @returns {number}
@@ -75,7 +77,7 @@ function resolvePageSize(env) {
   if (!Number.isFinite(override) || override <= 0) {
     return PAGE_SIZE;
   }
-  return Math.min(Math.floor(override), PAGE_SIZE);
+  return Math.min(Math.max(Math.floor(override), 1), PAGE_SIZE);
 }
 
 /**
@@ -89,20 +91,32 @@ const FETCH_TIMEOUT_MS = 10_000;
  * generic for any such request). These are heavy queries (all hosts, `platform=all`, proxied
  * api-service → Semrush v4-raw), routinely slower than the 10s login timeout — 10s was
  * aborting `domain-urls` mid-flight (`Request timeout after 10000ms`). The Lambda budget is
- * 900s, so 60s is safe headroom. Overridable with `OFFSITE_SEMRUSH_TIMEOUT_MS`.
+ * 900s, so 60s is safe headroom. Overridable with `OFFSITE_SEMRUSH_TIMEOUT_MS`, up to
+ * `SEMRUSH_TIMEOUT_MAX_MS`.
  */
 const SEMRUSH_TIMEOUT_MS = 60_000;
 
 /**
+ * Hard ceiling on the overridable Semrush data-request timeout (2 min). The 60s default keeps
+ * this call well under the Lambda's 900s budget so it degrades cleanly into the legacy
+ * fallback; an unbounded override (e.g. someone bumping it mid-incident) would risk a hard
+ * Lambda kill instead — so a valid override is clamped to this.
+ */
+const SEMRUSH_TIMEOUT_MAX_MS = 2 * 60 * 1000;
+
+/**
  * Resolves the offsite Semrush data-request timeout from env, ignoring a non-numeric or
- * non-positive override (fail-safe to the default rather than a 0/NaN timeout).
+ * non-positive override (fail-safe to the default rather than a 0/NaN timeout) and clamping a
+ * valid override to `SEMRUSH_TIMEOUT_MAX_MS`.
  *
  * @param {object} [env]
  * @returns {number} timeout in ms.
  */
 function resolveSemrushTimeoutMs(env) {
   const override = Number(env?.OFFSITE_SEMRUSH_TIMEOUT_MS);
-  return Number.isFinite(override) && override > 0 ? override : SEMRUSH_TIMEOUT_MS;
+  return Number.isFinite(override) && override > 0
+    ? Math.min(override, SEMRUSH_TIMEOUT_MAX_MS)
+    : SEMRUSH_TIMEOUT_MS;
 }
 
 /**
@@ -249,16 +263,23 @@ async function getImsAuthorizationHeader(context) {
  * obvious from the log line alone rather than needing a repro. Every field below is safe to
  * log: `imsHost`/`imsClientId`/`imsScope` are identifiers/config (not credentials), and the
  * client secret is reported only as a presence boolean (`hasClientSecret`), never its value.
+ * The two derived flags target the exact mistakes hand-edited IMS host/scope values recur
+ * with across environments — a scheme in the host (`https://ims...` → `getaddrinfo ENOTFOUND
+ * https`) and whitespace in the scope (`invalid_scope`) — and are emitted only when true.
  *
  * @param {object} [env]
  * @returns {object} log fields
  */
 function imsConfigDiagnostics(env) {
+  const imsHost = env?.SEMRUSH_S2S_IMS_HOST;
+  const imsScope = env?.SEMRUSH_S2S_CLIENT_SCOPE;
   return {
-    imsHost: env?.SEMRUSH_S2S_IMS_HOST,
+    imsHost,
     imsClientId: env?.SEMRUSH_S2S_CLIENT_ID,
-    imsScope: env?.SEMRUSH_S2S_CLIENT_SCOPE,
+    imsScope,
     hasClientSecret: Boolean(env?.SEMRUSH_S2S_CLIENT_SECRET),
+    ...(/^https?:\/\//i.test(imsHost || '') && { imsHostHasScheme: true }),
+    ...(/\s/.test(imsScope || '') && { imsScopeHasSpaces: true }),
   };
 }
 
