@@ -167,14 +167,14 @@ describe('offsite-brand-presence-semrush', function () {
     expect(dataCall().args[1].timeout).to.equal(60000);
   });
 
-  it('honours SEMRUSH_DOMAIN_URLS_TIMEOUT_MS for the data call (login timeout unaffected)', async () => {
-    await run({ SEMRUSH_DOMAIN_URLS_TIMEOUT_MS: '30000' });
+  it('honours OFFSITE_SEMRUSH_TIMEOUT_MS for the data call (login timeout unaffected)', async () => {
+    await run({ OFFSITE_SEMRUSH_TIMEOUT_MS: '30000' });
     expect(dataCall().args[1].timeout).to.equal(30000);
     expect(loginCall().args[1].timeout).to.equal(10000);
   });
 
-  it('ignores an invalid SEMRUSH_DOMAIN_URLS_TIMEOUT_MS and uses the default', async () => {
-    await run({ SEMRUSH_DOMAIN_URLS_TIMEOUT_MS: '0' });
+  it('ignores an invalid OFFSITE_SEMRUSH_TIMEOUT_MS and uses the default', async () => {
+    await run({ OFFSITE_SEMRUSH_TIMEOUT_MS: '0' });
     expect(dataCall().args[1].timeout).to.equal(60000);
   });
 
@@ -251,18 +251,18 @@ describe('offsite-brand-presence-semrush', function () {
     expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal('1000');
   });
 
-  it('honours a smaller SEMRUSH_DOMAIN_URLS_PAGE_SIZE', async () => {
-    await run({ SEMRUSH_DOMAIN_URLS_PAGE_SIZE: '200' });
+  it('honours a smaller OFFSITE_SEMRUSH_PAGE_SIZE', async () => {
+    await run({ OFFSITE_SEMRUSH_PAGE_SIZE: '200' });
     expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal('200');
   });
 
-  it('clamps SEMRUSH_DOMAIN_URLS_PAGE_SIZE to the server max (PAGE_SIZE)', async () => {
-    await run({ SEMRUSH_DOMAIN_URLS_PAGE_SIZE: '5000' });
+  it('clamps OFFSITE_SEMRUSH_PAGE_SIZE to the server max (PAGE_SIZE)', async () => {
+    await run({ OFFSITE_SEMRUSH_PAGE_SIZE: '5000' });
     expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal('1000');
   });
 
-  it('ignores a non-positive SEMRUSH_DOMAIN_URLS_PAGE_SIZE and uses the default', async () => {
-    await run({ SEMRUSH_DOMAIN_URLS_PAGE_SIZE: '0' });
+  it('ignores a non-positive OFFSITE_SEMRUSH_PAGE_SIZE and uses the default', async () => {
+    await run({ OFFSITE_SEMRUSH_PAGE_SIZE: '0' });
     expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal('1000');
   });
 

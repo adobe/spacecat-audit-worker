@@ -67,7 +67,7 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    citations globally across every host, so a low-citation bucket can be starved by too
    small a page — a generous page is cheap since it's one request either way. 1000 is the
    `domain-urls` server-side `pageSize` clamp, so it's the max we can actually get currently
-   and the default. `SEMRUSH_DOMAIN_URLS_PAGE_SIZE` can lower it (a positive integer, clamped
+   and the default. `OFFSITE_SEMRUSH_PAGE_SIZE` can lower it (a positive integer, clamped
    to `[1, 1000]`; invalid/absent → default) to cap response size/latency where completeness
    can be traded off.
 7. **Per-run override via Slack custom arg — how the first live runs get tested.**
@@ -288,9 +288,9 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
     - **Data-call timeout.** `domain-urls` (all hosts, `platform=all`, `pageSize=1000`,
       proxied api-service → Semrush v4-raw) routinely runs longer than the 10s login timeout
       — 10s was aborting it (`Request timeout after 10000ms`). It now has its own
-      `DOMAIN_URLS_TIMEOUT_MS = 60s` (the login exchange keeps the 10s `FETCH_TIMEOUT_MS`);
-      the Lambda budget is 900s, so 60s is safe headroom. Overridable via
-      `SEMRUSH_DOMAIN_URLS_TIMEOUT_MS` (invalid/absent → the 60s default).
+      `SEMRUSH_TIMEOUT_MS = 60s` (a generic offsite-Semrush data-request timeout; the login
+      exchange keeps the 10s `FETCH_TIMEOUT_MS`); the Lambda budget is 900s, so 60s is safe
+      headroom. Overridable via `OFFSITE_SEMRUSH_TIMEOUT_MS` (invalid/absent → the 60s default).
 
 ## Consequences
 

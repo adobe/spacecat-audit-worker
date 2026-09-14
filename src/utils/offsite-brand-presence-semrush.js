@@ -59,7 +59,7 @@ export const LLMO_API_DEFAULT_PREFIX = '/api/v1';
  * three buckets (youtube.com, reddit.com, cited third-party), sorted by citations globally,
  * so this needs to be generous or a low-citation bucket gets starved. 1000 is the server-side
  * clamp (`domain-urls` in spacecat-api-service), so this is the max we can actually get.
- * Overridable (only downward — clamped to this ceiling) with `SEMRUSH_DOMAIN_URLS_PAGE_SIZE`.
+ * Overridable (only downward — clamped to this ceiling) with `OFFSITE_SEMRUSH_PAGE_SIZE`.
  */
 export const PAGE_SIZE = 1000;
 
@@ -71,7 +71,7 @@ export const PAGE_SIZE = 1000;
  * @returns {number}
  */
 function resolvePageSize(env) {
-  const override = Number(env?.SEMRUSH_DOMAIN_URLS_PAGE_SIZE);
+  const override = Number(env?.OFFSITE_SEMRUSH_PAGE_SIZE);
   if (!Number.isFinite(override) || override <= 0) {
     return PAGE_SIZE;
   }
@@ -85,23 +85,24 @@ function resolvePageSize(env) {
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
- * Default timeout for the `domain-urls` data call specifically. This is a heavy query (all
- * hosts, `platform=all`, proxied api-service → Semrush v4-raw), routinely slower than the 10s
- * login timeout — 10s was aborting it mid-flight (`Request timeout after 10000ms`). The Lambda
- * budget is 900s, so 60s is safe headroom. Overridable with `SEMRUSH_DOMAIN_URLS_TIMEOUT_MS`.
+ * Default timeout for an offsite Semrush data request (currently the `domain-urls` call, but
+ * generic for any such request). These are heavy queries (all hosts, `platform=all`, proxied
+ * api-service → Semrush v4-raw), routinely slower than the 10s login timeout — 10s was
+ * aborting `domain-urls` mid-flight (`Request timeout after 10000ms`). The Lambda budget is
+ * 900s, so 60s is safe headroom. Overridable with `OFFSITE_SEMRUSH_TIMEOUT_MS`.
  */
-const DOMAIN_URLS_TIMEOUT_MS = 60_000;
+const SEMRUSH_TIMEOUT_MS = 60_000;
 
 /**
- * Resolves the domain-urls timeout from env, ignoring a non-numeric or non-positive override
- * (fail-safe to the default rather than a 0/NaN timeout).
+ * Resolves the offsite Semrush data-request timeout from env, ignoring a non-numeric or
+ * non-positive override (fail-safe to the default rather than a 0/NaN timeout).
  *
  * @param {object} [env]
  * @returns {number} timeout in ms.
  */
-function resolveDomainUrlsTimeoutMs(env) {
-  const override = Number(env?.SEMRUSH_DOMAIN_URLS_TIMEOUT_MS);
-  return Number.isFinite(override) && override > 0 ? override : DOMAIN_URLS_TIMEOUT_MS;
+function resolveSemrushTimeoutMs(env) {
+  const override = Number(env?.OFFSITE_SEMRUSH_TIMEOUT_MS);
+  return Number.isFinite(override) && override > 0 ? override : SEMRUSH_TIMEOUT_MS;
 }
 
 /**
@@ -772,7 +773,7 @@ export async function loadCitedUrlsFromSemrush({
   });
   await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
-  const timeoutMs = resolveDomainUrlsTimeoutMs(env);
+  const timeoutMs = resolveSemrushTimeoutMs(env);
   const result = await fetchDomainUrls(url, headers, olog, pageSize, timeoutMs);
   if (!result.ok) {
     if (result.authFailure) {
