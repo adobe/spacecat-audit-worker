@@ -63,10 +63,13 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    > to Semrush; no `x-promise-token` for a service caller.
    > **Open risk (LLMO-6709):** the proxy is designed around a real *user* IMS token, so
    > whether Semrush accepts the worker's *service* token is unverified.
-6. **`PAGE_SIZE` is a fixed constant (1000).** The response is sorted by
+6. **`PAGE_SIZE` defaults to 1000, overridable (downward) via env.** The response is sorted by
    citations globally across every host, so a low-citation bucket can be starved by too
    small a page — a generous page is cheap since it's one request either way. 1000 is the
-   `domain-urls` server-side `pageSize` clamp, so it's the max we can actually get currently.
+   `domain-urls` server-side `pageSize` clamp, so it's the max we can actually get currently
+   and the default. `OFFSITE_SEMRUSH_PAGE_SIZE` can lower it (a positive integer, clamped
+   to `[1, 1000]`; invalid/absent → default) to cap response size/latency where completeness
+   can be traded off.
 7. **Per-run override via Slack custom arg — how the first live runs get tested.**
    `enableSemrush` (`auditContext.messageData.enableSemrush`, resolved by
    `resolveEnableSemrush`) lets a single Slack-triggered `offsite-brand-presence` /
@@ -270,6 +273,26 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    / `SEO_API_BASE_URL` in Vault per PR #3217. Until an org has a resolvable `imsOrgId`,
    Semrush is skipped (`no_ims_org_id`) and the run uses the legacy source — consistent with
    DRS scraping, which already requires `imsOrgId`.
+
+10. **Data route carries the `/api/v1` gateway prefix; data call has its own 60s timeout
+    (LLMO-6709).** Both refinements landed once the S2S flow was exercised end-to-end against
+    the real LLMO edge:
+    - **Gateway prefix.** The LLMO Fastly edge routes api-service under `/api/v1` (prod) /
+      `/api/ci` (non-prod). api-service registers the routes bare (`/v2/orgs/...`,
+      `/auth/s2s/login`), so the prefix must be added client-side to the external URL — the
+      login already carried it, but the bare `/v2/...` data URL did not and the edge rejected
+      it with a synthetic Varnish **400 in ~4ms** (before reaching api-service). One prefixed
+      base (`apiBaseUrl = baseUrl + LLMO_API_PREFIX`, default `/api/v1`) now feeds BOTH the
+      login and the data URL so they can't drift; override per-env with `LLMO_API_PREFIX`.
+      Confirmed against the UI's own `/api/v1/v2/...` network calls.
+    - **Data-call timeout.** `domain-urls` (all hosts, `platform=all`, `pageSize=1000`,
+      proxied api-service → Semrush v4-raw) routinely runs longer than the 10s login timeout
+      — 10s was aborting it (`Request timeout after 10000ms`). It now has its own
+      `SEMRUSH_TIMEOUT_MS = 60s` (a generic offsite-Semrush data-request timeout; the login
+      exchange keeps the 10s `FETCH_TIMEOUT_MS`); the Lambda budget is 900s, so 60s is safe
+      headroom. Overridable via `OFFSITE_SEMRUSH_TIMEOUT_MS` (invalid/absent → the 60s default),
+      clamped to a 2-min ceiling (`SEMRUSH_TIMEOUT_MAX_MS`) so an override can't approach the
+      900s budget and turn a clean degrade into a hard Lambda kill.
 
 ## Consequences
 

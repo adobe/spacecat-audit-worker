@@ -55,15 +55,30 @@ export const LLMO_API_DEFAULT_BASE_URL = 'https://llmo.experiencecloud.live';
 export const LLMO_API_DEFAULT_PREFIX = '/api/v1';
 
 /**
- * `domain-urls` page size — the top N sources by citations (globally, across youtube.com /
- * reddit.com / cited third-party). Deliberately small to cap the response size and latency of
- * this heavy proxied query. The server clamp is 1000; we intentionally request far fewer.
- *
- * NOTE: because the page is a single citations-sorted list spanning all three buckets, a small
- * page can starve a low-citation bucket (e.g. reddit on a press-heavy site) — see ADR 002,
- * Decision 6. Raise this if a bucket is being starved.
+ * Default `domain-urls` page size. One request (no `hostname`, `platform=all`) covers all
+ * three buckets (youtube.com, reddit.com, cited third-party), sorted by citations globally,
+ * so this needs to be generous or a low-citation bucket gets starved. 1000 is the server-side
+ * clamp (`domain-urls` in spacecat-api-service), so this is the max we can actually get.
+ * Overridable (only downward — clamped to this ceiling) with `OFFSITE_SEMRUSH_PAGE_SIZE`.
  */
-export const PAGE_SIZE = 50;
+export const PAGE_SIZE = 1000;
+
+/**
+ * Resolves the requested page size from env: an integer clamped to `[1, PAGE_SIZE]` (the
+ * server's own clamp), falling back to `PAGE_SIZE` for an absent/invalid override. The lower
+ * clamp matters: a fractional override like `0.5` is finite and `> 0` but floors to `0`, which
+ * would send `pageSize=0` and make an empty response look like a legitimate zero-URL run.
+ *
+ * @param {object} [env]
+ * @returns {number}
+ */
+function resolvePageSize(env) {
+  const override = Number(env?.OFFSITE_SEMRUSH_PAGE_SIZE);
+  if (!Number.isFinite(override) || override <= 0) {
+    return PAGE_SIZE;
+  }
+  return Math.min(Math.max(Math.floor(override), 1), PAGE_SIZE);
+}
 
 /**
  * Per-request timeout for the fast calls (the S2S login exchange) so a hung upstream can't
@@ -72,12 +87,37 @@ export const PAGE_SIZE = 50;
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
- * Timeout for the `domain-urls` data call specifically. This is a heavy query (all hosts,
- * `platform=all`, proxied api-service → Semrush v4-raw), routinely slower than the 10s login
- * timeout — 10s was aborting it mid-flight (`Request timeout after 10000ms`). The Lambda
- * budget is 900s, so 60s is safe headroom.
+ * Default timeout for an offsite Semrush data request (currently the `domain-urls` call, but
+ * generic for any such request). These are heavy queries (all hosts, `platform=all`, proxied
+ * api-service → Semrush v4-raw), routinely slower than the 10s login timeout — 10s was
+ * aborting `domain-urls` mid-flight (`Request timeout after 10000ms`). The Lambda budget is
+ * 900s, so 60s is safe headroom. Overridable with `OFFSITE_SEMRUSH_TIMEOUT_MS`, up to
+ * `SEMRUSH_TIMEOUT_MAX_MS`.
  */
-const DOMAIN_URLS_TIMEOUT_MS = 60_000;
+const SEMRUSH_TIMEOUT_MS = 60_000;
+
+/**
+ * Hard ceiling on the overridable Semrush data-request timeout (2 min). The 60s default keeps
+ * this call well under the Lambda's 900s budget so it degrades cleanly into the legacy
+ * fallback; an unbounded override (e.g. someone bumping it mid-incident) would risk a hard
+ * Lambda kill instead — so a valid override is clamped to this.
+ */
+const SEMRUSH_TIMEOUT_MAX_MS = 2 * 60 * 1000;
+
+/**
+ * Resolves the offsite Semrush data-request timeout from env, ignoring a non-numeric or
+ * non-positive override (fail-safe to the default rather than a 0/NaN timeout) and clamping a
+ * valid override to `SEMRUSH_TIMEOUT_MAX_MS`.
+ *
+ * @param {object} [env]
+ * @returns {number} timeout in ms.
+ */
+function resolveSemrushTimeoutMs(env) {
+  const override = Number(env?.OFFSITE_SEMRUSH_TIMEOUT_MS);
+  return Number.isFinite(override) && override > 0
+    ? Math.min(override, SEMRUSH_TIMEOUT_MAX_MS)
+    : SEMRUSH_TIMEOUT_MS;
+}
 
 /**
  * Max chars of a non-2xx response body to log. The body of a rejected serenity/Semrush
@@ -223,9 +263,9 @@ async function getImsAuthorizationHeader(context) {
  * obvious from the log line alone rather than needing a repro. Every field below is safe to
  * log: `imsHost`/`imsClientId`/`imsScope` are identifiers/config (not credentials), and the
  * client secret is reported only as a presence boolean (`hasClientSecret`), never its value.
- * The two derived flags target the exact mistakes seen in practice — a scheme in the host
- * (`https://ims...` → `getaddrinfo ENOTFOUND https`) and whitespace in the scope
- * (`invalid_scope`) — and are emitted only when true, so they stand out.
+ * The two derived flags target the exact mistakes hand-edited IMS host/scope values recur
+ * with across environments — a scheme in the host (`https://ims...` → `getaddrinfo ENOTFOUND
+ * https`) and whitespace in the scope (`invalid_scope`) — and are emitted only when true.
  *
  * @param {object} [env]
  * @returns {object} log fields
@@ -740,20 +780,22 @@ export async function loadCitedUrlsFromSemrush({
     Accept: 'application/json',
   };
 
+  const pageSize = resolvePageSize(env);
   const url = buildDomainUrlsUrl({
     baseUrl: apiBaseUrl,
     spaceCatId,
     brandId: brand.brandId,
     startDate,
     endDate,
-    pageSize: PAGE_SIZE,
+    pageSize,
   });
   olog.start('data_acquisition_bp_data_semrush_read', 'Querying domain-urls (all hosts, all platforms)', {
-    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, requestUrl: url, pageSize: PAGE_SIZE,
+    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, pageSize,
   });
   await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
-  const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE, DOMAIN_URLS_TIMEOUT_MS);
+  const timeoutMs = resolveSemrushTimeoutMs(env);
+  const result = await fetchDomainUrls(url, headers, olog, pageSize, timeoutMs);
   if (!result.ok) {
     if (result.authFailure) {
       // The session token was rejected by the data call — evict it so a revoked/rotated
@@ -811,7 +853,6 @@ export async function loadCitedUrlsFromSemrush({
     direction: 'inbound',
     orgId: spaceCatId,
     brandId: brand.brandId,
-    requestUrl: url,
     receivedCount: result.rows.length,
     uniqueUrlCount: allUrls.size,
     droppedCount: result.rows.length - allUrls.size,
