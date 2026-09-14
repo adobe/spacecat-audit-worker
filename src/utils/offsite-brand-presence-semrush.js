@@ -109,17 +109,20 @@ const SEMRUSH_TIMEOUT_MAX_MS = 2 * 60 * 1000;
  * non-positive override (fail-safe to the default rather than a 0/NaN timeout) and clamping a
  * valid override to `SEMRUSH_TIMEOUT_MAX_MS`.
  *
- * Exported so the url-prompts loader shares the same default + `OFFSITE_SEMRUSH_TIMEOUT_MS`
- * override + cap as the domain-urls call.
+ * Exported so the url-prompts loader shares the same `OFFSITE_SEMRUSH_TIMEOUT_MS` override + cap.
+ * `defaultMs` lets a caller pick its own default when the override is absent — url-prompts uses a
+ * shorter 30s default (one light per-URL call, and up to 10 sequential batches) while domain-urls
+ * keeps 60s for its single heavy page. The env override, when set, applies to both.
  *
  * @param {object} [env]
+ * @param {number} [defaultMs] - default when no valid override is set (defaults to 60s).
  * @returns {number} timeout in ms.
  */
-export function resolveSemrushTimeoutMs(env) {
+export function resolveSemrushTimeoutMs(env, defaultMs = SEMRUSH_TIMEOUT_MS) {
   const override = Number(env?.OFFSITE_SEMRUSH_TIMEOUT_MS);
   return Number.isFinite(override) && override > 0
     ? Math.min(override, SEMRUSH_TIMEOUT_MAX_MS)
-    : SEMRUSH_TIMEOUT_MS;
+    : defaultMs;
 }
 
 /**
@@ -397,14 +400,20 @@ export function resolveApiBaseUrl(env) {
  *
  * On failure the thrown error carries a `.reason` fallback code (`ims_token_failed` |
  * `session_token_auth_failed` | `session_token_failed`) — plus `.status`/`.responseBody` on the
- * exchange leg — so best-effort callers can log/branch without re-deriving the classification.
- * On a data-call `401/403` the caller should {@link evictSessionToken} to drop a stale cached
+ * exchange leg — so callers can log/branch without re-deriving the classification. On a
+ * data-call `401/403` the caller should {@link evictS2sSessionToken} to drop a stale cached
  * token so the next run self-heals.
+ *
+ * Returns `fromCache` and the raw `sessionToken` (not just the header) so a caller that wants
+ * richer telemetry can log the decoded consumer claims on a fresh mint and distinguish a
+ * cache-hit from a re-mint (what the domain-urls loader relies on) without re-implementing the
+ * flow.
  *
  * @param {object} params
  * @param {object} params.context - Lambda context (env + log).
  * @param {string} params.imsOrgId - Customer IMS org id (`...@AdobeOrg`) to scope the token.
- * @returns {Promise<string>} `Bearer <sessionToken>`.
+ * @returns {Promise<{ authorization: string, sessionToken: string, fromCache: boolean }>}
+ *   `authorization` is `Bearer <sessionToken>`.
  * @throws {Error} with `.reason` (and `.status`/`.responseBody` on exchange failure).
  */
 export async function getS2sSessionAuthorization({ context, imsOrgId }) {
@@ -412,7 +421,7 @@ export async function getS2sSessionAuthorization({ context, imsOrgId }) {
   const nowMs = Date.now();
   const cached = getCachedSessionToken(imsOrgId, nowMs);
   if (cached) {
-    return `Bearer ${cached}`;
+    return { authorization: `Bearer ${cached}`, sessionToken: cached, fromCache: true };
   }
 
   let imsAuthorization;
@@ -435,7 +444,7 @@ export async function getS2sSessionAuthorization({ context, imsOrgId }) {
   }
 
   cacheSessionToken(imsOrgId, sessionToken, nowMs, resolveSessionTtlMs(env));
-  return `Bearer ${sessionToken}`;
+  return { authorization: `Bearer ${sessionToken}`, sessionToken, fromCache: false };
 }
 
 /**
@@ -783,39 +792,24 @@ export async function loadCitedUrlsFromSemrush({
   }
 
   // Legs 2 + 3 — mint the consumer IMS token (client_credentials), then exchange it for a
-  // customer-scoped session token. Both are skipped on a warm-container cache hit: one
-  // customer-scoped token authorizes every brand under the org, so it is cached by imsOrgId
-  // with a TTL under the 15-min server expiry.
-  const nowMs = Date.now();
-  let sessionToken = getCachedSessionToken(imsOrgId, nowMs);
-  // Tracked so that a downstream 401/403 on the data call can distinguish "our cached token
-  // went stale mid-window" (evict + self-heal next run) from "a freshly-minted token was
-  // rejected" (the consumer registration / grant is actually broken).
-  const sessionTokenFromCache = sessionToken !== null;
-  if (!sessionToken) {
-    // Leg 2: the consumer's IMS access token (dedicated client_credentials integration).
-    let imsAuthorization;
-    try {
-      imsAuthorization = await getImsAuthorizationHeader(context);
-    } catch (error) {
+  // customer-scoped session token, via the SHARED helper (also used by the url-prompts loader,
+  // so both reuse the one imsOrgId-keyed cache and never double-mint). Both legs are skipped on
+  // a warm-container cache hit. The helper throws a `.reason`-tagged error; this loader keeps
+  // its richer domain-urls logging + Slack-notify below rather than pushing it into the helper.
+  let auth;
+  try {
+    auth = await getS2sSessionAuthorization({ context, imsOrgId });
+  } catch (error) {
+    if (error.reason === 'ims_token_failed') {
       olog.warn('data_acquisition_bp_data_semrush_read', 'Failed to obtain IMS service token', {
         peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'ims_token_failed', outcome: OUTCOME.DEGRADED, ...imsConfigDiagnostics(env), ...errorField(error),
       }, error);
       await notify(`:x: Failed to obtain an IMS service token (\`${error.message}\`) — falling back to the legacy source.`);
-      setDiagnostics({ fallbackReason: 'ims_token_failed' });
-      return null;
-    }
-
-    // Leg 3: exchange it for a customer-scoped SpaceCat session token via the LLMO host.
-    const loginUrl = env?.LLMO_S2S_LOGIN_URL || `${apiBaseUrl}/auth/s2s/login`;
-    try {
-      sessionToken = await exchangeForSessionToken({ loginUrl, imsAuthorization, imsOrgId });
-    } catch (error) {
+    } else {
       // Split an authz denial (401/403 — a static config problem retries won't fix: missing
       // brand:read, or the token's tenants claim doesn't name this org) from a transient/
       // other failure, mirroring fetchDomainUrls' authFailure branch.
-      const authFailure = error.status === 401 || error.status === 403;
-      const reason = authFailure ? 'session_token_auth_failed' : 'session_token_failed';
+      const authFailure = error.reason === 'session_token_auth_failed';
       olog.warn(
         'data_acquisition_bp_data_semrush_read',
         authFailure
@@ -829,7 +823,7 @@ export async function loadCitedUrlsFromSemrush({
           status: error.status,
           responseBody: error.responseBody,
           durationMs: elapsed(),
-          reason,
+          reason: error.reason,
           outcome: OUTCOME.DEGRADED,
           ...errorField(error),
         },
@@ -839,12 +833,16 @@ export async function loadCitedUrlsFromSemrush({
       // upstream content and must never be echoed into a user-facing channel (it stays in
       // the structured `responseBody` log field above).
       await notify(`:x: Failed to obtain an S2S session token${error.status ? ` (HTTP ${error.status})` : ''} — falling back to the legacy source.`);
-      setDiagnostics({ fallbackReason: reason });
-      return null;
     }
-    cacheSessionToken(imsOrgId, sessionToken, nowMs, resolveSessionTtlMs(env));
+    setDiagnostics({ fallbackReason: error.reason });
+    return null;
+  }
+
+  const { sessionToken, fromCache: sessionTokenFromCache } = auth;
+  if (!sessionTokenFromCache) {
     // Log the consumer identity we were granted (decoded from the token's claims, never the
     // token itself) — the client-side match to api-service's `[s2s] granted ...` audit line.
+    // Only on a fresh mint; a cache hit already logged this on the run that minted it.
     olog.success('data_acquisition_bp_data_semrush_read', 'Obtained S2S session token', {
       peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, ...decodeS2sConsumerClaims(sessionToken),
     });
@@ -853,7 +851,7 @@ export async function loadCitedUrlsFromSemrush({
   const headers = {
     // The customer-scoped S2S session token authorizes the read as an S2S consumer; it is
     // self-contained (no x-promise-token / IMS-forwarding needed on this path).
-    Authorization: `Bearer ${sessionToken}`,
+    Authorization: auth.authorization,
     // GET has no body — advertise the desired representation with Accept rather
     // than Content-Type (some proxies buffer/reject a Content-Type on a bodyless GET).
     Accept: 'application/json',

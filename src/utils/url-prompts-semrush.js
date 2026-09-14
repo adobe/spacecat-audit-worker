@@ -40,6 +40,21 @@ const URL_PROMPTS_EVENT = 'data_acquisition_url_prompts_read';
 export const MAX_URL_PROMPTS = 5;
 
 /**
+ * Max characters kept per prompt string. `prompts` are third-party content flowing into stored
+ * audit data and the downstream Mystique dispatch, so each is coerced to a string and truncated
+ * at this ingestion boundary rather than relying on the SQS byte-budget as an incidental backstop.
+ */
+const MAX_PROMPT_LENGTH = 4096;
+
+/**
+ * Default per-request timeout for url-prompts: shorter than the domain-urls 60s because each call
+ * is a single light per-URL lookup and up to 10 batches run sequentially (concurrency 5 over 50
+ * URLs), which bounds the enrichment phase's wall-clock. The shared `OFFSITE_SEMRUSH_TIMEOUT_MS`
+ * env override still applies to both loaders.
+ */
+const URL_PROMPTS_TIMEOUT_MS = 30_000;
+
+/**
  * Max in-flight `url-prompts` requests. The caller forwards up to `MYSTIQUE_URLS_LIMIT` (50)
  * URLs and this loader issues one request per URL; a bounded pool keeps a burst of 50
  * token-bearing GETs off the LLMO edge / api-service connection pool at once.
@@ -140,10 +155,18 @@ async function fetchUrlPrompts({ url, requestUrl }, headers, timeoutMs) {
   }
 
   const rows = Array.isArray(body?.prompts) ? body.prompts : [];
-  const prompts = rows
-    .map((row) => row?.prompt)
-    .filter(Boolean)
-    .slice(0, MAX_URL_PROMPTS);
+  // Cap first (stop at MAX_URL_PROMPTS), coerce to a non-empty string, and truncate length —
+  // `prompts` are third-party content, validated at this ingestion boundary.
+  const prompts = [];
+  for (const row of rows) {
+    if (prompts.length >= MAX_URL_PROMPTS) {
+      break;
+    }
+    const prompt = row?.prompt;
+    if (typeof prompt === 'string' && prompt.length > 0) {
+      prompts.push(prompt.length > MAX_PROMPT_LENGTH ? prompt.slice(0, MAX_PROMPT_LENGTH) : prompt);
+    }
+  }
   return {
     url, prompts, authFailure: false, category: 'ok',
   };
@@ -192,39 +215,56 @@ export async function loadUrlPromptsFromSemrush({
     return new Map();
   }
 
-  const { brand } = await resolveBrandResultForSite(context, site);
-  if (!brand?.brandId) {
-    olog.warn(URL_PROMPTS_EVENT, 'No active brand; skipping url-prompts', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'no_active_brand',
-    });
-    return new Map();
-  }
+  // Resolve prerequisites (brand, date window, customer IMS org). Any of these can reject on a
+  // transient data-access/brand-resolver error; guard them so a failure degrades to "no prompts"
+  // rather than throwing out of fetchStoreData and failing the whole analysis audit (the
+  // best-effort contract). Null results (no brand/date/org) are deliberate skips, logged with a
+  // specific reason; a thrown error is the catch-all below.
+  let brand;
+  let startDate;
+  let endDate;
+  let imsOrgId;
+  try {
+    const brandResult = await resolveBrandResultForSite(context, site);
+    brand = brandResult?.brand;
+    if (!brand?.brandId) {
+      olog.warn(URL_PROMPTS_EVENT, 'No active brand; skipping url-prompts', {
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'no_active_brand',
+      });
+      return new Map();
+    }
 
-  const dateWindow = getDateWindowForPreviousWeeks(getPreviousWeeks());
-  if (!dateWindow) {
-    olog.warn(URL_PROMPTS_EVENT, 'Could not derive a date window; skipping url-prompts', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'no_date_window',
-    });
-    return new Map();
-  }
-  const { startDate, endDate } = dateWindow;
+    const dateWindow = getDateWindowForPreviousWeeks(getPreviousWeeks());
+    if (!dateWindow) {
+      olog.warn(URL_PROMPTS_EVENT, 'Could not derive a date window; skipping url-prompts', {
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'no_date_window',
+      });
+      return new Map();
+    }
+    ({ startDate, endDate } = dateWindow);
 
-  // The session token must be scoped to the customer's IMS org (…@AdobeOrg), which is distinct
-  // from spaceCatId (the SpaceCat org UUID in the route path) — same value api-service's
-  // hasAccess(organization) checks. Resolve it the same way the offsite loader does.
-  const imsOrgId = await getImsOrgId(site, dataAccess || {}, log);
-  if (!imsOrgId) {
-    olog.warn(URL_PROMPTS_EVENT, 'Could not resolve customer IMS org id; skipping url-prompts', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'no_ims_org_id',
-    });
+    // The session token must be scoped to the customer's IMS org (…@AdobeOrg), which is distinct
+    // from spaceCatId (the SpaceCat org UUID in the route path) — same value api-service's
+    // hasAccess(organization) checks. Resolve it the same way the offsite loader does.
+    imsOrgId = await getImsOrgId(site, dataAccess || {}, log);
+    if (!imsOrgId) {
+      olog.warn(URL_PROMPTS_EVENT, 'Could not resolve customer IMS org id; skipping url-prompts', {
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'no_ims_org_id',
+      });
+      return new Map();
+    }
+  } catch (error) {
+    olog.failure(URL_PROMPTS_EVENT, 'Failed to resolve url-prompts prerequisites', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'prerequisites_failed', ...errorField(error),
+    }, error);
     return new Map();
   }
 
   let authorization;
   try {
-    authorization = await getS2sSessionAuthorization({ context, imsOrgId });
+    ({ authorization } = await getS2sSessionAuthorization({ context, imsOrgId }));
   } catch (error) {
-    olog.failure('data_acquisition_url_prompts_read', 'Failed to obtain S2S session token for url-prompts', {
+    olog.failure(URL_PROMPTS_EVENT, 'Failed to obtain S2S session token for url-prompts', {
       peer: PEER.SEMRUSH,
       direction: 'inbound',
       orgId: spaceCatId,
@@ -243,7 +283,7 @@ export async function loadUrlPromptsFromSemrush({
   };
 
   const baseUrl = resolveApiBaseUrl(env);
-  const timeoutMs = resolveSemrushTimeoutMs(env);
+  const timeoutMs = resolveSemrushTimeoutMs(env, URL_PROMPTS_TIMEOUT_MS);
   const requests = urls.map(({ url }) => ({
     url,
     requestUrl: buildUrlPromptsUrl({

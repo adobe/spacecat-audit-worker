@@ -1003,17 +1003,23 @@ describe('offsite-brand-presence-semrush', function () {
       }
     };
 
-    it('mints an IMS token, exchanges it, and returns the Bearer session token', async () => {
+    it('mints an IMS token, exchanges it, and returns the Bearer session token (fresh)', async () => {
       const auth = await getAuth();
-      expect(auth).to.equal(`Bearer ${SESSION_TOKEN}`);
+      expect(auth).to.deep.equal({
+        authorization: `Bearer ${SESSION_TOKEN}`,
+        sessionToken: SESSION_TOKEN,
+        fromCache: false,
+      });
       expect(loginCallCount()).to.equal(1);
       expect(imsCreateFrom).to.have.been.called;
     });
 
-    it('reuses the cached session token for the same org (mints/logs in once)', async () => {
+    it('reuses the cached session token for the same org (mints/logs in once), flagged fromCache', async () => {
       const first = await getAuth();
       const second = await getAuth();
-      expect(second).to.equal(first);
+      expect(first.fromCache).to.equal(false);
+      expect(second.fromCache).to.equal(true);
+      expect(second.authorization).to.equal(first.authorization);
       expect(loginCallCount()).to.equal(1);
       expect(getServiceAccessTokenV3).to.have.been.calledOnce;
     });
@@ -1021,6 +1027,17 @@ describe('offsite-brand-presence-semrush', function () {
     it('honours the LLMO_S2S_LOGIN_URL override', async () => {
       await getAuth({ LLMO_S2S_LOGIN_URL: 'https://alt.example/auth/s2s/login' });
       expect(loginCall().args[0]).to.equal('https://alt.example/auth/s2s/login');
+    });
+
+    it('shares the cache with the domain-urls loader — no double-mint across entry points', async () => {
+      // The domain-urls loader mints + caches a session token for IMS_ORG_ID...
+      await run();
+      expect(loginCallCount()).to.equal(1);
+      // ...and the shared helper reuses it for the same org instead of minting again.
+      const auth = await getAuth();
+      expect(auth.fromCache).to.equal(true);
+      expect(auth.authorization).to.equal(`Bearer ${SESSION_TOKEN}`);
+      expect(loginCallCount()).to.equal(1);
     });
 
     it('throws with reason=ims_token_failed when the IMS mint fails', async () => {

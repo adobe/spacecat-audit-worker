@@ -31,21 +31,32 @@ Two things had to be settled to land it on current `main`:
 
 ## Decision
 
-### 1. Reuse the ADR-002 S2S auth via shared exports
+### 1. One shared S2S auth path for both loaders
 
-`offsite-brand-presence-semrush.js` exposes three exports the url-prompts loader consumes, so
-both loaders share one auth path, one session-token cache, and one host/prefix resolver:
+`offsite-brand-presence-semrush.js` exposes three exports, and **both** the `domain-urls` loader
+(`loadCitedUrlsFromSemrush`) and the `url-prompts` loader now go through them — so the auth
+orchestration, the `imsOrgId`-keyed session-token cache, and the host/prefix resolution live in
+one place and cannot drift:
 
 - `resolveApiBaseUrl(env)` — LLMO host + `/api/v1` prefix.
-- `getS2sSessionAuthorization({ context, imsOrgId })` — cached mint+exchange; throws with a
-  `.reason` code (`ims_token_failed` / `session_token_auth_failed` / `session_token_failed`).
+- `getS2sSessionAuthorization({ context, imsOrgId })` — cached mint→exchange; returns
+  `{ authorization, sessionToken, fromCache }` and throws with a `.reason` code
+  (`ims_token_failed` / `session_token_auth_failed` / `session_token_failed`).
 - `evictS2sSessionToken(imsOrgId)` — drop a stale token on a data-call `401/403`.
 
-The loader resolves the customer `imsOrgId` itself (via `getImsOrgId`) and is **best-effort**:
-any failure (no brand / no org / no IMS org / token failure / per-URL error) returns an empty
-`Map` and the audit proceeds with un-enriched URLs. There is **no legacy fallback** here —
-unlike the `domain-urls` source, there is no alternative prompt source, and enrichment is
-optional metadata.
+`domain-urls` was refactored onto `getS2sSessionAuthorization` (it previously inlined the
+mint/exchange/classify sequence) while keeping its richer telemetry — the Slack fallback notify,
+the decoded-consumer-claims success line (logged only on a fresh mint, keyed off `fromCache`),
+and the data-call eviction — in the caller rather than pushing it into the shared helper. Because
+both entry points hit the same module-level cache, a token minted by one is reused by the other
+for the same org: no double-mint (covered by a cross-loader regression test).
+
+The url-prompts loader resolves the customer `imsOrgId` itself (via `getImsOrgId`) and is
+**best-effort**: any failure — a *thrown* error from the brand/date/IMS-org resolution or the
+token call, or a per-URL fetch error — is caught and returns an empty `Map` so the audit proceeds
+with un-enriched URLs and never fails on enrichment. There is **no legacy fallback** here — unlike
+the `domain-urls` source, there is no alternative prompt source, and enrichment is optional
+metadata.
 
 ### 2. Enrichment gating: `enableSemrush` OR `enableSemrushWithHardstop`
 
@@ -95,12 +106,25 @@ The loader logs through the offsite `olog` taxonomy under one event token,
 There are **no per-URL log lines** (up to 50 URLs/run would be noise); the aggregate counts are
 the fail/success signal.
 
-### 5. Shared request timeout
+### 4b. Prompt provenance and ingestion validation
 
-url-prompts uses the same `resolveSemrushTimeoutMs(env)` as `domain-urls` — default 60s,
-overridable by `OFFSITE_SEMRUSH_TIMEOUT_MS` (2-min cap). The per-URL fan-out is bounded by a
-client-side concurrency pool (5) so a run of up to 50 URLs cannot burst 50 token-bearing GETs at
-the LLMO edge at once.
+Every candidate URL (first `MYSTIQUE_URLS_LIMIT`) is tagged `isUrlFromSemrush` when enrichment
+runs, but prompt **provenance** only changes for URLs Semrush actually returned prompts for:
+`url-topic-enrichment` fills in the legacy brand-presence-topic prompts for any tagged URL that
+Semrush returned nothing for (gated on actual prompt presence, `!urlItem.prompts?.length`, not the
+tag), so enabling enrichment never *reduces* prompt coverage — it only swaps the source where
+Semrush has data. Prompt strings are third-party content, so each is coerced to a non-empty string
+and truncated (`MAX_PROMPT_LENGTH`, 4 KB) at the ingestion boundary in `fetchUrlPrompts`, not left
+to an incidental SQS byte-budget backstop.
+
+### 5. Shared request timeout, shorter url-prompts default
+
+Both loaders resolve their timeout through the same `resolveSemrushTimeoutMs(env, defaultMs)` and
+honor the same `OFFSITE_SEMRUSH_TIMEOUT_MS` override (2-min cap). The **default** differs by
+call shape: `domain-urls` keeps **60s** for its single heavy page; `url-prompts` uses **30s**,
+since each call is a light per-URL lookup and up to ~10 batches run sequentially (concurrency 5
+over 50 URLs) — a shorter default bounds the enrichment phase's worst-case wall-clock. The env
+override, when set, applies to both.
 
 ## Alternatives Considered
 
@@ -112,9 +136,11 @@ the LLMO edge at once.
   always-on enrichment (at which point the hardstop is removed and an env gate makes sense).
 - **Per-URL success/failure logs.** Rejected: too noisy at 50 URLs/run; the aggregate summary
   plus the `start` sample-URL line give enough to debug routing and success rate.
-- **A dedicated shorter url-prompts timeout.** Rejected in favor of one shared knob — one env
-  var to reason about, and url-prompts calls are lighter than `domain-urls` so 60s is ample
-  headroom, not a regression.
+- **A separate url-prompts timeout env var.** Rejected in favor of one shared override
+  (`OFFSITE_SEMRUSH_TIMEOUT_MS`) with a per-caller *default*: url-prompts defaults to a shorter 30s
+  (bounding the sequential-batch wall-clock) while domain-urls keeps 60s, and the single env var
+  still tunes both. One knob to reason about, without forcing the same default on two very
+  different call shapes.
 
 ## Consequences
 
@@ -125,5 +151,11 @@ the LLMO edge at once.
   timeout resolution; a change to any of those affects both (intended).
 - The api-service `getUrlPrompts` service layer is flagged POC (unit tests deferred) though the
   endpoint is live-verified — the hardstop debug path exists precisely to validate it before
-  broad enablement. Once validated, remove the hardstop (and this ADR's §3) as ADR 002 removed
-  its own hard-stop.
+  broad enablement.
+- **Planned removal (tracked in this story, LLMO-6712).** Once url-prompts is confirmed working
+  across all audits, a **follow-up cleanup PR under LLMO-6712** removes the `enableSemrushWithHardstop`
+  debug flag and `buildSemrushDebugHaltResult` (its whole thread through the trigger chain), the
+  same way ADR 002's `domain-urls` hard-stop was removed after validation. Until then the
+  `success:false` / `reason=semrush_debug_halt` signal is deliberate and short-lived. The audit
+  framework has no first-class "skipped" terminal state, which is why the debug halt reuses
+  `success:false` rather than a dedicated status.

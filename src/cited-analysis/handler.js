@@ -167,7 +167,7 @@ function partitionExcludedUrls(urls, brandTokens, olog) {
  * @param {string} siteId - The site ID
  * @param {Object} context - The audit context
  * @param {Object} site - The site being audited
- * @param {boolean} [enableSemrush] - When true, enrich URLs with Semrush url-prompts data
+ * @param {boolean} [runSemrush] - When true, enrich URLs with Semrush url-prompts data
  * @returns {Promise<Object>} Object containing urls and sentimentConfig
  * @throws {StoreEmptyError} If any store returns empty results
  */

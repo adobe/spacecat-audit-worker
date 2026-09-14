@@ -308,6 +308,9 @@ describe('Reddit Analysis Handler', function () {
       expect(result.auditResult.reason).to.equal('semrush_debug_halt');
       expect(result.auditResult.storeData.urls[0].isUrlFromSemrush).to.be.true;
       expect(result.auditResult.storeData.urls[0].prompts).to.deep.equal(['p1', 'p2']);
+      // Debug hardstop short-circuits before any downstream dispatch (Mystique post-processor
+      // also skips on success:false).
+      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
     it('should only forward the first MYSTIQUE_URLS_LIMIT URLs to Semrush url-prompts enrichment', async () => {

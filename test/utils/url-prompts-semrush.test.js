@@ -23,7 +23,7 @@ const IMS_ORG_ID = '1234567890ABCDEF12345678@AdobeOrg';
 const BRAND_ID = 'cb84e91a-f7e9-488b-8220-e0d031941cd7';
 const SITE_ID = '5b0d4d6e-3d2e-4a5b-8e2a-9b6f7c9c1e2a';
 const API_BASE = 'https://llmo.experiencecloud.live/api/v1';
-const TIMEOUT_MS = 60_000;
+const TIMEOUT_MS = 30_000;
 
 const URL_A = 'https://www.youtube.com/watch?v=abc';
 const URL_B = 'https://www.reddit.com/r/example/comments/1/post';
@@ -86,7 +86,8 @@ describe('url-prompts-semrush', function () {
     resolveBrandResultForSite = sandbox.stub()
       .resolves({ brand: { brandId: BRAND_ID }, resolved: true });
     getImsOrgId = sandbox.stub().resolves(IMS_ORG_ID);
-    getS2sSessionAuthorization = sandbox.stub().resolves('Bearer stok');
+    getS2sSessionAuthorization = sandbox.stub()
+      .resolves({ authorization: 'Bearer stok', sessionToken: 'stok', fromCache: false });
     evictS2sSessionToken = sandbox.stub();
     resolveApiBaseUrl = sandbox.stub().returns(API_BASE);
     resolveSemrushTimeoutMs = sandbox.stub().returns(TIMEOUT_MS);
@@ -150,7 +151,8 @@ describe('url-prompts-semrush', function () {
     expect(opts.headers.Accept).to.equal('application/json');
     expect(opts.headers).to.not.have.property('x-promise-token');
     expect(opts.timeout).to.equal(TIMEOUT_MS);
-    expect(resolveSemrushTimeoutMs).to.have.been.called;
+    // url-prompts passes its own 30s default; the shared env override still applies to both.
+    expect(resolveSemrushTimeoutMs).to.have.been.calledWith(sinon.match.any, 30_000);
   });
 
   it('uses the timeout resolved from env (shared OFFSITE_SEMRUSH_TIMEOUT_MS)', async () => {
@@ -325,7 +327,41 @@ describe('url-prompts-semrush', function () {
     getS2sSessionAuthorization.rejects(new Error('ims down'));
     const result = await run([{ url: URL_A }]);
     expect(result.size).to.equal(0);
-    expect(olog.failure).to.have.been.calledWithMatch(sinon.match.string, sinon.match.string, sinon.match({ reason: 'session_token_failed' }));
+    expect(olog.failure.lastCall.args[2]).to.include({ reason: 'session_token_failed' });
+  });
+
+  // Best-effort contract: a THROW from a prerequisite resolver must not fail the audit.
+  it('returns an empty Map when resolveBrandResultForSite rejects (never throws out)', async () => {
+    resolveBrandResultForSite.rejects(new Error('data-access down'));
+    const result = await run([{ url: URL_A }]);
+    expect(result.size).to.equal(0);
+    expect(fetchStub).to.not.have.been.called;
+    expect(olog.failure.lastCall.args[2]).to.include({ reason: 'prerequisites_failed' });
+  });
+
+  it('returns an empty Map when getImsOrgId rejects (never throws out)', async () => {
+    getImsOrgId.rejects(new Error('org lookup failed'));
+    const result = await run([{ url: URL_A }]);
+    expect(result.size).to.equal(0);
+    expect(getS2sSessionAuthorization).to.not.have.been.called;
+    expect(olog.failure.lastCall.args[2]).to.include({ reason: 'prerequisites_failed' });
+  });
+
+  it('coerces non-string prompt rows out and truncates oversized strings at ingestion', async () => {
+    const huge = 'x'.repeat(9000);
+    fetchStub.resolves(okJson({
+      prompts: [
+        { prompt: 42 }, // non-string → dropped
+        { prompt: { nested: true } }, // non-string → dropped
+        { prompt: 'kept' },
+        { prompt: huge }, // oversized → truncated
+      ],
+    }));
+    const result = await run([{ url: URL_A }]);
+    const prompts = result.get(URL_A);
+    expect(prompts).to.have.lengthOf(2);
+    expect(prompts[0]).to.equal('kept');
+    expect(prompts[1]).to.have.lengthOf(4096);
   });
 
   describe('buildUrlPromptsUrl', () => {
