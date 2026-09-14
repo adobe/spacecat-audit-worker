@@ -350,7 +350,7 @@ describe('Offsite Brand Presence Handler', function () {
       );
     });
 
-    it('falls back to legacy when an ENV-enabled Semrush run fails (no hard stop)', async () => {
+    it('falls back to legacy when an ENV-enabled Semrush run fails (same as the override)', async () => {
       context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true'; // env, not the override
       mockLoadCitedUrlsFromSemrush.resolves(null);
       stubBrandPresenceData(['https://www.youtube.com/watch?v=legacy']);
@@ -455,6 +455,30 @@ describe('Offsite Brand Presence Handler', function () {
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
     });
 
+    it('with enableSemrush:true, a technical failure + empty legacy still records success + fallbackReason (offsite legitimately zeroed)', async () => {
+      // The PR premise ("a Semrush hiccup never zeroes out offsite") does not hold when legacy
+      // ALSO yields nothing: the run degrades gracefully (no hard stop) but offsite legitimately
+      // ends up zeroed — `fallbackReason` is the surviving evidence that Semrush failed.
+      mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
+        if (diagnostics) {
+          diagnostics.fallbackReason = 'domain_urls_failed'; // genuine technical failure
+        }
+        return null;
+      });
+      mockLoadBrandPresenceData.resolves(null); // legacy empty too
+
+      const result = await offsiteBrandPresenceRunner(
+        FINAL_URL, context, site, { messageData: { enableSemrush: true } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.dataSource).to.equal('legacy');
+      expect(result.auditResult.fallbackReason).to.equal('domain_urls_failed');
+      expect(result.auditResult.urlCounts['youtube.com']).to.equal(0);
+      expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
+      expect(log.error).to.not.have.been.called; // no hard stop / failure-level log
+    });
+
     it('surfaces entitlementReason on the no-URLs-found path too, when legacy also yields nothing', async () => {
       context.env.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED = 'true';
       mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
@@ -493,7 +517,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(mockLoadBrandPresenceData).to.have.been.calledOnce;
     });
 
-    it('falls back to legacy (never hard-stops) on a not-entitled brand, even with enableSemrush:true', async () => {
+    it('falls back to legacy on a not-entitled brand, even with enableSemrush:true', async () => {
       mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
         if (diagnostics) {
           diagnostics.fallbackReason = SEMRUSH_NOT_ENTITLED_REASON;
@@ -525,7 +549,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(log.warn).to.not.have.been.calledWithMatch(/Semrush source failed/);
     });
 
-    it('falls back to legacy (never hard-stops) when the entitlement check itself fails, even with enableSemrush:true', async () => {
+    it('falls back to legacy when the entitlement check itself fails, even with enableSemrush:true', async () => {
       mockLoadCitedUrlsFromSemrush.callsFake(async ({ diagnostics }) => {
         if (diagnostics) {
           diagnostics.fallbackReason = SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON;

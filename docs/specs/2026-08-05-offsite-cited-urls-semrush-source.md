@@ -140,8 +140,10 @@ third-party "cited" rows — matching the legacy filter for each bucket.
   filtering and the top-cited earned-host gate match the legacy path.
 - Flag on + Semrush unavailable ⇒ automatic fallback to the legacy PostgREST → SharePoint
   source (no offsite gap).
-- `enableSemrush:true` (Slack override) + Semrush fails ⇒ **hard stop** (`success:false`,
-  `dataSource:'semrush'`, no fallback) so the failure is visible during LLMO-6709 testing.
+- `enableSemrush:true` (Slack override) + Semrush fails ⇒ falls back to the legacy source,
+  same as the env flag (`success:true`, `dataSource:'legacy'`, `fallbackReason` set). (This
+  originally hard-stopped — `success:false`, no fallback — during LLMO-6709 testing; that was
+  removed once S2S access worked, so the override behaves exactly like the env flag.)
 - Shadow-run (LLMO-6711) shows acceptable top-70 overlap per bucket vs the legacy source.
 - Exactly one `domain-urls` request per audit run when Semrush is enabled.
 - 100% test coverage on the new module; full suite green.

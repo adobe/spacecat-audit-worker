@@ -52,8 +52,8 @@ const SERENITY_FLAG_NAME = 'serenity';
 /**
  * Reason code the loader (`offsite-brand-presence-semrush.js`) sets on
  * `diagnostics.fallbackReason` for a CONFIRMED non-entitlement (`resolved:true`).
- * Exported so both the loader (producer) and the handler's hard-stop-exemption
- * check (`offsite-brand-presence/handler.js`) share one literal instead of two
+ * Exported so both the loader (producer) and the handler's fallback-logging check
+ * (`offsite-brand-presence/handler.js`) share one literal instead of two
  * independently-typed copies that could drift.
  */
 export const SEMRUSH_NOT_ENTITLED_REASON = 'not_entitled';
@@ -67,8 +67,9 @@ export const SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON = 'entitlement_check_failed
 
 /**
  * Both entitlement-based skip reasons — a deliberate skip (confirmed or
- * inconclusive), never a Semrush/technical failure. Consumed directly by the
- * handler's hard-stop-exemption check so it never has to know the literal values.
+ * inconclusive), never a Semrush/technical failure. Consumed by the handler to log an
+ * entitlement skip at `outcome=skip` rather than a technical failure's `outcome=degraded`
+ * (both fall back to legacy), so it never has to know the literal values.
  */
 export const SEMRUSH_ENTITLEMENT_SKIP_REASONS = Object.freeze(
   new Set([SEMRUSH_NOT_ENTITLED_REASON, SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON]),

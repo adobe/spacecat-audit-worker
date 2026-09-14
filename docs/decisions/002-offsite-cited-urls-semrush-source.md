@@ -107,9 +107,11 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    non-entitled brand the loader returns `null` with `fallbackReason: 'not-entitled'`
    (confirmed) or `'entitlement-check-failed'` (the check itself errored/timed out — fails
    **closed**, i.e. skip Semrush, same as any other transient PostgREST failure in this
-   loader). Both reasons are exempted from the Decision 1 hard-stop: even a canary run
-   forced on via `enableSemrush:true` falls back to legacy cleanly for these two reasons —
-   entitlement scoping is expected behavior, not a technical failure to surface loudly.
+   loader). Both reasons fall back to legacy like any Semrush failure (Decision 1), but are
+   logged as an entitlement *skip* (`outcome=skip`) rather than a technical failure
+   (`outcome=degraded`) — entitlement scoping is expected behavior, not something going wrong.
+   (Historically these were also exempted from the since-removed `enableSemrush:true`
+   hard-stop; that hard-stop no longer exists, so all failures now fall back uniformly.)
    This check is purely an **extra narrowing** inside the existing
    `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` / `enableSemrush` gate, not a replacement for it.
    Considered and rejected: the api-service `.../serenity/brand-presence/access` endpoint
@@ -130,19 +132,20 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    `'entitlement-check-failed'` reason strings are now exported as
    `SEMRUSH_NOT_ENTITLED_REASON` / `SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON` (plus a bundled
    `SEMRUSH_ENTITLEMENT_SKIP_REASONS` Set) from `semrush-entitlement.js`, imported by both
-   the loader (producer) and the handler's hard-stop-exemption check (consumer) — previously
+   the loader (producer) and the handler's skip-vs-failure logging (consumer) — previously
    independently-typed literals with no test tying them together. A granular
    `entitlementReason` (`flag-disabled` | `no-workspace` | `no-client` | `check-failed`) is
    now also threaded onto `diagnostics`/`auditResult` alongside the coarse `fallbackReason`,
    so a systemic wiring bug (`no-client`) stays distinguishable from a one-off transient
-   blip (`check-failed`) without changing the coarse-grained hard-stop-exemption contract
+   blip (`check-failed`) without changing the coarse-grained skip-vs-failure contract
    itself.
-8c. **Resolved: `entitlement-check-failed` stays exempted from hard-stop; visibility is via
-   the existing thread notify() and logs only — no dedicated ops channel (PR review).**
-   Decided against making `entitlement-check-failed` hard-stop like `ims-token-failed` —
-   `enableSemrush:true` is a per-run canary override, so gating a fleet-wide outage signal
-   behind it would mean the signal only fires on whichever single site happens to be
-   canary-tested at that moment. A dedicated, unconditional ops-channel Slack alert
+8c. **Historical (the `enableSemrush:true` hard-stop was later removed entirely — see
+   Decision 1, so nothing "hard-stops" now): `entitlement-check-failed` visibility is via the
+   existing thread notify() and logs only — no dedicated ops channel (PR review).**
+   At the time, decided against making `entitlement-check-failed` hard-stop like
+   `ims-token-failed` — `enableSemrush:true` is a per-run canary override, so gating a
+   fleet-wide outage signal behind it would mean the signal only fires on whichever single
+   site happens to be canary-tested at that moment. A dedicated, unconditional ops-channel Slack alert
    (`postMessageSafe` to a fixed channel, firing regardless of Slack context) was
    considered and implemented, then explicitly rejected in favor of simplicity: the loader's
    existing `notify()` call already posts `:warning: Could not verify Semrush
