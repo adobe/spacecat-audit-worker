@@ -208,6 +208,8 @@ function computeDroppedAuditTypes(statuses, triggered) {
  *   offsite-brand-presence/handler.js) so the re-triggered analysis audit's own scoped
  *   re-scrape (if it needs one) honors the same per-run Semrush override, instead of
  *   silently reverting to the env var across the scrape round-trip.
+ * @param {boolean} [enableSemrushWithHardstop] - Forwarded identically so the debug hardstop
+ *   flag reaches the analysis audits (which enrich + hardstop) after the scrape round-trip.
  * @returns {Promise<string[]>} Audit types that were dispatched or intentionally skipped
  */
 async function triggerAnalysisAudits(
@@ -219,6 +221,7 @@ async function triggerAnalysisAudits(
   enableBrandProfile,
   urlLimit,
   enableSemrush,
+  enableSemrushWithHardstop,
 ) {
   const { sqs, dataAccess, log } = context;
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
@@ -248,6 +251,7 @@ async function triggerAnalysisAudits(
         ...(enableBrandProfile != null && { enableBrandProfile }),
         ...(urlLimit != null && { urlLimit }),
         ...(enableSemrush != null && { enableSemrush }),
+        ...(enableSemrushWithHardstop != null && { enableSemrushWithHardstop }),
       };
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(queueUrl, {
@@ -327,7 +331,7 @@ function buildSummary(baseURL, statuses, drsStartedAt, triggeredAuditTypes = [])
  *
  * @param {object} message - SQS message with auditContext { baseURL, slackContext?,
  *   jobs: [{domain, datasetId, jobId}], deadline, triggeredAuditTypes?, enableBrandProfile?,
- *   urlLimit?, enableSemrush? }
+ *   urlLimit?, enableSemrush?, enableSemrushWithHardstop? }
  * @param {object} context - Universal context (log, sqs, dataAccess, env)
  * @returns {Promise<Response>}
  */
@@ -337,7 +341,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
   const { siteId, auditContext = {} } = message;
   const {
     baseURL, slackContext = {}, jobs = [], deadline, triggeredAuditTypes = [], drsStartedAt,
-    enableBrandProfile, urlLimit, enableSemrush,
+    enableBrandProfile, urlLimit, enableSemrush, enableSemrushWithHardstop,
   } = auditContext;
   const { channelId, threadTs } = slackContext;
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
@@ -397,6 +401,7 @@ export default async function offsiteBrandPresenceDrsStatusHandler(message, cont
       enableBrandProfile,
       urlLimit,
       enableSemrush,
+      enableSemrushWithHardstop,
     );
   } catch (err) {
     olog.warn('data_acquisition_analysis_request_dispatched', 'Failed to dispatch analysis audits', {

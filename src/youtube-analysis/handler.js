@@ -315,6 +315,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
+        enableSemrushWithHardstop,
         olog,
       );
       return {
@@ -360,6 +361,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
+        enableSemrushWithHardstop,
         olog,
       );
       return {

@@ -316,6 +316,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
+        enableSemrushWithHardstop,
         olog,
       );
       return {
@@ -361,6 +362,7 @@ async function runRedditAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
+        enableSemrushWithHardstop,
         olog,
       );
       return {

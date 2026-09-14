@@ -427,6 +427,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
+        enableSemrushWithHardstop,
         olog,
       );
       return {
@@ -472,6 +473,7 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
+        enableSemrushWithHardstop,
         olog,
       );
       return {

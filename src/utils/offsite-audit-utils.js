@@ -727,6 +727,8 @@ export function resolveForwardedUrlLimit(auditContext, log, logPrefix) {
  * @param {boolean} [enableSemrush] - Forwarded so this scoped offsite-brand-presence run honors
  *   the same `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` override originally requested on Slack for
  *   the analysis audit that triggered it, instead of falling back to the plain env var.
+ * @param {boolean} [enableSemrushWithHardstop] - Forwarded so the debug hardstop flag survives
+ *   the scrape round-trip and the re-triggered analysis audit still enriches + hardstops.
  * @param {object} [olog] - bound offsite logger (see createOffsiteLogger);
  *   emits `data_acquisition_drs_scrape_job_request_dispatched`
  *   with `reason=self_heal`. Threaded from the analysis-handler caller so the audit slug/ids are
@@ -744,15 +746,17 @@ export async function requestOffsiteScrape(
   enableBrandProfile,
   urlLimit,
   enableSemrush,
+  enableSemrushWithHardstop,
   olog,
 ) {
   const { sqs, dataAccess } = context;
-  // enableSemrush is included so a Splunk search on siteId shows whether a per-run
-  // Semrush override survives this scrape round-trip, or gets lost/swallowed here.
+  // The Semrush flags are included so a Splunk search on siteId shows whether a per-run
+  // override survives this scrape round-trip, or gets lost/swallowed here.
   const overrides = {
     ...(enableBrandProfile != null && { enableBrandProfile }),
     ...(urlLimit != null && { urlLimit }),
     ...(enableSemrush != null && { enableSemrush }),
+    ...(enableSemrushWithHardstop != null && { enableSemrushWithHardstop }),
   };
   try {
     const configuration = await dataAccess.Configuration.findLatest();

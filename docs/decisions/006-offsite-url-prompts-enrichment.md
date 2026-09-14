@@ -62,6 +62,14 @@ url-prompts on the `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` env var (which contr
 a debug hardstop would halt every analysis before Mystique the moment it was flipped. Keeping
 both switches as explicit per-run Slack flags keeps the blast radius to the one run you trigger.
 
+**Propagation.** `enableSemrushWithHardstop` is threaded through every hop that already carries
+`enableSemrush`, so it works whether the run is triggered directly on an analysis audit or via
+`offsite-brand-presence` (which fans out to cited/youtube/reddit), and it survives the
+no-URLs-yet self-heal loop (analysis → `requestOffsiteScrape` → `offsite-brand-presence` →
+`scheduleDrsStatusPoll` → `drs-status-handler` → `triggerAnalysisAudits` → analysis). The
+hardstop itself only ever fires in the three analysis handlers; the orchestrator and DRS-status
+handler merely forward the flag.
+
 ### 3. `enableSemrushWithHardstop` is a debug hardstop, reported as a failed audit
 
 After enrichment, the runner returns `buildSemrushDebugHaltResult(...)` — a `success:false`
