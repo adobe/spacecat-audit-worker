@@ -63,10 +63,13 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    > to Semrush; no `x-promise-token` for a service caller.
    > **Open risk (LLMO-6709):** the proxy is designed around a real *user* IMS token, so
    > whether Semrush accepts the worker's *service* token is unverified.
-6. **`PAGE_SIZE` is a fixed constant (1000).** The response is sorted by
+6. **`PAGE_SIZE` defaults to 1000, overridable (downward) via env.** The response is sorted by
    citations globally across every host, so a low-citation bucket can be starved by too
    small a page — a generous page is cheap since it's one request either way. 1000 is the
-   `domain-urls` server-side `pageSize` clamp, so it's the max we can actually get currently.
+   `domain-urls` server-side `pageSize` clamp, so it's the max we can actually get currently
+   and the default. `SEMRUSH_DOMAIN_URLS_PAGE_SIZE` can lower it (a positive integer, clamped
+   to `[1, 1000]`; invalid/absent → default) to cap response size/latency where completeness
+   can be traded off.
 7. **Per-run override via Slack custom arg — how the first live runs get tested.**
    `enableSemrush` (`auditContext.messageData.enableSemrush`, resolved by
    `resolveEnableSemrush`) lets a single Slack-triggered `offsite-brand-presence` /
@@ -286,7 +289,8 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
       proxied api-service → Semrush v4-raw) routinely runs longer than the 10s login timeout
       — 10s was aborting it (`Request timeout after 10000ms`). It now has its own
       `DOMAIN_URLS_TIMEOUT_MS = 60s` (the login exchange keeps the 10s `FETCH_TIMEOUT_MS`);
-      the Lambda budget is 900s, so 60s is safe headroom.
+      the Lambda budget is 900s, so 60s is safe headroom. Overridable via
+      `SEMRUSH_DOMAIN_URLS_TIMEOUT_MS` (invalid/absent → the 60s default).
 
 ## Consequences
 

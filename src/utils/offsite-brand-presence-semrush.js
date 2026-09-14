@@ -55,12 +55,28 @@ export const LLMO_API_DEFAULT_BASE_URL = 'https://llmo.experiencecloud.live';
 export const LLMO_API_DEFAULT_PREFIX = '/api/v1';
 
 /**
- * `domain-urls` page size. One request (no `hostname`, `platform=all`) covers all three
- * buckets (youtube.com, reddit.com, cited third-party), sorted by citations globally, so
- * this needs to be generous or a low-citation bucket gets starved. 1000 is the server-side
+ * Default `domain-urls` page size. One request (no `hostname`, `platform=all`) covers all
+ * three buckets (youtube.com, reddit.com, cited third-party), sorted by citations globally,
+ * so this needs to be generous or a low-citation bucket gets starved. 1000 is the server-side
  * clamp (`domain-urls` in spacecat-api-service), so this is the max we can actually get.
+ * Overridable (only downward — clamped to this ceiling) with `SEMRUSH_DOMAIN_URLS_PAGE_SIZE`.
  */
 export const PAGE_SIZE = 1000;
+
+/**
+ * Resolves the requested page size from env: a positive integer clamped to `[1, PAGE_SIZE]`
+ * (the server's own clamp), falling back to `PAGE_SIZE` for an absent/invalid override.
+ *
+ * @param {object} [env]
+ * @returns {number}
+ */
+function resolvePageSize(env) {
+  const override = Number(env?.SEMRUSH_DOMAIN_URLS_PAGE_SIZE);
+  if (!Number.isFinite(override) || override <= 0) {
+    return PAGE_SIZE;
+  }
+  return Math.min(Math.floor(override), PAGE_SIZE);
+}
 
 /**
  * Per-request timeout for the fast calls (the S2S login exchange) so a hung upstream can't
@@ -69,12 +85,24 @@ export const PAGE_SIZE = 1000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
- * Timeout for the `domain-urls` data call specifically. This is a heavy query (all hosts,
- * `platform=all`, proxied api-service → Semrush v4-raw), routinely slower than the 10s login
- * timeout — 10s was aborting it mid-flight (`Request timeout after 10000ms`). The Lambda
- * budget is 900s, so 60s is safe headroom.
+ * Default timeout for the `domain-urls` data call specifically. This is a heavy query (all
+ * hosts, `platform=all`, proxied api-service → Semrush v4-raw), routinely slower than the 10s
+ * login timeout — 10s was aborting it mid-flight (`Request timeout after 10000ms`). The Lambda
+ * budget is 900s, so 60s is safe headroom. Overridable with `SEMRUSH_DOMAIN_URLS_TIMEOUT_MS`.
  */
 const DOMAIN_URLS_TIMEOUT_MS = 60_000;
+
+/**
+ * Resolves the domain-urls timeout from env, ignoring a non-numeric or non-positive override
+ * (fail-safe to the default rather than a 0/NaN timeout).
+ *
+ * @param {object} [env]
+ * @returns {number} timeout in ms.
+ */
+function resolveDomainUrlsTimeoutMs(env) {
+  const override = Number(env?.SEMRUSH_DOMAIN_URLS_TIMEOUT_MS);
+  return Number.isFinite(override) && override > 0 ? override : DOMAIN_URLS_TIMEOUT_MS;
+}
 
 /**
  * Max chars of a non-2xx response body to log. The body of a rejected serenity/Semrush
@@ -730,20 +758,22 @@ export async function loadCitedUrlsFromSemrush({
     Accept: 'application/json',
   };
 
+  const pageSize = resolvePageSize(env);
   const url = buildDomainUrlsUrl({
     baseUrl: apiBaseUrl,
     spaceCatId,
     brandId: brand.brandId,
     startDate,
     endDate,
-    pageSize: PAGE_SIZE,
+    pageSize,
   });
   olog.start('data_acquisition_bp_data_semrush_read', 'Querying domain-urls (all hosts, all platforms)', {
-    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, pageSize: PAGE_SIZE,
+    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, pageSize,
   });
   await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
-  const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE, DOMAIN_URLS_TIMEOUT_MS);
+  const timeoutMs = resolveDomainUrlsTimeoutMs(env);
+  const result = await fetchDomainUrls(url, headers, olog, pageSize, timeoutMs);
   if (!result.ok) {
     if (result.authFailure) {
       // The session token was rejected by the data call — evict it so a revoked/rotated
