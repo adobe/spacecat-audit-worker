@@ -56,7 +56,14 @@ The url-prompts loader resolves the customer `imsOrgId` itself (via `getImsOrgId
 token call, or a per-URL fetch error — is caught and returns an empty `Map` so the audit proceeds
 with un-enriched URLs and never fails on enrichment. There is **no legacy fallback** here — unlike
 the `domain-urls` source, there is no alternative prompt source, and enrichment is optional
-metadata.
+metadata. On success it logs a `debug` line with the decoded consumer identity + cache-hit state
+(observability parity with `domain-urls`).
+
+The three analysis handlers call a single shared `enrichUrlsWithSemrushPrompts({ urls, site,
+context, olog, limit })` (one enrichment code path, not three copies). `limit` is the run's
+resolved Mystique URL limit, so enrichment fans out over exactly the set that will be
+dispatched — a run scoped to fewer URLs no longer issues token-bearing requests for URLs that
+get dropped downstream.
 
 ### 2. Enrichment gating: `enableSemrush` OR `enableSemrushWithHardstop`
 
@@ -124,7 +131,9 @@ honor the same `OFFSITE_SEMRUSH_TIMEOUT_MS` override (2-min cap). The **default*
 call shape: `domain-urls` keeps **60s** for its single heavy page; `url-prompts` uses **30s**,
 since each call is a light per-URL lookup and up to ~10 batches run sequentially (concurrency 5
 over 50 URLs) — a shorter default bounds the enrichment phase's worst-case wall-clock. The env
-override, when set, applies to both.
+override, when set, applies to both. The per-URL prompt count is `MAX_URL_PROMPTS` (5), overridable
+via `OFFSITE_URL_PROMPTS_MAX` (clamped to `[1, 50]`) — the same knob shape as the timeout; note the
+Mystique payload path applies its own independent cap, so this only affects what is stored.
 
 ## Alternatives Considered
 

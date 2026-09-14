@@ -20,6 +20,7 @@ import {
   getS2sSessionAuthorization,
   evictS2sSessionToken,
   resolveSemrushTimeoutMs,
+  decodeS2sConsumerClaims,
 } from './offsite-brand-presence-semrush.js';
 import {
   createOffsiteLogger, errorField, OUTCOME, PEER,
@@ -38,6 +39,29 @@ const URL_PROMPTS_EVENT = 'data_acquisition_url_prompts_read';
  * so the cap is applied client-side.
  */
 export const MAX_URL_PROMPTS = 5;
+
+/**
+ * Hard ceiling for the per-URL prompt cap, so an env override can't request an unbounded slice
+ * of a large upstream response into stored audit data.
+ */
+const MAX_URL_PROMPTS_CEILING = 50;
+
+/**
+ * Resolves the per-URL prompt cap from env — `OFFSITE_URL_PROMPTS_MAX`, an integer clamped to
+ * `[1, MAX_URL_PROMPTS_CEILING]` — falling back to {@link MAX_URL_PROMPTS} for an absent/invalid
+ * value (mirrors the `OFFSITE_SEMRUSH_TIMEOUT_MS` knob). Note the Mystique payload path applies
+ * its own independent cap, so raising this only affects what is stored, not what is dispatched.
+ *
+ * @param {object} [env]
+ * @returns {number}
+ */
+export function resolveMaxUrlPrompts(env) {
+  const override = Number(env?.OFFSITE_URL_PROMPTS_MAX);
+  if (!Number.isInteger(override) || override <= 0) {
+    return MAX_URL_PROMPTS;
+  }
+  return Math.min(override, MAX_URL_PROMPTS_CEILING);
+}
 
 /**
  * Max characters kept per prompt string. `prompts` are third-party content flowing into stored
@@ -128,7 +152,7 @@ async function mapWithConcurrency(items, concurrency, mapper) {
  *
  * @returns {Promise<{ url: string, prompts: string[], authFailure: boolean, category: string }>}
  */
-async function fetchUrlPrompts({ url, requestUrl }, headers, timeoutMs) {
+async function fetchUrlPrompts({ url, requestUrl }, headers, timeoutMs, maxPrompts) {
   let response;
   try {
     response = await fetch(requestUrl, { headers, timeout: timeoutMs });
@@ -155,11 +179,11 @@ async function fetchUrlPrompts({ url, requestUrl }, headers, timeoutMs) {
   }
 
   const rows = Array.isArray(body?.prompts) ? body.prompts : [];
-  // Cap first (stop at MAX_URL_PROMPTS), coerce to a non-empty string, and truncate length —
+  // Cap first (stop at maxPrompts), coerce to a non-empty string, and truncate length —
   // `prompts` are third-party content, validated at this ingestion boundary.
   const prompts = [];
   for (const row of rows) {
-    if (prompts.length >= MAX_URL_PROMPTS) {
+    if (prompts.length >= maxPrompts) {
       break;
     }
     const prompt = row?.prompt;
@@ -262,7 +286,17 @@ export async function loadUrlPromptsFromSemrush({
 
   let authorization;
   try {
-    ({ authorization } = await getS2sSessionAuthorization({ context, imsOrgId }));
+    const auth = await getS2sSessionAuthorization({ context, imsOrgId });
+    authorization = auth.authorization;
+    // Observability parity with domain-urls: log which consumer identity we were granted
+    // (decoded from the token, never the token itself) and whether it came from the warm cache.
+    olog.debug(URL_PROMPTS_EVENT, 'Using S2S session token', {
+      peer: PEER.SEMRUSH,
+      direction: 'inbound',
+      orgId: spaceCatId,
+      fromCache: auth.fromCache,
+      ...decodeS2sConsumerClaims(auth.sessionToken),
+    });
   } catch (error) {
     olog.failure(URL_PROMPTS_EVENT, 'Failed to obtain S2S session token for url-prompts', {
       peer: PEER.SEMRUSH,
@@ -284,6 +318,7 @@ export async function loadUrlPromptsFromSemrush({
 
   const baseUrl = resolveApiBaseUrl(env);
   const timeoutMs = resolveSemrushTimeoutMs(env, URL_PROMPTS_TIMEOUT_MS);
+  const maxPrompts = resolveMaxUrlPrompts(env);
   const requests = urls.map(({ url }) => ({
     url,
     requestUrl: buildUrlPromptsUrl({
@@ -311,7 +346,7 @@ export async function loadUrlPromptsFromSemrush({
   const results = await mapWithConcurrency(
     requests,
     REQUEST_CONCURRENCY,
-    (request) => fetchUrlPrompts(request, headers, timeoutMs),
+    (request) => fetchUrlPrompts(request, headers, timeoutMs, maxPrompts),
   );
 
   // If the data call rejected the session token, drop it so the next run re-mints rather than
@@ -351,4 +386,38 @@ export async function loadUrlPromptsFromSemrush({
     olog.success(URL_PROMPTS_EVENT, 'Loaded url-prompts', summary);
   }
   return promptsByUrl;
+}
+
+/**
+ * Enriches `urls` in place (returns a new array) with Semrush url-prompts: tags each candidate
+ * with `isUrlFromSemrush` and attaches its `prompts` when Semrush returned any. Shared by the
+ * cited/youtube/reddit analysis handlers so the enrichment logic lives in one place.
+ *
+ * Only the first `limit` URLs are enriched — the caller passes the run's effective Mystique URL
+ * limit so the fan-out matches the set that will actually be dispatched (a run scoped to fewer
+ * URLs doesn't issue token-bearing requests for URLs that get dropped downstream). URLs beyond
+ * `limit` are returned unchanged. Best-effort: never throws (see
+ * {@link loadUrlPromptsFromSemrush}).
+ *
+ * @param {object} params
+ * @param {Array<{url: string}>} params.urls - The full ordered URL list from the store.
+ * @param {object} params.site - Site model.
+ * @param {object} params.context - Lambda context.
+ * @param {object} [params.olog] - Bound offsite logger from the calling audit.
+ * @param {number} [params.limit] - Max URLs to enrich (defaults to all).
+ * @returns {Promise<Array<object>>} the URL list with the first `limit` entries enriched.
+ */
+export async function enrichUrlsWithSemrushPrompts({
+  urls, site, context, olog, limit,
+}) {
+  const candidates = Number.isInteger(limit) ? urls.slice(0, limit) : urls;
+  const promptsByUrl = await loadUrlPromptsFromSemrush({
+    site, urls: candidates, context, olog,
+  });
+  const candidateSet = new Set(candidates.map((item) => item.url));
+  return urls.map((item) => (candidateSet.has(item.url) ? {
+    ...item,
+    isUrlFromSemrush: true,
+    ...(promptsByUrl.get(item.url)?.length > 0 && { prompts: promptsByUrl.get(item.url) }),
+  } : item));
 }

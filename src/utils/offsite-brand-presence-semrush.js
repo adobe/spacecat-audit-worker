@@ -299,10 +299,12 @@ function imsConfigDiagnostics(env) {
  * The token carries `client_id`/`is_s2s_consumer`/`tenants`; `consumerId`/`consumer_id` are
  * logged defensively only if the real token includes them (it's primarily a server-side id).
  *
+ * Exported so the url-prompts loader can log the same consumer-identity signal domain-urls does.
+ *
  * @param {string} sessionToken - raw JWT (`header.payload.signature`).
  * @returns {object} selected claim fields (empty when undecodable).
  */
-function decodeS2sConsumerClaims(sessionToken) {
+export function decodeS2sConsumerClaims(sessionToken) {
   try {
     const payload = String(sessionToken).split('.')[1];
     if (!payload) {

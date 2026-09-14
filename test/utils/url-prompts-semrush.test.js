@@ -43,6 +43,7 @@ describe('url-prompts-semrush', function () {
   let evictS2sSessionToken;
   let resolveApiBaseUrl;
   let resolveSemrushTimeoutMs;
+  let decodeS2sConsumerClaims;
   let mod;
 
   const site = { getOrganizationId: () => ORG_ID, getId: () => SITE_ID };
@@ -59,6 +60,7 @@ describe('url-prompts-semrush', function () {
         getS2sSessionAuthorization,
         evictS2sSessionToken,
         resolveSemrushTimeoutMs,
+        decodeS2sConsumerClaims,
       },
       '@adobe/spacecat-shared-utils': { ...spacecatSharedUtils, tracingFetch: fetchStub },
       ...overrides,
@@ -81,6 +83,7 @@ describe('url-prompts-semrush', function () {
       warn: sandbox.stub(),
       failure: sandbox.stub(),
       skip: sandbox.stub(),
+      debug: sandbox.stub(),
     };
     fetchStub = sandbox.stub();
     resolveBrandResultForSite = sandbox.stub()
@@ -91,6 +94,7 @@ describe('url-prompts-semrush', function () {
     evictS2sSessionToken = sandbox.stub();
     resolveApiBaseUrl = sandbox.stub().returns(API_BASE);
     resolveSemrushTimeoutMs = sandbox.stub().returns(TIMEOUT_MS);
+    decodeS2sConsumerClaims = sandbox.stub().returns({ consumerClientId: 'consumer-1' });
     mod = await loadModule();
   });
 
@@ -362,6 +366,82 @@ describe('url-prompts-semrush', function () {
     expect(prompts).to.have.lengthOf(2);
     expect(prompts[0]).to.equal('kept');
     expect(prompts[1]).to.have.lengthOf(4096);
+  });
+
+  it('logs the granted consumer identity and cache state after obtaining the token', async () => {
+    fetchStub.resolves(okJson({ prompts: [] }));
+    await run([{ url: URL_A }]);
+    expect(olog.debug).to.have.been.calledWithMatch(
+      'data_acquisition_url_prompts_read',
+      sinon.match.string,
+      sinon.match({ fromCache: false, consumerClientId: 'consumer-1' }),
+    );
+  });
+
+  it('honours OFFSITE_URL_PROMPTS_MAX for the per-URL prompt cap', async () => {
+    fetchStub.resolves(okJson({
+      prompts: Array.from({ length: 5 }, (_, i) => ({ prompt: `p${i}` })),
+    }));
+    const result = await run([{ url: URL_A }], { OFFSITE_URL_PROMPTS_MAX: '2' });
+    expect(result.get(URL_A)).to.have.lengthOf(2);
+  });
+
+  it('preserves per-URL prompt mapping even when responses resolve out of order', async () => {
+    // URL_A resolves AFTER URL_B; each url must still get ITS OWN prompts (no index misalignment).
+    fetchStub.callsFake((requestUrl) => {
+      const target = new URL(requestUrl).searchParams.get('url');
+      const delay = target === URL_A ? 20 : 1;
+      return new Promise((resolve) => {
+        setTimeout(() => resolve(okJson({ prompts: [{ prompt: `for-${target}` }] })), delay);
+      });
+    });
+    const result = await run([{ url: URL_A }, { url: URL_B }]);
+    expect(result.get(URL_A)).to.deep.equal([`for-${URL_A}`]);
+    expect(result.get(URL_B)).to.deep.equal([`for-${URL_B}`]);
+  });
+
+  describe('resolveMaxUrlPrompts', () => {
+    const r = (env) => mod.resolveMaxUrlPrompts(env);
+
+    it('defaults to MAX_URL_PROMPTS when unset or invalid', () => {
+      expect(r(undefined)).to.equal(mod.MAX_URL_PROMPTS);
+      expect(r({ OFFSITE_URL_PROMPTS_MAX: 'abc' })).to.equal(mod.MAX_URL_PROMPTS);
+      expect(r({ OFFSITE_URL_PROMPTS_MAX: '0' })).to.equal(mod.MAX_URL_PROMPTS);
+      expect(r({ OFFSITE_URL_PROMPTS_MAX: '2.5' })).to.equal(mod.MAX_URL_PROMPTS);
+    });
+
+    it('accepts a valid integer override and clamps to the ceiling', () => {
+      expect(r({ OFFSITE_URL_PROMPTS_MAX: '10' })).to.equal(10);
+      expect(r({ OFFSITE_URL_PROMPTS_MAX: '9999' })).to.equal(50);
+    });
+  });
+
+  describe('enrichUrlsWithSemrushPrompts', () => {
+    const enrich = (urls, limit) => mod.enrichUrlsWithSemrushPrompts({
+      urls, site, context: makeContext(), olog, limit,
+    });
+
+    it('tags only the first `limit` URLs, attaches prompts, and leaves the rest untouched', async () => {
+      fetchStub.callsFake((requestUrl) => {
+        const target = new URL(requestUrl).searchParams.get('url');
+        return okJson({ prompts: target === URL_A ? [{ prompt: 'pa' }] : [] });
+      });
+      const urls = [{ url: URL_A }, { url: URL_B }, { url: 'https://ex.com/x' }];
+      const result = await enrich(urls, 2);
+      expect(result[0]).to.include({ isUrlFromSemrush: true });
+      expect(result[0].prompts).to.deep.equal(['pa']);
+      expect(result[1]).to.include({ isUrlFromSemrush: true });
+      expect(result[1].prompts).to.be.undefined;
+      expect(result[2]).to.not.have.property('isUrlFromSemrush');
+      expect(fetchStub.callCount).to.equal(2);
+    });
+
+    it('enriches every URL when no limit is provided', async () => {
+      fetchStub.resolves(okJson({ prompts: [] }));
+      const result = await enrich([{ url: URL_A }, { url: URL_B }]);
+      expect(result.every((u) => u.isUrlFromSemrush)).to.be.true;
+      expect(fetchStub.callCount).to.equal(2);
+    });
   });
 
   describe('buildUrlPromptsUrl', () => {

@@ -37,7 +37,7 @@ import {
 import { CITED_ANALYSIS_DRS_CONFIG } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
-import { loadUrlPromptsFromSemrush } from '../utils/url-prompts-semrush.js';
+import { enrichUrlsWithSemrushPrompts } from '../utils/url-prompts-semrush.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
@@ -171,7 +171,7 @@ function partitionExcludedUrls(urls, brandTokens, olog) {
  * @returns {Promise<Object>} Object containing urls and sentimentConfig
  * @throws {StoreEmptyError} If any store returns empty results
  */
-async function fetchStoreData(siteId, context, site, runSemrush) {
+async function fetchStoreData(siteId, context, site, runSemrush, urlLimit) {
   const { log } = context;
   const olog = createOffsiteLogger(log, { audit: AUDIT.CITED, siteId });
   const storeClient = StoreClient.createFrom(context);
@@ -232,16 +232,11 @@ async function fetchStoreData(siteId, context, site, runSemrush) {
   // records (revisit later).
   let semrushEnrichedUrls = urls;
   if (runSemrush) {
-    const semrushCandidates = urls.slice(0, MYSTIQUE_URLS_LIMIT);
-    const urlPromptsMap = await loadUrlPromptsFromSemrush({
-      site, urls: semrushCandidates, context, olog,
+    // Cap enrichment at the run's effective Mystique URL limit so we don't issue token-bearing
+    // requests for URLs that will be dropped before dispatch (see enrichUrlsWithSemrushPrompts).
+    semrushEnrichedUrls = await enrichUrlsWithSemrushPrompts({
+      urls, site, context, olog, limit: urlLimit,
     });
-    const semrushCandidateSet = new Set(semrushCandidates.map((item) => item.url));
-    semrushEnrichedUrls = urls.map((item) => (semrushCandidateSet.has(item.url) ? {
-      ...item,
-      isUrlFromSemrush: true,
-      ...(urlPromptsMap.get(item.url)?.length > 0 && { prompts: urlPromptsMap.get(item.url) }),
-    } : item));
   }
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
@@ -326,8 +321,12 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
       });
     }
 
+    // Resolved before fetchStoreData so the Semrush enrichment can be capped at the same URL
+    // limit that Mystique dispatch uses (no wasted requests for URLs that get dropped).
+    const urlLimit = resolveMystiqueUrlLimit(auditContext, olog);
+
     olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS', {});
-    const storeData = await fetchStoreData(siteId, context, site, runSemrush);
+    const storeData = await fetchStoreData(siteId, context, site, runSemrush, urlLimit);
 
     // Debug hardstop: `enableSemrushWithHardstop` runs the url-prompts enrichment above, then
     // ends the audit here so nothing is dispatched to Mystique (the enrichment result is in the
@@ -346,8 +345,6 @@ async function runCitedAnalysisAudit(url, context, site, auditContext = {}) {
         : 'Reusing previously scraped DRS content; no new scrape needed, proceeding to Mystique',
       { status: 'pending_analysis', urls: storeData.urls.length, scrapedNow },
     );
-
-    const urlLimit = resolveMystiqueUrlLimit(auditContext, olog);
 
     const { slackContext } = auditContext;
 
