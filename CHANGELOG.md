@@ -1,3 +1,10 @@
+## [1.537.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.3...v1.537.4) (2026-09-14)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** enableSemrush:true falls back to legacy on failure (LLMO-6709) ([#2971](https://github.com/adobe/spacecat-audit-worker/issues/2971)) ([87b7bc9](https://github.com/adobe/spacecat-audit-worker/commit/87b7bc97f961d6536a9966f8c27e0062a199d100)), closes [#2970](https://github.com/adobe/spacecat-audit-worker/issues/2970)
+
 ## [1.537.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.2...v1.537.3) (2026-09-12)
 
 
