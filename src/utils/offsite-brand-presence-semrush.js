@@ -647,11 +647,11 @@ export async function loadCitedUrlsFromSemrush({
         outcome: OUTCOME.SKIP,
       });
       await notify(':information_source: Brand is not entitled for Semrush — falling back to the legacy source.');
-      // fallbackReason is the coarse, contract-level signal the handler's hard-stop
-      // exemption keys off (SEMRUSH_ENTITLEMENT_SKIP_REASONS); entitlementReason keeps
-      // the granular cause (`flag_disabled` | `no_workspace` | `no_client` |
-      // `check_failed`) visible in diagnostics/auditResult without changing that
-      // contract — see ADR 002, Decision 7.
+      // fallbackReason is the coarse, contract-level signal the handler keys off to log an
+      // entitlement skip (SEMRUSH_ENTITLEMENT_SKIP_REASONS) as outcome=skip rather than a
+      // technical failure's outcome=degraded; entitlementReason keeps the granular cause
+      // (`flag_disabled` | `no_workspace` | `no_client` | `check_failed`) visible in
+      // diagnostics/auditResult without changing that contract — see ADR 002, Decision 7.
       setDiagnostics({
         fallbackReason: SEMRUSH_NOT_ENTITLED_REASON,
         entitlementReason: entitlement.reason,

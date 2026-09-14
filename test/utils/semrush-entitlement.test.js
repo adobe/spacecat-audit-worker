@@ -394,7 +394,7 @@ describe('semrush-entitlement', () => {
   });
 
   // --- shared reason-string constants (single source of truth for the loader and
-  // the handler's hard-stop-exemption check) ---------------------------------
+  // the handler's entitlement-skip vs technical-failure logging) --------------
 
   describe('exported reason-string constants', () => {
     it('exposes the two skip-reason literals the loader sets on diagnostics.fallbackReason', () => {
