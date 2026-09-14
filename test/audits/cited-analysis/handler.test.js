@@ -333,9 +333,28 @@ describe('Cited Analysis Handler', function () {
       expect(first.prompts).to.deep.equal(['prompt one', 'prompt two']);
       expect(second.isUrlFromSemrush).to.be.true;
       expect(second.prompts).to.be.undefined;
-      expect(mockLoadUrlPromptsFromSemrush).to.have.been.calledWith({
+      expect(mockLoadUrlPromptsFromSemrush).to.have.been.calledWithMatch({
         site: mockSite, urls: mockUrls, context,
       });
+    });
+
+    it('with enableSemrushWithHardstop:true, enriches then hardstops before Mystique (failed audit)', async () => {
+      mockLoadUrlPromptsFromSemrush.resolves(new Map([
+        [mockUrls[0].url, ['p1', 'p2']],
+      ]));
+
+      const result = await citedAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { enableSemrushWithHardstop: 'true' } },
+      );
+
+      expect(mockLoadUrlPromptsFromSemrush).to.have.been.called;
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.reason).to.equal('semrush_debug_halt');
+      expect(result.auditResult.storeData.urls[0].isUrlFromSemrush).to.be.true;
+      expect(result.auditResult.storeData.urls[0].prompts).to.deep.equal(['p1', 'p2']);
     });
 
     it('should only forward the first MYSTIQUE_URLS_LIMIT URLs to Semrush url-prompts enrichment', async () => {

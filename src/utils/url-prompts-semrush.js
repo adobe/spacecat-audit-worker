@@ -19,9 +19,18 @@ import {
   resolveApiBaseUrl,
   getS2sSessionAuthorization,
   evictS2sSessionToken,
+  resolveSemrushTimeoutMs,
 } from './offsite-brand-presence-semrush.js';
+import {
+  createOffsiteLogger, errorField, OUTCOME, PEER,
+} from './offsite-logging.js';
 
-const LOG_PREFIX = '[url-prompts][semrush]';
+/**
+ * Structured-log event token for the whole url-prompts enrichment attempt (start + summary +
+ * skip/failure). One token keeps the lifecycle greppable in Splunk, mirroring
+ * `data_acquisition_bp_data_semrush_read` for the domain-urls call.
+ */
+const URL_PROMPTS_EVENT = 'data_acquisition_url_prompts_read';
 
 /**
  * Max prompts kept per URL. The `url-prompts` endpoint has no pagination/limit
@@ -29,13 +38,6 @@ const LOG_PREFIX = '[url-prompts][semrush]';
  * so the cap is applied client-side.
  */
 export const MAX_URL_PROMPTS = 5;
-
-/**
- * Per-request timeout. `url-prompts` returns the prompts for a single URL (far lighter than
- * the `domain-urls` page the offsite loader pulls, which needs ~60s), so a tight 10s guards
- * the audit against a slow best-effort enrichment hop without starving a normal response.
- */
-const FETCH_TIMEOUT_MS = 10_000;
 
 /**
  * Max in-flight `url-prompts` requests. The caller forwards up to `MYSTIQUE_URLS_LIMIT` (50)
@@ -104,34 +106,37 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 
 /**
  * Fetches the prompts associated with a single URL. Never throws — network errors, non-2xx
- * responses, and unparseable bodies are logged and resolved as an empty list, since this is
- * best-effort enrichment and must not fail the audit. A `401/403` is surfaced via
- * `authFailure` so the caller can evict a stale cached session token.
+ * responses, and unparseable bodies resolve to an empty list (best-effort enrichment must not
+ * fail the audit). Returns a `category` (`ok` | `non2xx` | `error`) for the aggregate summary
+ * and an `authFailure` flag (401/403) so the caller can evict a stale cached session token.
+ * Per-URL outcomes are NOT logged here — the loader emits a single aggregate summary instead.
  *
- * @returns {Promise<{ url: string, prompts: string[], authFailure: boolean }>}
+ * @returns {Promise<{ url: string, prompts: string[], authFailure: boolean, category: string }>}
  */
-async function fetchUrlPrompts({ url, requestUrl }, headers, log, siteId) {
-  const ctx = { siteId, url };
+async function fetchUrlPrompts({ url, requestUrl }, headers, timeoutMs) {
   let response;
   try {
-    response = await fetch(requestUrl, { headers, timeout: FETCH_TIMEOUT_MS });
-  } catch (error) {
-    log.warn(`${LOG_PREFIX} Fetch failed for ${url}: ${error.message}`, { ...ctx, error: error.message });
-    return { url, prompts: [], authFailure: false };
+    response = await fetch(requestUrl, { headers, timeout: timeoutMs });
+  } catch {
+    return {
+      url, prompts: [], authFailure: false, category: 'error',
+    };
   }
 
   if (!response.ok) {
     const authFailure = response.status === 401 || response.status === 403;
-    log.warn(`${LOG_PREFIX} ${url} returned HTTP ${response.status}`, { ...ctx, status: response.status });
-    return { url, prompts: [], authFailure };
+    return {
+      url, prompts: [], authFailure, category: 'non2xx',
+    };
   }
 
   let body;
   try {
     body = await response.json();
-  } catch (error) {
-    log.warn(`${LOG_PREFIX} Could not parse response for ${url}: ${error.message}`, { ...ctx, error: error.message });
-    return { url, prompts: [], authFailure: false };
+  } catch {
+    return {
+      url, prompts: [], authFailure: false, category: 'error',
+    };
   }
 
   const rows = Array.isArray(body?.prompts) ? body.prompts : [];
@@ -139,7 +144,9 @@ async function fetchUrlPrompts({ url, requestUrl }, headers, log, siteId) {
     .map((row) => row?.prompt)
     .filter(Boolean)
     .slice(0, MAX_URL_PROMPTS);
-  return { url, prompts, authFailure: false };
+  return {
+    url, prompts, authFailure: false, category: 'ok',
+  };
 }
 
 /**
@@ -150,18 +157,28 @@ async function fetchUrlPrompts({ url, requestUrl }, headers, log, siteId) {
  * be resolved, the date window can't be derived, or the S2S session token can't be obtained — a
  * failure here must not fail the analysis audit, since prompts are enrichment only. Auth uses
  * the shared S2S session-token flow ({@link getS2sSessionAuthorization}), scoped to the
- * customer's IMS org and cached across the offsite loaders.
+ * customer's IMS org and cached across the offsite loaders; the request timeout is the shared
+ * {@link resolveSemrushTimeoutMs} (`OFFSITE_SEMRUSH_TIMEOUT_MS`).
+ *
+ * Emits structured logs under {@link URL_PROMPTS_EVENT}: a `start` line (request template, base
+ * URL, sample request URL, date window) for routing debug, and a single aggregate `summary`
+ * line (`tried`/`urlsWithPrompts`/`totalPrompts`/`ok`/`non2xx`/`errors`) — no per-URL lines.
  *
  * @param {object} params
  * @param {object} params.site - Site model (`getId()`, `getOrganizationId()`).
  * @param {Array<{url: string}>} params.urls - URLs to fetch prompts for.
  * @param {object} params.context - Lambda context (env, log, dataAccess).
+ * @param {object} [params.olog] - Bound offsite logger from the calling audit; a generic one is
+ *   created from `context.log` when omitted.
  * @returns {Promise<Map<string, string[]>>} url -> prompt strings (only URLs with
  *   at least one prompt are present).
  */
-export async function loadUrlPromptsFromSemrush({ site, urls, context }) {
+export async function loadUrlPromptsFromSemrush({
+  site, urls, context, olog: providedOlog,
+}) {
   const { log, env, dataAccess } = context;
   const siteId = site?.getId?.();
+  const olog = providedOlog || createOffsiteLogger(log, { siteId });
 
   if (!urls?.length) {
     return new Map();
@@ -169,21 +186,25 @@ export async function loadUrlPromptsFromSemrush({ site, urls, context }) {
 
   const spaceCatId = site?.getOrganizationId?.();
   if (!spaceCatId) {
-    log.warn(`${LOG_PREFIX} Site has no organization id; skipping url-prompts lookup`, { siteId });
+    olog.warn(URL_PROMPTS_EVENT, 'Site has no organization id; skipping url-prompts', {
+      peer: PEER.SEMRUSH, direction: 'inbound', reason: 'no_organization_id',
+    });
     return new Map();
   }
 
   const { brand } = await resolveBrandResultForSite(context, site);
   if (!brand?.brandId) {
-    log.info(`${LOG_PREFIX} No active brand for org ${spaceCatId}; skipping url-prompts lookup`, {
-      siteId, orgId: spaceCatId,
+    olog.warn(URL_PROMPTS_EVENT, 'No active brand; skipping url-prompts', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'no_active_brand',
     });
     return new Map();
   }
 
   const dateWindow = getDateWindowForPreviousWeeks(getPreviousWeeks());
   if (!dateWindow) {
-    log.warn(`${LOG_PREFIX} Could not derive a date window; skipping url-prompts lookup`, { siteId });
+    olog.warn(URL_PROMPTS_EVENT, 'Could not derive a date window; skipping url-prompts', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'no_date_window',
+    });
     return new Map();
   }
   const { startDate, endDate } = dateWindow;
@@ -193,8 +214,8 @@ export async function loadUrlPromptsFromSemrush({ site, urls, context }) {
   // hasAccess(organization) checks. Resolve it the same way the offsite loader does.
   const imsOrgId = await getImsOrgId(site, dataAccess || {}, log);
   if (!imsOrgId) {
-    log.warn(`${LOG_PREFIX} Could not resolve customer IMS org id; skipping url-prompts lookup`, {
-      siteId, orgId: spaceCatId,
+    olog.warn(URL_PROMPTS_EVENT, 'Could not resolve customer IMS org id; skipping url-prompts', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'no_ims_org_id',
     });
     return new Map();
   }
@@ -203,13 +224,14 @@ export async function loadUrlPromptsFromSemrush({ site, urls, context }) {
   try {
     authorization = await getS2sSessionAuthorization({ context, imsOrgId });
   } catch (error) {
-    const reason = error.reason || 'unknown';
-    log.error(`${LOG_PREFIX} Failed to obtain S2S session token (${reason}): ${error.message}`, {
-      siteId,
+    olog.failure('data_acquisition_url_prompts_read', 'Failed to obtain S2S session token for url-prompts', {
+      peer: PEER.SEMRUSH,
+      direction: 'inbound',
       orgId: spaceCatId,
-      reason: error.reason,
+      reason: error.reason || 'session_token_failed',
       ...(error.status && { status: error.status }),
-    });
+      ...errorField(error),
+    }, error);
     return new Map();
   }
 
@@ -221,6 +243,7 @@ export async function loadUrlPromptsFromSemrush({ site, urls, context }) {
   };
 
   const baseUrl = resolveApiBaseUrl(env);
+  const timeoutMs = resolveSemrushTimeoutMs(env);
   const requests = urls.map(({ url }) => ({
     url,
     requestUrl: buildUrlPromptsUrl({
@@ -228,10 +251,27 @@ export async function loadUrlPromptsFromSemrush({ site, urls, context }) {
     }),
   }));
 
+  // Routing-debug line (mirrors domain-urls): surfaces the resolved base URL + prefix, a full
+  // sample request URL, and the date window/platform so a misroute (e.g. missing `/api/v1`)
+  // is obvious from the log alone.
+  olog.start(URL_PROMPTS_EVENT, 'Querying url-prompts (per URL, platform=all)', {
+    peer: PEER.SEMRUSH,
+    direction: 'inbound',
+    orgId: spaceCatId,
+    brandId: brand.brandId,
+    urlCount: requests.length,
+    apiBaseUrl: baseUrl,
+    requestUrlSample: requests[0].requestUrl,
+    startDate,
+    endDate,
+    platform: URL_PROMPTS_PLATFORM,
+    timeoutMs,
+  });
+
   const results = await mapWithConcurrency(
     requests,
     REQUEST_CONCURRENCY,
-    (request) => fetchUrlPrompts(request, headers, log, siteId),
+    (request) => fetchUrlPrompts(request, headers, timeoutMs),
   );
 
   // If the data call rejected the session token, drop it so the next run re-mints rather than
@@ -240,12 +280,35 @@ export async function loadUrlPromptsFromSemrush({ site, urls, context }) {
     evictS2sSessionToken(imsOrgId);
   }
 
+  const counts = { ok: 0, non2xx: 0, error: 0 };
   const promptsByUrl = new Map();
+  let totalPrompts = 0;
   for (const result of results) {
+    counts[result.category] += 1;
     if (result.prompts.length > 0) {
       promptsByUrl.set(result.url, result.prompts);
+      totalPrompts += result.prompts.length;
     }
   }
-  log.info(`${LOG_PREFIX} Loaded prompts for ${promptsByUrl.size}/${urls.length} URL(s)`, { siteId });
+
+  const summary = {
+    peer: PEER.SEMRUSH,
+    direction: 'inbound',
+    orgId: spaceCatId,
+    brandId: brand.brandId,
+    tried: requests.length,
+    urlsWithPrompts: promptsByUrl.size,
+    totalPrompts,
+    ok: counts.ok,
+    non2xx: counts.non2xx,
+    errors: counts.error,
+  };
+  if (counts.non2xx + counts.error > 0) {
+    olog.warn(URL_PROMPTS_EVENT, 'Loaded url-prompts (with per-URL failures)', {
+      ...summary, outcome: OUTCOME.DEGRADED,
+    });
+  } else {
+    olog.success(URL_PROMPTS_EVENT, 'Loaded url-prompts', summary);
+  }
   return promptsByUrl;
 }

@@ -109,10 +109,13 @@ const SEMRUSH_TIMEOUT_MAX_MS = 2 * 60 * 1000;
  * non-positive override (fail-safe to the default rather than a 0/NaN timeout) and clamping a
  * valid override to `SEMRUSH_TIMEOUT_MAX_MS`.
  *
+ * Exported so the url-prompts loader shares the same default + `OFFSITE_SEMRUSH_TIMEOUT_MS`
+ * override + cap as the domain-urls call.
+ *
  * @param {object} [env]
  * @returns {number} timeout in ms.
  */
-function resolveSemrushTimeoutMs(env) {
+export function resolveSemrushTimeoutMs(env) {
   const override = Number(env?.OFFSITE_SEMRUSH_TIMEOUT_MS);
   return Number.isFinite(override) && override > 0
     ? Math.min(override, SEMRUSH_TIMEOUT_MAX_MS)

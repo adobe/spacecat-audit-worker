@@ -23,6 +23,7 @@ const IMS_ORG_ID = '1234567890ABCDEF12345678@AdobeOrg';
 const BRAND_ID = 'cb84e91a-f7e9-488b-8220-e0d031941cd7';
 const SITE_ID = '5b0d4d6e-3d2e-4a5b-8e2a-9b6f7c9c1e2a';
 const API_BASE = 'https://llmo.experiencecloud.live/api/v1';
+const TIMEOUT_MS = 60_000;
 
 const URL_A = 'https://www.youtube.com/watch?v=abc';
 const URL_B = 'https://www.reddit.com/r/example/comments/1/post';
@@ -34,12 +35,14 @@ describe('url-prompts-semrush', function () {
 
   let sandbox;
   let log;
+  let olog;
   let fetchStub;
   let resolveBrandResultForSite;
   let getImsOrgId;
   let getS2sSessionAuthorization;
   let evictS2sSessionToken;
   let resolveApiBaseUrl;
+  let resolveSemrushTimeoutMs;
   let mod;
 
   const site = { getOrganizationId: () => ORG_ID, getId: () => SITE_ID };
@@ -55,20 +58,29 @@ describe('url-prompts-semrush', function () {
         resolveApiBaseUrl,
         getS2sSessionAuthorization,
         evictS2sSessionToken,
+        resolveSemrushTimeoutMs,
       },
       '@adobe/spacecat-shared-utils': { ...spacecatSharedUtils, tracingFetch: fetchStub },
       ...overrides,
     });
   }
 
-  const run = (urls, env = {}, extra = {}) => mod.loadUrlPromptsFromSemrush({
-    site, urls, context: makeContext(env, extra),
+  // Passes the mock olog by default; a couple of tests omit it to exercise the fallback logger.
+  const run = (urls, env = {}, extra = {}, withOlog = true) => mod.loadUrlPromptsFromSemrush({
+    site, urls, context: makeContext(env, extra), ...(withOlog && { olog }),
   });
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
     log = {
       info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(),
+    };
+    olog = {
+      start: sandbox.stub(),
+      success: sandbox.stub(),
+      warn: sandbox.stub(),
+      failure: sandbox.stub(),
+      skip: sandbox.stub(),
     };
     fetchStub = sandbox.stub();
     resolveBrandResultForSite = sandbox.stub()
@@ -77,6 +89,7 @@ describe('url-prompts-semrush', function () {
     getS2sSessionAuthorization = sandbox.stub().resolves('Bearer stok');
     evictS2sSessionToken = sandbox.stub();
     resolveApiBaseUrl = sandbox.stub().returns(API_BASE);
+    resolveSemrushTimeoutMs = sandbox.stub().returns(TIMEOUT_MS);
     mod = await loadModule();
   });
 
@@ -89,6 +102,7 @@ describe('url-prompts-semrush', function () {
     expect(result.size).to.equal(0);
     expect(fetchStub).to.not.have.been.called;
     expect(getS2sSessionAuthorization).to.not.have.been.called;
+    expect(olog.start).to.not.have.been.called;
   });
 
   it('fetches prompts per URL, capped at MAX_URL_PROMPTS, keyed by url', async () => {
@@ -121,7 +135,7 @@ describe('url-prompts-semrush', function () {
     expect(getImsOrgId).to.have.been.calledWith(site, sinon.match.object, log);
   });
 
-  it('sends the expected query params, session-token Authorization/Accept, and platform=all', async () => {
+  it('sends query params, session-token Authorization/Accept, and the shared timeout', async () => {
     fetchStub.resolves(okJson({ prompts: [] }));
     await run([{ url: URL_A }]);
 
@@ -135,7 +149,15 @@ describe('url-prompts-semrush', function () {
     expect(opts.headers.Authorization).to.equal('Bearer stok');
     expect(opts.headers.Accept).to.equal('application/json');
     expect(opts.headers).to.not.have.property('x-promise-token');
-    expect(opts.timeout).to.equal(10000);
+    expect(opts.timeout).to.equal(TIMEOUT_MS);
+    expect(resolveSemrushTimeoutMs).to.have.been.called;
+  });
+
+  it('uses the timeout resolved from env (shared OFFSITE_SEMRUSH_TIMEOUT_MS)', async () => {
+    resolveSemrushTimeoutMs.returns(30_000);
+    fetchStub.resolves(okJson({ prompts: [] }));
+    await run([{ url: URL_A }]);
+    expect(fetchStub.firstCall.args[1].timeout).to.equal(30_000);
   });
 
   it('builds the request URL from resolveApiBaseUrl (LLMO host + prefix)', async () => {
@@ -145,19 +167,42 @@ describe('url-prompts-semrush', function () {
     expect(fetchStub.firstCall.args[0]).to.contain('https://stage.example/api/ci/v2/orgs/');
   });
 
-  it('omits a URL from the result when its request rejects (network error)', async () => {
+  it('logs a start line with the request template and a degraded summary on per-URL failure', async () => {
     fetchStub.rejects(new Error('network down'));
     const result = await run([{ url: URL_A }]);
     expect(result.size).to.equal(0);
-    expect(log.warn).to.have.been.called;
+    expect(olog.start).to.have.been.calledWithMatch(
+      'data_acquisition_url_prompts_read',
+      sinon.match.string,
+      sinon.match({ apiBaseUrl: API_BASE, urlCount: 1, requestUrlSample: sinon.match.string }),
+    );
+    expect(olog.warn).to.have.been.calledWithMatch(
+      'data_acquisition_url_prompts_read',
+      sinon.match.string,
+      sinon.match({ tried: 1, errors: 1, totalPrompts: 0 }),
+    );
     expect(evictS2sSessionToken).to.not.have.been.called;
   });
 
-  it('omits a URL from the result on a non-auth non-2xx response without evicting the token', async () => {
+  it('logs a success summary with stats when every URL resolves', async () => {
+    fetchStub.resolves(okJson({ prompts: [{ prompt: 'p1' }, { prompt: 'p2' }] }));
+    await run([{ url: URL_A }, { url: URL_B }]);
+    expect(olog.success).to.have.been.calledWithMatch(
+      'data_acquisition_url_prompts_read',
+      sinon.match.string,
+      sinon.match({
+        tried: 2, urlsWithPrompts: 2, totalPrompts: 4, ok: 2, non2xx: 0, errors: 0,
+      }),
+    );
+    expect(olog.warn).to.not.have.been.called;
+  });
+
+  it('counts a non-auth non-2xx as a failure without evicting the token', async () => {
     fetchStub.resolves({ ok: false, status: 500 });
     const result = await run([{ url: URL_A }]);
     expect(result.size).to.equal(0);
     expect(evictS2sSessionToken).to.not.have.been.called;
+    expect(olog.warn.lastCall.args[2]).to.include({ non2xx: 1 });
   });
 
   it('evicts the cached session token when a request is rejected with 401/403', async () => {
@@ -174,7 +219,7 @@ describe('url-prompts-semrush', function () {
     expect(evictS2sSessionToken).to.have.been.calledOnceWith(IMS_ORG_ID);
   });
 
-  it('omits a URL from the result when the body fails to parse', async () => {
+  it('treats a body that fails to parse as a per-URL error', async () => {
     fetchStub.resolves({
       ok: true,
       status: 200,
@@ -182,18 +227,21 @@ describe('url-prompts-semrush', function () {
     });
     const result = await run([{ url: URL_A }]);
     expect(result.size).to.equal(0);
+    expect(olog.warn.lastCall.args[2]).to.include({ errors: 1 });
   });
 
-  it('treats falsy/empty prompt rows as no prompts', async () => {
+  it('treats falsy/empty prompt rows as no prompts (still a successful call)', async () => {
     fetchStub.resolves(okJson({ prompts: [{ prompt: '' }, { notPrompt: true }] }));
     const result = await run([{ url: URL_A }]);
     expect(result.size).to.equal(0);
+    expect(olog.success.lastCall.args[2]).to.include({ ok: 1, urlsWithPrompts: 0 });
   });
 
   it('treats a non-array prompts body as no prompts', async () => {
     fetchStub.resolves(okJson({ prompts: null }));
     const result = await run([{ url: URL_A }]);
     expect(result.size).to.equal(0);
+    expect(olog.success).to.have.been.called;
   });
 
   it('caps in-flight requests but still resolves every URL, order-independent', async () => {
@@ -209,14 +257,24 @@ describe('url-prompts-semrush', function () {
     expect(result.get('https://ex.com/p/11')).to.deep.equal(['for-https://ex.com/p/11']);
   });
 
+  it('falls back to a generic offsite logger when no olog is passed', async () => {
+    fetchStub.resolves(okJson({ prompts: [{ prompt: 'p' }] }));
+    const result = await run([{ url: URL_A }], {}, {}, false);
+    expect(result.get(URL_A)).to.deep.equal(['p']);
+    // The fallback createOffsiteLogger routes through context.log.
+    expect(log.info).to.have.been.called;
+  });
+
   it('returns an empty Map when the site has no organization id', async () => {
     const result = await mod.loadUrlPromptsFromSemrush({
       site: { getOrganizationId: () => null, getId: () => SITE_ID },
       urls: [{ url: URL_A }],
       context: makeContext(),
+      olog,
     });
     expect(result.size).to.equal(0);
     expect(fetchStub).to.not.have.been.called;
+    expect(olog.warn).to.have.been.calledWithMatch(sinon.match.string, sinon.match.string, sinon.match({ reason: 'no_organization_id' }));
   });
 
   it('returns an empty Map when no brand is resolved', async () => {
@@ -224,6 +282,7 @@ describe('url-prompts-semrush', function () {
     const result = await run([{ url: URL_A }]);
     expect(result.size).to.equal(0);
     expect(fetchStub).to.not.have.been.called;
+    expect(olog.warn).to.have.been.calledWithMatch(sinon.match.string, sinon.match.string, sinon.match({ reason: 'no_active_brand' }));
   });
 
   it('returns an empty Map when no date window can be derived', async () => {
@@ -235,6 +294,7 @@ describe('url-prompts-semrush', function () {
     const result = await run([{ url: URL_A }]);
     expect(result.size).to.equal(0);
     expect(fetchStub).to.not.have.been.called;
+    expect(olog.warn).to.have.been.calledWithMatch(sinon.match.string, sinon.match.string, sinon.match({ reason: 'no_date_window' }));
   });
 
   it('returns an empty Map when the customer IMS org id cannot be resolved', async () => {
@@ -243,10 +303,10 @@ describe('url-prompts-semrush', function () {
     expect(result.size).to.equal(0);
     expect(getS2sSessionAuthorization).to.not.have.been.called;
     expect(fetchStub).to.not.have.been.called;
-    expect(log.warn).to.have.been.called;
+    expect(olog.warn).to.have.been.calledWithMatch(sinon.match.string, sinon.match.string, sinon.match({ reason: 'no_ims_org_id' }));
   });
 
-  it('returns an empty Map and logs the reason/status when the session token fails', async () => {
+  it('logs a failure with reason/status and returns empty when the session token fails', async () => {
     const err = new Error('login 403');
     err.reason = 'session_token_auth_failed';
     err.status = 403;
@@ -254,17 +314,18 @@ describe('url-prompts-semrush', function () {
     const result = await run([{ url: URL_A }]);
     expect(result.size).to.equal(0);
     expect(fetchStub).to.not.have.been.called;
-    expect(log.error).to.have.been.calledWithMatch(
-      sinon.match(/session_token_auth_failed/),
+    expect(olog.failure).to.have.been.calledWithMatch(
+      'data_acquisition_url_prompts_read',
+      sinon.match.string,
       sinon.match({ reason: 'session_token_auth_failed', status: 403 }),
     );
   });
 
-  it('returns an empty Map when the session token fails with an unclassified error', async () => {
+  it('defaults the failure reason when the session-token error is unclassified', async () => {
     getS2sSessionAuthorization.rejects(new Error('ims down'));
     const result = await run([{ url: URL_A }]);
     expect(result.size).to.equal(0);
-    expect(log.error).to.have.been.calledWithMatch(sinon.match(/unknown/));
+    expect(olog.failure).to.have.been.calledWithMatch(sinon.match.string, sinon.match.string, sinon.match({ reason: 'session_token_failed' }));
   });
 
   describe('buildUrlPromptsUrl', () => {
