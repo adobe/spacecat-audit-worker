@@ -855,15 +855,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   let fallbackReason;
   // Per-run Slack override (resolveEnableSemrush) takes precedence over the env flag.
   // This is the mechanism for testing the Semrush path live on one site/run before
-  // flipping OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED fleet-wide (see the ADR).
+  // flipping OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED fleet-wide (see the ADR). Whichever
+  // way Semrush is enabled, a failure ALWAYS falls back to the legacy source (below) so a
+  // Semrush problem can never zero out offsite.
   const semrushEnabled = enableSemrushOverride
     ?? (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true');
-  // Hard stop (NO legacy fallback) applies ONLY when a run EXPLICITLY opted into
-  // Semrush via the Slack override `enableSemrush:true` — a failure there must be
-  // visible, not masked by legacy. When Semrush was enabled by the env var (or the
-  // override is false/absent), a failure falls back to legacy so production can
-  // never be silently zeroed out.
-  const hardStopOnFailure = enableSemrushOverride === true;
   if (semrushEnabled) {
     // Semrush is the source when enabled. The loader returns the same allUrls
     // shape (count = exact citations); everything downstream (selectTopUrls ->
@@ -893,39 +889,14 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     // with size 0) is NOT a failure and continues as a normal zero-URL run.
     if (semrushUrls === null) {
       const reason = semrushDiagnostics.fallbackReason ?? 'semrush_failed';
-      // A deliberate entitlement-based skip is never a hard stop, even when this run
-      // explicitly forced Semrush on via enableSemrush:true — "no wasted calls, no
-      // errors" for a non-entitled brand must hold regardless of how Semrush was
-      // enabled. Hard-stop stays reserved for genuine technical failures (auth,
-      // outage, etc.) that a canary run wants surfaced, not for expected scoping.
-      const isEntitlementSkip = SEMRUSH_ENTITLEMENT_SKIP_REASONS.has(reason);
-      if (hardStopOnFailure && !isEntitlementSkip) {
-        // enableSemrush:true forced this run — surface the failure, no fallback.
-        olog.failure('data_acquisition_bp_data_semrush_read', `Semrush source failed (${reason}); hard stop — no legacy fallback (enableSemrush:true)`, {
-          peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
-        });
-        await postMessageOptional(
-          context,
-          channelId,
-          `:x: *offsite-brand-presence* for *${baseURL}* — Semrush source failed (${reason}); stopping (enableSemrush:true, no fallback).`,
-          { threadTs },
-        );
-        return {
-          auditResult: {
-            success: false,
-            error: `Semrush source failed (${reason}); hard stop (enableSemrush:true)`,
-            dataSource: 'semrush',
-            fallbackReason: reason,
-          },
-          fullAuditRef: finalUrl,
-        };
-      }
-      // Enabled by the env var (or override not forced, or an entitlement skip) —
-      // fall back to legacy so a Semrush problem never silently zeroes out offsite.
+      // On ANY Semrush failure — however Semrush was enabled (env var or the per-run
+      // Slack `enableSemrush:true` override) — fall back to the legacy source so a Semrush
+      // problem never silently zeroes out offsite.
       fallbackReason = reason;
-      // An entitlement-based skip is expected scoping, not a failure — it still deviates
-      // from the happy path for this run, so it stays warn/outcome=skip; a genuine
-      // technical failure is warn/outcome=degraded.
+      // An entitlement-based skip (`not_entitled` / `entitlement_check_failed`) is expected
+      // scoping, not a failure — it still deviates from the happy path for this run, so it
+      // stays warn/outcome=skip; a genuine technical failure is warn/outcome=degraded.
+      const isEntitlementSkip = SEMRUSH_ENTITLEMENT_SKIP_REASONS.has(reason);
       if (isEntitlementSkip) {
         olog.warn('data_acquisition_bp_data_semrush_read', `Semrush skipped (${reason}); falling back to PostgREST/SharePoint`, {
           outcome: OUTCOME.SKIP, peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
@@ -963,13 +934,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // `no_workspace` | `no_client` | `check_failed`) — set only on the two entitlement
   // skip reasons (see the loader). Kept separate from `fallbackReason` so a wiring
   // bug (`no_client`) stays distinguishable from a one-off transient blip
-  // (`check_failed`) without changing the coarse-grained hard-stop-exemption contract.
+  // (`check_failed`) in diagnostics/auditResult.
   const entitlementReason = semrushDiagnostics?.entitlementReason;
 
-  // Legacy source: runs when the flag is off, OR when Semrush was env-enabled but
-  // failed (fallback). An enableSemrush:true run that failed already hard-stopped
-  // above — there is
-  // no legacy fallback on the Semrush path.
+  // Legacy source: runs when Semrush is disabled for this run, OR when Semrush was
+  // enabled (by the env var or the enableSemrush:true override) but failed — a failure
+  // always falls back here.
   if (!usedSemrush) {
     const brandPresenceData = await loadBrandPresenceData({
       siteId, site, previousWeeks, context,

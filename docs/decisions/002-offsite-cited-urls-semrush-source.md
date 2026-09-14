@@ -15,19 +15,17 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
 
 ## Decision
 
-1. **Source swap behind a flag, Semrush-first — failure handling depends on HOW it
-   was enabled.** When Semrush is enabled (env var
-   `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`, or the per-run override in Decision 7),
-   the runner uses the Semrush loader. On a Semrush **failure** (loader returns `null`):
-   - **Env-enabled, or override `false`/absent →** fall back to the legacy
-     `loadBrandPresenceData` (PostgREST → SharePoint), so production is never silently
-     zeroed out.
-   - **Explicitly forced on via `enableSemrush:true` (Slack override) →** **hard stop**:
-     return `success:false` with `dataSource:'semrush'` + `fallbackReason`, and do **NOT**
-     run legacy. An operator testing Semrush on one run wants the failure **visible**, not
-     masked by legacy.
-   A genuinely-empty-but-successful result (Map size 0) is **not** a failure — it is used as
-   a normal zero-URL Semrush run in both modes. Flag off (no override) = legacy only.
+1. **Source swap behind a flag, Semrush-first — a failure ALWAYS falls back to legacy.**
+   When Semrush is enabled (env var `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`, or the
+   per-run override in Decision 7), the runner uses the Semrush loader. On a Semrush
+   **failure** (loader returns `null`) — however it was enabled, including the Slack
+   `enableSemrush:true` override — it falls back to the legacy `loadBrandPresenceData`
+   (PostgREST → SharePoint), setting `dataSource:'legacy'` + `fallbackReason`, so a Semrush
+   problem never silently zeroes out offsite. (History: `enableSemrush:true` originally
+   **hard-stopped** — `success:false`, no legacy — to make a canary failure visible; that was
+   dropped so the Slack override behaves exactly like the env flag.) A
+   genuinely-empty-but-successful result (Map size 0) is **not** a failure — it is used as a
+   normal zero-URL Semrush run. Flag off (no override) = legacy only.
 2. **A single `domain-urls` request — no `hostname`, `platform=all` — serves all three
    buckets.** LLMO-6844 made `hostname` optional (returns URLs across every source host)
    and LLMO-6818 added `platform=all` (aggregates citations across every AI engine
@@ -71,8 +69,8 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    `enableSemrush` (`auditContext.messageData.enableSemrush`, resolved by
    `resolveEnableSemrush`) lets a single Slack-triggered `offsite-brand-presence` /
    `cited-analysis` / `youtube-analysis` / `reddit-analysis` run override the env var —
-   `true` forces the Semrush attempt on for that run **and makes a failure a hard stop with
-   no legacy fallback** (Decision 1), `false` forces legacy even when the env var is on,
+   `true` forces the Semrush attempt on for that run (a failure still falls back to legacy,
+   same as the env flag — see Decision 1), `false` forces legacy even when the env var is on,
    anything else (absent, empty, invalid) falls through to the env var unchanged. This is the
    intended mechanism for verifying LLMO-6709 against the real Semrush proxy on one site at a
    time, before `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` is flipped fleet-wide. Same tri-state
