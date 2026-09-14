@@ -55,15 +55,12 @@ export const LLMO_API_DEFAULT_BASE_URL = 'https://llmo.experiencecloud.live';
 export const LLMO_API_DEFAULT_PREFIX = '/api/v1';
 
 /**
- * `domain-urls` page size — the top N sources by citations (globally, across youtube.com /
- * reddit.com / cited third-party). Deliberately small to cap the response size and latency of
- * this heavy proxied query. The server clamp is 1000; we intentionally request far fewer.
- *
- * NOTE: because the page is a single citations-sorted list spanning all three buckets, a small
- * page can starve a low-citation bucket (e.g. reddit on a press-heavy site) — see ADR 002,
- * Decision 6. Raise this if a bucket is being starved.
+ * `domain-urls` page size. One request (no `hostname`, `platform=all`) covers all three
+ * buckets (youtube.com, reddit.com, cited third-party), sorted by citations globally, so
+ * this needs to be generous or a low-citation bucket gets starved. 1000 is the server-side
+ * clamp (`domain-urls` in spacecat-api-service), so this is the max we can actually get.
  */
-export const PAGE_SIZE = 50;
+export const PAGE_SIZE = 1000;
 
 /**
  * Per-request timeout for the fast calls (the S2S login exchange) so a hung upstream can't
@@ -223,23 +220,16 @@ async function getImsAuthorizationHeader(context) {
  * obvious from the log line alone rather than needing a repro. Every field below is safe to
  * log: `imsHost`/`imsClientId`/`imsScope` are identifiers/config (not credentials), and the
  * client secret is reported only as a presence boolean (`hasClientSecret`), never its value.
- * The two derived flags target the exact mistakes seen in practice — a scheme in the host
- * (`https://ims...` → `getaddrinfo ENOTFOUND https`) and whitespace in the scope
- * (`invalid_scope`) — and are emitted only when true, so they stand out.
  *
  * @param {object} [env]
  * @returns {object} log fields
  */
 function imsConfigDiagnostics(env) {
-  const imsHost = env?.SEMRUSH_S2S_IMS_HOST;
-  const imsScope = env?.SEMRUSH_S2S_CLIENT_SCOPE;
   return {
-    imsHost,
+    imsHost: env?.SEMRUSH_S2S_IMS_HOST,
     imsClientId: env?.SEMRUSH_S2S_CLIENT_ID,
-    imsScope,
+    imsScope: env?.SEMRUSH_S2S_CLIENT_SCOPE,
     hasClientSecret: Boolean(env?.SEMRUSH_S2S_CLIENT_SECRET),
-    ...(/^https?:\/\//i.test(imsHost || '') && { imsHostHasScheme: true }),
-    ...(/\s/.test(imsScope || '') && { imsScopeHasSpaces: true }),
   };
 }
 
@@ -749,7 +739,7 @@ export async function loadCitedUrlsFromSemrush({
     pageSize: PAGE_SIZE,
   });
   olog.start('data_acquisition_bp_data_semrush_read', 'Querying domain-urls (all hosts, all platforms)', {
-    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, requestUrl: url, pageSize: PAGE_SIZE,
+    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, pageSize: PAGE_SIZE,
   });
   await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
@@ -811,7 +801,6 @@ export async function loadCitedUrlsFromSemrush({
     direction: 'inbound',
     orgId: spaceCatId,
     brandId: brand.brandId,
-    requestUrl: url,
     receivedCount: result.rows.length,
     uniqueUrlCount: allUrls.size,
     droppedCount: result.rows.length - allUrls.size,

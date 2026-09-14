@@ -271,6 +271,23 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    Semrush is skipped (`no_ims_org_id`) and the run uses the legacy source — consistent with
    DRS scraping, which already requires `imsOrgId`.
 
+10. **Data route carries the `/api/v1` gateway prefix; data call has its own 60s timeout
+    (LLMO-6709).** Both refinements landed once the S2S flow was exercised end-to-end against
+    the real LLMO edge:
+    - **Gateway prefix.** The LLMO Fastly edge routes api-service under `/api/v1` (prod) /
+      `/api/ci` (non-prod). api-service registers the routes bare (`/v2/orgs/...`,
+      `/auth/s2s/login`), so the prefix must be added client-side to the external URL — the
+      login already carried it, but the bare `/v2/...` data URL did not and the edge rejected
+      it with a synthetic Varnish **400 in ~4ms** (before reaching api-service). One prefixed
+      base (`apiBaseUrl = baseUrl + LLMO_API_PREFIX`, default `/api/v1`) now feeds BOTH the
+      login and the data URL so they can't drift; override per-env with `LLMO_API_PREFIX`.
+      Confirmed against the UI's own `/api/v1/v2/...` network calls.
+    - **Data-call timeout.** `domain-urls` (all hosts, `platform=all`, `pageSize=1000`,
+      proxied api-service → Semrush v4-raw) routinely runs longer than the 10s login timeout
+      — 10s was aborting it (`Request timeout after 10000ms`). It now has its own
+      `DOMAIN_URLS_TIMEOUT_MS = 60s` (the login exchange keeps the 10s `FETCH_TIMEOUT_MS`);
+      the Lambda budget is 900s, so 60s is safe headroom.
+
 ## Consequences
 
 - Enabling the flag can never silently zero out offsite (fallback), but the fallback

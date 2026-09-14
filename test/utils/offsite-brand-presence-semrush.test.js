@@ -130,10 +130,6 @@ describe('offsite-brand-presence-semrush', function () {
     const [url] = dataCall().args;
     expect(new URL(url).searchParams.has('hostname')).to.equal(false);
     expect(new URL(url).searchParams.get('platform')).to.equal('all');
-    // requestUrl is logged on both the start and the success (Bucketed) lines.
-    const infoLines = log.info.getCalls().map((c) => c.args[0]);
-    expect(infoLines.some((m) => /Querying domain-urls.*requestUrl="[^"]*\/domain-urls\?/.test(m))).to.equal(true);
-    expect(infoLines.some((m) => /Bucketed domain-urls response.*requestUrl="[^"]*\/domain-urls\?/.test(m))).to.equal(true);
   });
 
   it('splits the single response into youtube / reddit / cited buckets', async () => {
@@ -238,10 +234,10 @@ describe('offsite-brand-presence-semrush', function () {
     expect(loginCall().args[0]).to.equal('https://llmo.experiencecloud.page/api/ci/auth/s2s/login');
   });
 
-  it('requests the hardcoded PAGE_SIZE (50)', async () => {
+  it('requests PAGE_SIZE (1000)', async () => {
     await run();
-    expect(mod.PAGE_SIZE).to.equal(50);
-    expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal('50');
+    expect(mod.PAGE_SIZE).to.equal(1000);
+    expect(new URL(dataCall().args[0]).searchParams.get('pageSize')).to.equal('1000');
   });
 
   // --- filtering / scope ----------------------------------------------------
@@ -746,24 +742,10 @@ describe('offsite-brand-presence-semrush', function () {
     expect(warnedWith(/hasClientSecret=true/)).to.equal(true);
   });
 
-  it('flags a scheme in SEMRUSH_S2S_IMS_HOST on ims_token_failed (the ENOTFOUND https bug)', async () => {
-    getServiceAccessTokenV3.rejects(new Error('getaddrinfo ENOTFOUND https'));
-    await run({ SEMRUSH_S2S_IMS_HOST: 'https://ims-na1.adobelogin.com' });
-    expect(warnedWith(/imsHostHasScheme=true/)).to.equal(true);
-  });
-
-  it('flags whitespace in SEMRUSH_S2S_CLIENT_SCOPE on ims_token_failed', async () => {
-    getServiceAccessTokenV3.rejects(new Error('invalid_scope'));
-    await run({ SEMRUSH_S2S_CLIENT_SCOPE: 'openid, AdobeID' });
-    expect(warnedWith(/imsScopeHasSpaces=true/)).to.equal(true);
-  });
-
-  it('reports hasClientSecret=false and no gotcha flags when config is absent', async () => {
+  it('reports hasClientSecret=false when the secret is absent', async () => {
     getServiceAccessTokenV3.rejects(new Error('ims down'));
     await run();
     expect(warnedWith(/hasClientSecret=false/)).to.equal(true);
-    expect(warnedWith(/imsHostHasScheme=/)).to.equal(false);
-    expect(warnedWith(/imsScopeHasSpaces=/)).to.equal(false);
   });
 
   // --- session token exchange (leg 3) ---------------------------------------
