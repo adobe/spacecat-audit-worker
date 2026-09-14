@@ -31,12 +31,13 @@ Two things had to be settled to land it on current `main`:
 
 ## Decision
 
-### 1. One shared S2S auth path for both loaders
+### 1. One shared S2S auth path in its own module
 
-`offsite-brand-presence-semrush.js` exposes three exports, and **both** the `domain-urls` loader
-(`loadCitedUrlsFromSemrush`) and the `url-prompts` loader now go through them — so the auth
-orchestration, the `imsOrgId`-keyed session-token cache, and the host/prefix resolution live in
-one place and cannot drift:
+The S2S auth orchestration, the `imsOrgId`-keyed session-token cache, the LLMO host/prefix
+resolution, and the small helpers around them live in a dedicated module `offsite-s2s-auth.js`
+(it imports only the IMS client + tracing fetch, so it adds no cycle). **Both** the `domain-urls`
+loader (`loadCitedUrlsFromSemrush`) and the `url-prompts` loader import from it, so the auth path
+lives in one place and cannot drift. Key exports:
 
 - `resolveApiBaseUrl(env)` — LLMO host + `/api/v1` prefix.
 - `getS2sSessionAuthorization({ context, imsOrgId })` — cached mint→exchange; returns

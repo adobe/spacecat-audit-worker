@@ -19,9 +19,9 @@ import {
   resolveApiBaseUrl,
   getS2sSessionAuthorization,
   evictS2sSessionToken,
-  resolveSemrushTimeoutMs,
   decodeS2sConsumerClaims,
-} from './offsite-brand-presence-semrush.js';
+} from './offsite-s2s-auth.js';
+import { resolveSemrushTimeoutMs } from './offsite-brand-presence-semrush.js';
 import {
   createOffsiteLogger, errorField, OUTCOME, PEER,
 } from './offsite-logging.js';

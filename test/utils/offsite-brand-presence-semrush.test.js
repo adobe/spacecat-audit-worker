@@ -16,6 +16,14 @@ import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import * as spacecatSharedUtils from '@adobe/spacecat-shared-utils';
 import {
+  resolveApiBaseUrl as realResolveApiBaseUrl,
+  decodeS2sConsumerClaims as realDecodeS2sConsumerClaims,
+  imsConfigDiagnostics as realImsConfigDiagnostics,
+  readErrorBodySnippet as realReadErrorBodySnippet,
+  LLMO_API_DEFAULT_BASE_URL,
+  LLMO_API_DEFAULT_PREFIX,
+} from '../../src/utils/offsite-s2s-auth.js';
+import {
   SEMRUSH_NOT_ENTITLED_REASON,
   SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
   SEMRUSH_ENTITLEMENT_REASONS,
@@ -35,7 +43,6 @@ const RD_URL = 'https://www.reddit.com/r/Lovesac/comments/1/pros_cons';
 const CITED_URL = 'https://example.org/page';
 
 const okJson = (body) => ({ ok: true, status: 200, json: async () => body });
-const isLogin = (u) => String(u).includes('/auth/s2s/login');
 // Builds a JWT-shaped token (`header.payload.signature`) whose payload encodes `claims`.
 const makeJwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
 
@@ -47,8 +54,8 @@ describe('offsite-brand-presence-semrush', function () {
   let fetchStub;
   let resolveBrandResultForSite;
   let resolveSemrushEntitlement;
-  let getServiceAccessTokenV3;
-  let imsCreateFrom;
+  let getS2sSessionAuthorizationStub;
+  let evictS2sSessionTokenStub;
   let getImsOrgIdStub;
   let mod;
 
@@ -63,17 +70,28 @@ describe('offsite-brand-presence-semrush', function () {
   });
   const warnedWith = (re) => log.warn.getCalls().some((c) => re.test(c.args[0]));
 
-  // Both the S2S login POST and the domain-urls GET go through the same `fetch`. The login
-  // call is matched by URL (withArgs) and resolves a session token by default; each test's
-  // `fetchStub.resolves(...)` sets the DATA-call response only.
-  const dataCall = () => fetchStub.getCalls().find((c) => !isLogin(c.args[0]));
-  const loginCall = () => fetchStub.getCalls().find((c) => isLogin(c.args[0]));
-  const dataCallCount = () => fetchStub.getCalls().filter((c) => !isLogin(c.args[0])).length;
-  const loginCallCount = () => fetchStub.getCalls().filter((c) => isLogin(c.args[0])).length;
+  // The S2S auth flow (IMS mint + login exchange + token cache) now lives in the mocked
+  // `offsite-s2s-auth.js`; this module only makes the domain-urls DATA call through the
+  // `tracingFetch` stub, so every recorded fetch is a data call.
+  const dataCall = () => fetchStub.getCalls()[0];
+  const dataCallCount = () => fetchStub.callCount;
 
   async function loadModule(overrides = {}) {
+    // The auth module is mocked so the S2S session token is supplied directly by
+    // `getS2sSessionAuthorizationStub` (no login round-trip through fetch). The pure decode/
+    // diagnostics/base-url/error-body helpers pass through to the real implementations so their
+    // loader-side behavior (grant line, ims_token_failed gotcha flags, prefix resolution,
+    // data-call error-body snippet) is still exercised here. The data call (fetchDomainUrls)
+    // goes through the `tracingFetch` stub from the shared-utils mock.
     return esmock('../../src/utils/offsite-brand-presence-semrush.js', {
-      '@adobe/spacecat-shared-ims-client': { ImsClient: { createFrom: imsCreateFrom } },
+      '../../src/utils/offsite-s2s-auth.js': {
+        getS2sSessionAuthorization: getS2sSessionAuthorizationStub,
+        evictS2sSessionToken: evictS2sSessionTokenStub,
+        resolveApiBaseUrl: realResolveApiBaseUrl,
+        decodeS2sConsumerClaims: realDecodeS2sConsumerClaims,
+        imsConfigDiagnostics: realImsConfigDiagnostics,
+        readErrorBodySnippet: realReadErrorBodySnippet,
+      },
       '../../src/utils/brand-resolver.js': { resolveBrandResultForSite },
       '../../src/utils/semrush-entitlement.js': { resolveSemrushEntitlement },
       '../../src/utils/data-access.js': { getImsOrgId: getImsOrgIdStub },
@@ -97,9 +115,7 @@ describe('offsite-brand-presence-semrush', function () {
       info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(),
     };
     fetchStub = sandbox.stub();
-    // The login leg always succeeds by default; tests override it explicitly when they
-    // exercise a login failure. The default (non-login) behavior is the data response.
-    fetchStub.withArgs(sinon.match(isLogin)).resolves(okJson({ sessionToken: SESSION_TOKEN }));
+    // The data call resolves an empty page by default; tests override it explicitly.
     fetchStub.resolves(okJson({ urls: [] }));
     resolveBrandResultForSite = sandbox.stub()
       .resolves({ brand: { brandId: BRAND_ID }, resolved: true });
@@ -110,8 +126,12 @@ describe('offsite-brand-presence-semrush', function () {
         reason: SEMRUSH_ENTITLEMENT_REASONS.ENTITLED,
         mode: 'subworkspace',
       });
-    getServiceAccessTokenV3 = sandbox.stub().resolves({ token_type: 'Bearer', access_token: 'tok' });
-    imsCreateFrom = sandbox.stub().returns({ getServiceAccessTokenV3 });
+    // The shared auth helper hands back a ready-to-use session-token Authorization header; a
+    // fresh mint by default (fromCache=false) so the loader logs the granted-identity line.
+    getS2sSessionAuthorizationStub = sandbox.stub().resolves({
+      authorization: `Bearer ${SESSION_TOKEN}`, sessionToken: SESSION_TOKEN, fromCache: false,
+    });
+    evictS2sSessionTokenStub = sandbox.stub();
     getImsOrgIdStub = sandbox.stub().resolves(IMS_ORG_ID);
     mod = await loadModule();
   });
@@ -122,11 +142,11 @@ describe('offsite-brand-presence-semrush', function () {
 
   // --- happy path -----------------------------------------------------------
 
-  it('makes exactly ONE domain-urls request (no hostname, platform=all) after an S2S login', async () => {
+  it('makes exactly ONE domain-urls request (no hostname, platform=all)', async () => {
     await run();
 
     expect(dataCallCount()).to.equal(1);
-    expect(loginCall()).to.not.equal(undefined);
+    expect(getS2sSessionAuthorizationStub).to.have.been.calledOnce;
     const [url] = dataCall().args;
     expect(new URL(url).searchParams.has('hostname')).to.equal(false);
     expect(new URL(url).searchParams.get('platform')).to.equal('all');
@@ -148,29 +168,22 @@ describe('offsite-brand-presence-semrush', function () {
     expect(allUrls.get(CITED_URL)).to.deep.equal({ count: 5, domain: null });
   });
 
-  // --- S2S auth (IMS token -> session token) --------------------------------
+  // --- data call headers / URL / timeout ------------------------------------
 
-  it('sends the session token (not the IMS token) as Bearer, with Accept and a timeout, and no Content-Type on the data call', async () => {
+  it('sends the session token as Bearer, with Accept and a timeout, and no Content-Type on the data call', async () => {
     await run();
 
     const [url, opts] = dataCall().args;
-    expect(url).to.contain(`${mod.LLMO_API_DEFAULT_BASE_URL}${mod.LLMO_API_DEFAULT_PREFIX}/v2/orgs/${ORG_ID}/brands/${BRAND_ID}`);
+    expect(url).to.contain(`${LLMO_API_DEFAULT_BASE_URL}${LLMO_API_DEFAULT_PREFIX}/v2/orgs/${ORG_ID}/brands/${BRAND_ID}`);
     expect(opts.headers.Authorization).to.equal(`Bearer ${SESSION_TOKEN}`);
     expect(opts.headers.Accept).to.equal('application/json');
     expect(opts.headers).to.not.have.property('Content-Type');
     expect(opts.timeout).to.equal(60000); // domain-urls timeout (heavy query)
   });
 
-  it('uses the short login timeout on the login call and the longer one on the data call', async () => {
-    await run();
-    expect(loginCall().args[1].timeout).to.equal(10000);
-    expect(dataCall().args[1].timeout).to.equal(60000);
-  });
-
-  it('honours OFFSITE_SEMRUSH_TIMEOUT_MS for the data call (login timeout unaffected)', async () => {
+  it('honours OFFSITE_SEMRUSH_TIMEOUT_MS for the data call', async () => {
     await run({ OFFSITE_SEMRUSH_TIMEOUT_MS: '30000' });
     expect(dataCall().args[1].timeout).to.equal(30000);
-    expect(loginCall().args[1].timeout).to.equal(10000);
   });
 
   it('ignores an invalid OFFSITE_SEMRUSH_TIMEOUT_MS and uses the default', async () => {
@@ -183,71 +196,20 @@ describe('offsite-brand-presence-semrush', function () {
     expect(dataCall().args[1].timeout).to.equal(120000); // clamped to 2 min
   });
 
-  it('mints the consumer IMS token via getServiceAccessTokenV3 (client_credentials) with SEMRUSH_S2S_* creds', async () => {
-    await run({
-      SEMRUSH_S2S_IMS_HOST: 'https://ims.example',
-      SEMRUSH_S2S_CLIENT_ID: 'cid',
-      SEMRUSH_S2S_CLIENT_SECRET: 'secret',
-      SEMRUSH_S2S_CLIENT_SCOPE: 'scope',
-    });
-
-    expect(getServiceAccessTokenV3).to.have.been.calledOnce;
-    const passedEnv = imsCreateFrom.firstCall.args[0].env;
-    expect(passedEnv.IMS_CLIENT_ID).to.equal('cid');
-    expect(passedEnv.IMS_CLIENT_SECRET).to.equal('secret');
-    expect(passedEnv.IMS_SCOPE).to.equal('scope');
-    expect(passedEnv.IMS_HOST).to.equal('https://ims.example');
-  });
-
-  it('sets a placeholder IMS_CLIENT_CODE (createFrom requires it; client_credentials ignores it)', async () => {
-    await run(); // no SEMRUSH_S2S_CLIENT_CODE set
-    expect(imsCreateFrom.firstCall.args[0].env.IMS_CLIENT_CODE).to.equal('unused-for-client-credentials');
-  });
-
-  it('uses SEMRUSH_S2S_CLIENT_CODE for IMS_CLIENT_CODE when provided', async () => {
-    await run({ SEMRUSH_S2S_CLIENT_CODE: 'the-code' });
-    expect(imsCreateFrom.firstCall.args[0].env.IMS_CLIENT_CODE).to.equal('the-code');
-  });
-
-  it('exchanges the IMS token for a customer-scoped session token: POST login, Bearer IMS token, { imsOrgId } body', async () => {
-    await run();
-
-    const [url, opts] = loginCall().args;
-    expect(url).to.equal(`${mod.LLMO_API_DEFAULT_BASE_URL}${mod.LLMO_API_DEFAULT_PREFIX}/auth/s2s/login`);
-    expect(opts.method).to.equal('POST');
-    expect(opts.headers.Authorization).to.equal('Bearer tok');
-    expect(opts.headers['Content-Type']).to.equal('application/json');
-    expect(JSON.parse(opts.body)).to.deep.equal({ imsOrgId: IMS_ORG_ID });
-  });
-
-  it('always normalizes the consumer IMS token to a Bearer scheme (even when IMS returns lowercase)', async () => {
-    getServiceAccessTokenV3.resolves({ token_type: 'bearer', access_token: 'tok' });
-    await run();
-    expect(loginCall().args[1].headers.Authorization).to.equal('Bearer tok');
-  });
-
-  it('honours the LLMO_API_BASE_URL override for both the login and the data call', async () => {
+  it('honours the LLMO_API_BASE_URL override for the data call', async () => {
     await run({ LLMO_API_BASE_URL: 'https://stage.example' });
     expect(dataCall().args[0]).to.contain('https://stage.example/api/v1/v2/orgs/');
-    expect(loginCall().args[0]).to.equal('https://stage.example/api/v1/auth/s2s/login');
   });
 
-  it('carries the /api/v1 gateway prefix on both the login and data URLs by default', async () => {
+  it('carries the /api/v1 gateway prefix on the data URL by default', async () => {
     await run();
-    expect(loginCall().args[0]).to.contain('/api/v1/auth/s2s/login');
     expect(dataCall().args[0]).to.contain('/api/v1/v2/orgs/');
   });
 
-  it('honours the LLMO_API_PREFIX override (e.g. non-prod /api/ci) on both URLs', async () => {
+  it('honours the LLMO_API_PREFIX override (e.g. non-prod /api/ci) on the data URL', async () => {
     await run({ LLMO_API_PREFIX: '/api/ci' });
-    expect(loginCall().args[0]).to.contain('/api/ci/auth/s2s/login');
     expect(dataCall().args[0]).to.contain('/api/ci/v2/orgs/');
     expect(dataCall().args[0]).to.not.contain('/api/v1/');
-  });
-
-  it('honours the LLMO_S2S_LOGIN_URL override for the login call', async () => {
-    await run({ LLMO_S2S_LOGIN_URL: 'https://llmo.experiencecloud.page/api/ci/auth/s2s/login' });
-    expect(loginCall().args[0]).to.equal('https://llmo.experiencecloud.page/api/ci/auth/s2s/login');
   });
 
   it('requests PAGE_SIZE (1000) by default', async () => {
@@ -486,8 +448,7 @@ describe('offsite-brand-presence-semrush', function () {
   // --- request-level fallback (returns null) --------------------------------
 
   it('falls back (null) on a network error', async () => {
-    // Login (withArgs from beforeEach) still resolves; only the data call rejects.
-    fetchStub.withArgs(sinon.match((u) => !isLogin(u))).rejects(new Error('network down'));
+    fetchStub.rejects(new Error('network down'));
     const diagnostics = {};
     const result = await run({}, {}, undefined, diagnostics);
     expect(result).to.equal(null);
@@ -588,7 +549,7 @@ describe('offsite-brand-presence-semrush', function () {
     expect(diagnostics.fallbackReason).to.equal(SEMRUSH_NOT_ENTITLED_REASON);
     expect(diagnostics.entitlementReason).to.equal(SEMRUSH_ENTITLEMENT_REASONS.NO_WORKSPACE);
     expect(fetchStub).to.not.have.been.called;
-    expect(getServiceAccessTokenV3).to.not.have.been.called;
+    expect(getS2sSessionAuthorizationStub).to.not.have.been.called;
     expect(getImsOrgIdStub).to.not.have.been.called;
     expect(log.warn).to.have.been.calledWithMatch(/Brand not entitled for Semrush.*entitlementReason=no_workspace/);
     expect(onProgress).to.have.been.calledWith(
@@ -633,7 +594,7 @@ describe('offsite-brand-presence-semrush', function () {
 
   // --- IMS org id resolution (leg 1) ----------------------------------------
 
-  it('returns null (no_ims_org_id) and never mints a token when the customer IMS org id cannot be resolved', async () => {
+  it('returns null (no_ims_org_id) and never requests a session token when the customer IMS org id cannot be resolved', async () => {
     getImsOrgIdStub.resolves(null);
     const diagnostics = {};
     const onProgress = sandbox.stub().resolves();
@@ -642,7 +603,7 @@ describe('offsite-brand-presence-semrush', function () {
 
     expect(result).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('no_ims_org_id');
-    expect(getServiceAccessTokenV3).to.not.have.been.called;
+    expect(getS2sSessionAuthorizationStub).to.not.have.been.called;
     expect(fetchStub).to.not.have.been.called;
     expect(warnedWith(/Could not resolve customer IMS org id/)).to.equal(true);
     expect(onProgress).to.have.been.calledWith(
@@ -672,112 +633,21 @@ describe('offsite-brand-presence-semrush', function () {
       site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(), imsOrgId: 'threaded@AdobeOrg',
     });
     expect(getImsOrgIdStub).to.not.have.been.called;
-    expect(JSON.parse(loginCall().args[1].body)).to.deep.equal({ imsOrgId: 'threaded@AdobeOrg' });
-  });
-
-  // --- session token caching (keyed by imsOrgId) ----------------------------
-
-  it('reuses a cached session token on a second call for the same imsOrgId (skips IMS mint + login)', async () => {
-    await run();
-    await run();
-    expect(getServiceAccessTokenV3.callCount).to.equal(1);
-    expect(loginCallCount()).to.equal(1);
-    expect(dataCallCount()).to.equal(2); // the data call still fires each time
-  });
-
-  it('re-mints the session token after the cached one expires (TTL)', async () => {
-    const clock = sandbox.useFakeTimers({ now: 1_000_000, toFake: ['Date'] });
-    await run();
-    clock.tick(11 * 60 * 1000); // past the 10-minute TTL
-    await run();
-    expect(loginCallCount()).to.equal(2);
-    expect(getServiceAccessTokenV3.callCount).to.equal(2);
-  });
-
-  it('evicts a cached session token when the data call rejects it (401), so the next run re-mints', async () => {
-    let dataResponse = okJson({ urls: [] });
-    fetchStub.withArgs(sinon.match((u) => !isLogin(u))).callsFake(async () => dataResponse);
-
-    await run(); // call 1: mint + login + data(200) -> caches the token
-    dataResponse = { ok: false, status: 401 };
-    await run(); // call 2: cache HIT, data(401) -> evict + fallback (no new login)
-    dataResponse = okJson({ urls: [] });
-    const third = await run(); // call 3: cache empty (evicted) -> re-mint + login
-
-    expect(loginCallCount()).to.equal(2); // call 1 and call 3; call 2 reused then evicted
-    expect(getServiceAccessTokenV3.callCount).to.equal(2);
-    expect(third).to.not.equal(null);
-    // The stale-cache signal is logged so ops can tell it apart from a broken registration.
-    expect(log.warn.getCalls().some((c) => c.args[0].includes('wasCachedToken=true'))).to.equal(true);
-  });
-
-  it('does not evict on a non-auth data failure (500) — only auth rejections poison the token', async () => {
-    let dataResponse = okJson({ urls: [] });
-    fetchStub.withArgs(sinon.match((u) => !isLogin(u))).callsFake(async () => dataResponse);
-
-    await run(); // caches
-    dataResponse = { ok: false, status: 500 };
-    await run(); // cache hit, data(500) -> NOT evicted
-    dataResponse = okJson({ urls: [] });
-    await run(); // still cached -> hit, no re-mint
-
-    expect(loginCallCount()).to.equal(1);
-  });
-
-  it('keeps unexpired entries for other orgs when caching a new one (bounded sweep)', async () => {
-    const call = (imsOrgId) => mod.loadCitedUrlsFromSemrush({
-      site, previousWeeks: PREVIOUS_WEEKS, context: makeContext(), imsOrgId,
-    });
-    await call('orgA@AdobeOrg'); // mint + cache A
-    await call('orgB@AdobeOrg'); // mint + cache B (sweep sees A unexpired -> keeps it)
-    await call('orgA@AdobeOrg'); // A still cached -> hit, no re-mint
-
-    expect(loginCallCount()).to.equal(2); // A and B; the 3rd (A) reused the cache
-  });
-
-  it('honours SEMRUSH_S2S_SESSION_TTL_MS as the cache window', async () => {
-    const clock = sandbox.useFakeTimers({ now: 1_000_000, toFake: ['Date'] });
-    await run({ SEMRUSH_S2S_SESSION_TTL_MS: '60000' }); // 60s TTL (well under the 10-min default)
-    clock.tick(30 * 1000);
-    await run({ SEMRUSH_S2S_SESSION_TTL_MS: '60000' });
-    expect(loginCallCount()).to.equal(1); // 30s < 60s -> still cached
-    clock.tick(40 * 1000);
-    await run({ SEMRUSH_S2S_SESSION_TTL_MS: '60000' });
-    // 70s > 60s -> expired, re-mint (the default 10min TTL would still have it cached).
-    expect(loginCallCount()).to.equal(2);
-  });
-
-  it('ignores an invalid SEMRUSH_S2S_SESSION_TTL_MS (non-numeric or non-positive) and uses the default', async () => {
-    const callWith = (ttl, imsOrgId) => mod.loadCitedUrlsFromSemrush({
-      site,
-      previousWeeks: PREVIOUS_WEEKS,
-      context: makeContext({ SEMRUSH_S2S_SESSION_TTL_MS: ttl }),
-      imsOrgId,
-    });
-    await callWith('nonsense', 'orgN@AdobeOrg'); // NaN -> default
-    await callWith('0', 'orgZ@AdobeOrg'); // finite but <= 0 -> default
-    // Distinct orgs => both are cache misses => both exercise resolveSessionTtlMs's fallback.
-    expect(loginCallCount()).to.equal(2);
+    expect(getS2sSessionAuthorizationStub.firstCall.args[0].imsOrgId).to.equal('threaded@AdobeOrg');
   });
 
   // --- IMS token minting (leg 2) --------------------------------------------
 
   it('returns null (ims_token_failed) when the IMS service token cannot be minted', async () => {
-    getServiceAccessTokenV3.rejects(new Error('ims down'));
+    getS2sSessionAuthorizationStub.rejects(Object.assign(new Error('ims down'), { reason: 'ims_token_failed' }));
     const diagnostics = {};
     expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('ims_token_failed');
     expect(warnedWith(/Failed to obtain IMS service token/)).to.equal(true);
   });
 
-  it('returns null when the IMS token response has no access_token', async () => {
-    getServiceAccessTokenV3.resolves({ token_type: 'Bearer' });
-    expect(await run()).to.equal(null);
-    expect(warnedWith(/Failed to obtain IMS service token/)).to.equal(true);
-  });
-
   it('logs non-secret IMS config on ims_token_failed (host, clientId, scope, secret presence)', async () => {
-    getServiceAccessTokenV3.rejects(new Error('ims down'));
+    getS2sSessionAuthorizationStub.rejects(Object.assign(new Error('ims down'), { reason: 'ims_token_failed' }));
     await run({
       SEMRUSH_S2S_IMS_HOST: 'ims-na1.adobelogin.com',
       SEMRUSH_S2S_CLIENT_ID: 'cid',
@@ -791,7 +661,7 @@ describe('offsite-brand-presence-semrush', function () {
   });
 
   it('reports hasClientSecret=false and no gotcha flags when config is absent', async () => {
-    getServiceAccessTokenV3.rejects(new Error('ims down'));
+    getS2sSessionAuthorizationStub.rejects(Object.assign(new Error('ims down'), { reason: 'ims_token_failed' }));
     await run();
     expect(warnedWith(/hasClientSecret=false/)).to.equal(true);
     expect(warnedWith(/imsHostHasScheme=/)).to.equal(false);
@@ -799,23 +669,24 @@ describe('offsite-brand-presence-semrush', function () {
   });
 
   it('flags a scheme in SEMRUSH_S2S_IMS_HOST on ims_token_failed (the ENOTFOUND https bug)', async () => {
-    getServiceAccessTokenV3.rejects(new Error('getaddrinfo ENOTFOUND https'));
+    getS2sSessionAuthorizationStub.rejects(Object.assign(new Error('getaddrinfo ENOTFOUND https'), { reason: 'ims_token_failed' }));
     await run({ SEMRUSH_S2S_IMS_HOST: 'https://ims-na1.adobelogin.com' });
     expect(warnedWith(/imsHostHasScheme=true/)).to.equal(true);
   });
 
   it('flags whitespace in SEMRUSH_S2S_CLIENT_SCOPE on ims_token_failed', async () => {
-    getServiceAccessTokenV3.rejects(new Error('invalid_scope'));
+    getS2sSessionAuthorizationStub.rejects(Object.assign(new Error('invalid_scope'), { reason: 'ims_token_failed' }));
     await run({ SEMRUSH_S2S_CLIENT_SCOPE: 'openid, AdobeID' });
     expect(warnedWith(/imsScopeHasSpaces=true/)).to.equal(true);
   });
 
   // --- session token exchange (leg 3) ---------------------------------------
 
-  it('splits a 403 login denial into session_token_auth_failed, logs the body, but keeps it out of Slack', async () => {
+  it('splits a 403 session-token denial into session_token_auth_failed, logs the body, but keeps it out of Slack', async () => {
     const denyBody = 'Denied - reason=no-org-access secret=abc123';
-    fetchStub.withArgs(sinon.match(isLogin))
-      .resolves({ ok: false, status: 403, text: async () => denyBody });
+    getS2sSessionAuthorizationStub.rejects(Object.assign(new Error('s2s login returned 403'), {
+      reason: 'session_token_auth_failed', status: 403, responseBody: denyBody,
+    }));
     const diagnostics = {};
     const onProgress = sandbox.stub().resolves();
     const result = await run({}, {}, onProgress, diagnostics);
@@ -832,23 +703,27 @@ describe('offsite-brand-presence-semrush', function () {
     expect(slack.some((m) => m.includes(denyBody))).to.equal(false);
   });
 
-  it('treats a 401 login denial as session_token_auth_failed too', async () => {
-    fetchStub.withArgs(sinon.match(isLogin)).resolves({ ok: false, status: 401 });
+  it('treats a 401 session-token denial as session_token_auth_failed too', async () => {
+    getS2sSessionAuthorizationStub.rejects(Object.assign(new Error('s2s login returned 401'), {
+      reason: 'session_token_auth_failed', status: 401,
+    }));
     const diagnostics = {};
     expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('session_token_auth_failed');
   });
 
-  it('returns null (session_token_failed) on a non-auth non-2xx login response (no readable body)', async () => {
-    fetchStub.withArgs(sinon.match(isLogin)).resolves({ ok: false, status: 500 });
+  it('returns null (session_token_failed) on a non-auth non-2xx session-token response', async () => {
+    getS2sSessionAuthorizationStub.rejects(Object.assign(new Error('s2s login returned 500'), {
+      reason: 'session_token_failed', status: 500,
+    }));
     const diagnostics = {};
     expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('session_token_failed');
     expect(warnedWith(/Failed to exchange for an S2S session token/)).to.equal(true);
   });
 
-  it('returns null (session_token_failed) on a network error during login (no status -> no HTTP suffix in Slack)', async () => {
-    fetchStub.withArgs(sinon.match(isLogin)).rejects(new Error('login down'));
+  it('returns null (session_token_failed) on a network error (no status -> no HTTP suffix in Slack)', async () => {
+    getS2sSessionAuthorizationStub.rejects(Object.assign(new Error('login down'), { reason: 'session_token_failed' }));
     const diagnostics = {};
     const onProgress = sandbox.stub().resolves();
     expect(await run({}, {}, onProgress, diagnostics)).to.equal(null);
@@ -857,20 +732,30 @@ describe('offsite-brand-presence-semrush', function () {
     expect(slack.some((m) => /Failed to obtain an S2S session token — falling back/.test(m))).to.equal(true);
   });
 
-  it('returns null (session_token_failed) when the login body is not parseable JSON', async () => {
-    fetchStub.withArgs(sinon.match(isLogin)).resolves({
-      ok: true, status: 200, json: async () => { throw new Error('bad json'); },
+  // --- session token eviction on a data-call rejection -----------------------
+
+  it('evicts the cached session token when the data call rejects it (401), logging wasCachedToken', async () => {
+    // A cache-hit token (fromCache=true) that the data call then rejects (401) must be evicted
+    // so the next run re-mints instead of replaying a revoked/rotated token.
+    getS2sSessionAuthorizationStub.resolves({
+      authorization: `Bearer ${SESSION_TOKEN}`, sessionToken: SESSION_TOKEN, fromCache: true,
     });
+    fetchStub.resolves({ ok: false, status: 401 });
     const diagnostics = {};
-    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
-    expect(diagnostics.fallbackReason).to.equal('session_token_failed');
+
+    const result = await run({}, {}, undefined, diagnostics);
+
+    expect(result).to.equal(null);
+    expect(diagnostics.fallbackReason).to.equal('domain_urls_auth_failed');
+    expect(evictS2sSessionTokenStub).to.have.been.calledOnceWith(IMS_ORG_ID);
+    // The stale-cache signal is logged so ops can tell it apart from a broken registration.
+    expect(log.warn.getCalls().some((c) => c.args[0].includes('wasCachedToken=true'))).to.equal(true);
   });
 
-  it('returns null (session_token_failed) when the login response has no sessionToken', async () => {
-    fetchStub.withArgs(sinon.match(isLogin)).resolves(okJson({ notAToken: true }));
-    const diagnostics = {};
-    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
-    expect(diagnostics.fallbackReason).to.equal('session_token_failed');
+  it('does not evict on a non-auth data failure (500) — only auth rejections poison the token', async () => {
+    fetchStub.resolves({ ok: false, status: 500 });
+    await run();
+    expect(evictS2sSessionTokenStub).to.not.have.been.called;
   });
 
   // --- granted consumer identity (decoded from the session token) ------------
@@ -879,12 +764,14 @@ describe('offsite-brand-presence-semrush', function () {
     .map((c) => c.args[0])
     .find((m) => /Obtained S2S session token/.test(m));
 
-  it('logs the granted consumer identity decoded from the session token', async () => {
-    fetchStub.withArgs(sinon.match(isLogin)).resolves(okJson({
+  it('logs the granted consumer identity decoded from the session token on a fresh mint', async () => {
+    getS2sSessionAuthorizationStub.resolves({
+      authorization: 'Bearer x',
       sessionToken: makeJwt({
         client_id: 'consumer-cid', is_s2s_consumer: true, sub: 's2s:consumer-cid', tenants: [{ id: 'o1' }, { id: 'o2' }], consumerId: 'cons-123',
       }),
-    }));
+      fromCache: false,
+    });
     await run();
     expect(grantLine()).to.match(/consumerClientId=consumer-cid/);
     expect(grantLine()).to.match(/isS2sConsumer=true/);
@@ -892,26 +779,12 @@ describe('offsite-brand-presence-semrush', function () {
     expect(grantLine()).to.match(/tenantCount=2/);
   });
 
-  it('reads a snake_case consumer_id claim and omits tenantCount when tenants are absent', async () => {
-    fetchStub.withArgs(sinon.match(isLogin)).resolves(okJson({
-      sessionToken: makeJwt({ client_id: 'cid', consumer_id: 'snake-1' }),
-    }));
+  it('does not log the grant line on a cache hit (fromCache=true)', async () => {
+    getS2sSessionAuthorizationStub.resolves({
+      authorization: `Bearer ${SESSION_TOKEN}`, sessionToken: SESSION_TOKEN, fromCache: true,
+    });
     await run();
-    expect(grantLine()).to.match(/consumerId=snake-1/);
-    expect(grantLine()).to.not.match(/tenantCount=/);
-  });
-
-  it('logs the grant line but no consumer fields for an opaque (non-JWT) token', async () => {
-    await run(); // default SESSION_TOKEN has no payload segment
-    expect(grantLine()).to.be.a('string');
-    expect(grantLine()).to.not.match(/consumerClientId=/);
-  });
-
-  it('tolerates a token whose payload is not valid JSON (decode swallowed)', async () => {
-    fetchStub.withArgs(sinon.match(isLogin)).resolves(okJson({ sessionToken: 'h.@@@notjson@@@.s' }));
-    const result = await run();
-    expect(result).to.not.equal(null); // still proceeds to the data call
-    expect(grantLine()).to.not.match(/consumerClientId=/);
+    expect(grantLine()).to.equal(undefined);
   });
 
   // --- progress notifications (onProgress) -----------------------------------
@@ -973,105 +846,6 @@ describe('offsite-brand-presence-semrush', function () {
     it('sends the requested pageSize', () => {
       const url = mod.buildDomainUrlsUrl({ ...baseArgs, pageSize: 777 });
       expect(new URL(url).searchParams.get('pageSize')).to.equal('777');
-    });
-  });
-
-  // --- shared S2S auth helpers (reused by url-prompts-semrush) ---------------
-
-  describe('resolveApiBaseUrl', () => {
-    it('defaults to the LLMO host + /api/v1 prefix', () => {
-      expect(mod.resolveApiBaseUrl(undefined)).to.equal('https://llmo.experiencecloud.live/api/v1');
-    });
-
-    it('honours LLMO_API_BASE_URL and LLMO_API_PREFIX overrides', () => {
-      expect(mod.resolveApiBaseUrl({
-        LLMO_API_BASE_URL: 'https://stage.example', LLMO_API_PREFIX: '/api/ci',
-      })).to.equal('https://stage.example/api/ci');
-    });
-  });
-
-  describe('getS2sSessionAuthorization', () => {
-    const getAuth = (env = {}) => mod.getS2sSessionAuthorization({
-      context: makeContext(env), imsOrgId: IMS_ORG_ID,
-    });
-    const capture = async (promise) => {
-      try {
-        await promise;
-        return null;
-      } catch (error) {
-        return error;
-      }
-    };
-
-    it('mints an IMS token, exchanges it, and returns the Bearer session token (fresh)', async () => {
-      const auth = await getAuth();
-      expect(auth).to.deep.equal({
-        authorization: `Bearer ${SESSION_TOKEN}`,
-        sessionToken: SESSION_TOKEN,
-        fromCache: false,
-      });
-      expect(loginCallCount()).to.equal(1);
-      expect(imsCreateFrom).to.have.been.called;
-    });
-
-    it('reuses the cached session token for the same org (mints/logs in once), flagged fromCache', async () => {
-      const first = await getAuth();
-      const second = await getAuth();
-      expect(first.fromCache).to.equal(false);
-      expect(second.fromCache).to.equal(true);
-      expect(second.authorization).to.equal(first.authorization);
-      expect(loginCallCount()).to.equal(1);
-      expect(getServiceAccessTokenV3).to.have.been.calledOnce;
-    });
-
-    it('honours the LLMO_S2S_LOGIN_URL override', async () => {
-      await getAuth({ LLMO_S2S_LOGIN_URL: 'https://alt.example/auth/s2s/login' });
-      expect(loginCall().args[0]).to.equal('https://alt.example/auth/s2s/login');
-    });
-
-    it('shares the cache with the domain-urls loader — no double-mint across entry points', async () => {
-      // The domain-urls loader mints + caches a session token for IMS_ORG_ID...
-      await run();
-      expect(loginCallCount()).to.equal(1);
-      // ...and the shared helper reuses it for the same org instead of minting again.
-      const auth = await getAuth();
-      expect(auth.fromCache).to.equal(true);
-      expect(auth.authorization).to.equal(`Bearer ${SESSION_TOKEN}`);
-      expect(loginCallCount()).to.equal(1);
-    });
-
-    it('throws with reason=ims_token_failed when the IMS mint fails', async () => {
-      getServiceAccessTokenV3.rejects(new Error('ims down'));
-      const error = await capture(getAuth());
-      expect(error).to.be.an('error');
-      expect(error.reason).to.equal('ims_token_failed');
-      expect(loginCallCount()).to.equal(0);
-    });
-
-    it('throws with reason=session_token_auth_failed on a 401/403 exchange', async () => {
-      fetchStub.withArgs(sinon.match(isLogin))
-        .resolves({ ok: false, status: 403, text: async () => 'denied' });
-      const error = await capture(getAuth());
-      expect(error.reason).to.equal('session_token_auth_failed');
-      expect(error.status).to.equal(403);
-    });
-
-    it('throws with reason=session_token_failed on a non-auth exchange failure', async () => {
-      fetchStub.withArgs(sinon.match(isLogin))
-        .resolves({ ok: false, status: 500, text: async () => 'boom' });
-      const error = await capture(getAuth());
-      expect(error.reason).to.equal('session_token_failed');
-    });
-  });
-
-  describe('evictS2sSessionToken', () => {
-    it('drops the cached token so the next call re-mints', async () => {
-      const context = makeContext();
-      await mod.getS2sSessionAuthorization({ context, imsOrgId: IMS_ORG_ID });
-      expect(loginCallCount()).to.equal(1);
-      mod.evictS2sSessionToken(IMS_ORG_ID);
-      await mod.getS2sSessionAuthorization({ context, imsOrgId: IMS_ORG_ID });
-      expect(loginCallCount()).to.equal(2);
     });
   });
 });

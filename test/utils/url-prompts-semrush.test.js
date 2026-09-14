@@ -55,12 +55,14 @@ describe('url-prompts-semrush', function () {
     return esmock('../../src/utils/url-prompts-semrush.js', {
       '../../src/utils/brand-resolver.js': { resolveBrandResultForSite },
       '../../src/utils/data-access.js': { getImsOrgId },
-      '../../src/utils/offsite-brand-presence-semrush.js': {
+      '../../src/utils/offsite-s2s-auth.js': {
         resolveApiBaseUrl,
         getS2sSessionAuthorization,
         evictS2sSessionToken,
-        resolveSemrushTimeoutMs,
         decodeS2sConsumerClaims,
+      },
+      '../../src/utils/offsite-brand-presence-semrush.js': {
+        resolveSemrushTimeoutMs,
       },
       '@adobe/spacecat-shared-utils': { ...spacecatSharedUtils, tracingFetch: fetchStub },
       ...overrides,
