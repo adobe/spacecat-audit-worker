@@ -1,3 +1,10 @@
+## [1.537.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.4...v1.537.5) (2026-09-14)
+
+
+### Bug Fixes
+
+* **broken-internal-links:** don't resolve the shared opportunity on V2 bow-out (SITES-51620) ([#2973](https://github.com/adobe/spacecat-audit-worker/issues/2973)) ([699af06](https://github.com/adobe/spacecat-audit-worker/commit/699af06bb2155f861df2a3da444761eaca8db3c0)), closes [#2916](https://github.com/adobe/spacecat-audit-worker/issues/2916)
+
 ## [1.537.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.3...v1.537.4) (2026-09-14)
 
 
