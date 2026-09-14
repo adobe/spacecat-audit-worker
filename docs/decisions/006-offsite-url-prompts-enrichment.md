@@ -152,6 +152,15 @@ Mystique payload path applies its own independent cap, so this only affects what
   still tunes both. One knob to reason about, without forcing the same default on two very
   different call shapes.
 
+## Operational note
+
+A sustained run of `reason=session_token_auth_failed` (401/403 on the S2S login exchange) is
+**not** transient — it means the consumer registration lost `brand:read` or the token's `tenants`
+claim stopped naming the org, and every affected run will silently fall back (domain-urls → legacy;
+url-prompts → no prompts) until it's fixed. Worth an ops alert on that reason code for the
+`data_acquisition_bp_data_semrush_read` / `data_acquisition_url_prompts_read` events, distinct from
+the transient `session_token_failed`.
+
 ## Consequences
 
 - Turning on `enableSemrushWithHardstop` for a run makes that run a **failed audit by design**

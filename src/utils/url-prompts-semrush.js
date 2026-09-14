@@ -164,6 +164,10 @@ async function fetchUrlPrompts({ url, requestUrl }, headers, timeoutMs, maxPromp
 
   if (!response.ok) {
     const authFailure = response.status === 401 || response.status === 403;
+    // Drain the body so the connection can be released back to the pool (some fetch impls
+    // retain the socket until the body is consumed); best-effort, ignore any read error and
+    // tolerate a response with no `text()` (Promise.resolve keeps this from throwing).
+    await Promise.resolve(response.text?.()).catch(() => {});
     return {
       url, prompts: [], authFailure, category: 'non2xx',
     };
@@ -319,12 +323,19 @@ export async function loadUrlPromptsFromSemrush({
   const baseUrl = resolveApiBaseUrl(env);
   const timeoutMs = resolveSemrushTimeoutMs(env, URL_PROMPTS_TIMEOUT_MS);
   const maxPrompts = resolveMaxUrlPrompts(env);
-  const requests = urls.map(({ url }) => ({
-    url,
-    requestUrl: buildUrlPromptsUrl({
-      baseUrl, spaceCatId, brandId: brand.brandId, url, startDate, endDate,
-    }),
-  }));
+  // Guard against an entry with no usable `url` — it would otherwise build a `url=undefined`
+  // query and waste a request. (Store URLs always carry one; this is defense in depth.)
+  const requests = urls
+    .filter(({ url }) => url)
+    .map(({ url }) => ({
+      url,
+      requestUrl: buildUrlPromptsUrl({
+        baseUrl, spaceCatId, brandId: brand.brandId, url, startDate, endDate,
+      }),
+    }));
+  if (requests.length === 0) {
+    return new Map();
+  }
 
   // Routing-debug line (mirrors domain-urls): surfaces the resolved base URL + prefix, a full
   // sample request URL, and the date window/platform so a misroute (e.g. missing `/api/v1`)

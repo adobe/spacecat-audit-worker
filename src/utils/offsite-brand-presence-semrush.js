@@ -12,6 +12,7 @@
 
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import {
+  LLMO_API_DEFAULT_BASE_URL,
   resolveApiBaseUrl,
   getS2sSessionAuthorization,
   evictS2sSessionToken,
@@ -304,7 +305,9 @@ export async function loadCitedUrlsFromSemrush({
   const elapsed = () => Date.now() - startedAt;
   // Host root + gateway prefix (shared resolver). The LLMO edge routes api-service under
   // `/api/v1` (prod) — both the login and the data call carry it, matching the UI's own
-  // `/api/v1/v2/...` calls.
+  // `/api/v1/v2/...` calls. `baseUrl` (host root only) is kept for the start-log field of the
+  // same name that ops dashboards key on.
+  const baseUrl = env?.LLMO_API_BASE_URL || LLMO_API_DEFAULT_BASE_URL;
   const apiBaseUrl = resolveApiBaseUrl(env);
 
   const notify = async (text) => {
@@ -325,7 +328,7 @@ export async function loadCitedUrlsFromSemrush({
     }
   };
 
-  olog.start('data_acquisition_bp_data_semrush_read', 'Starting Semrush source attempt', { peer: PEER.SEMRUSH, direction: 'inbound', apiBaseUrl });
+  olog.start('data_acquisition_bp_data_semrush_read', 'Starting Semrush source attempt', { peer: PEER.SEMRUSH, direction: 'inbound', baseUrl });
   await notify(':mag: Starting Semrush URL-Inspector lookup...');
 
   const spaceCatId = site?.getOrganizationId?.();

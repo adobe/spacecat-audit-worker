@@ -95,6 +95,52 @@ describe('offsite-s2s-auth', function () {
       expect(imsCreateFrom).to.have.been.called;
     });
 
+    it('maps the SEMRUSH_S2S_* env into IMS_* and defaults the client-code placeholder', async () => {
+      await getAuth({
+        SEMRUSH_S2S_IMS_HOST: 'ims.example.com',
+        SEMRUSH_S2S_CLIENT_ID: 'cid',
+        SEMRUSH_S2S_CLIENT_SECRET: 'sec',
+        SEMRUSH_S2S_CLIENT_SCOPE: 'openid,AdobeID',
+      });
+      const { env } = imsCreateFrom.firstCall.args[0];
+      expect(env).to.include({
+        IMS_HOST: 'ims.example.com',
+        IMS_CLIENT_ID: 'cid',
+        IMS_CLIENT_SECRET: 'sec',
+        IMS_SCOPE: 'openid,AdobeID',
+        // The client_credentials grant never sends the code, but createFrom validates it —
+        // so a placeholder is set explicitly rather than surfacing as a confusing throw.
+        IMS_CLIENT_CODE: 'unused-for-client-credentials',
+      });
+    });
+
+    it('honours a SEMRUSH_S2S_CLIENT_CODE override for IMS_CLIENT_CODE', async () => {
+      await getAuth({ SEMRUSH_S2S_CLIENT_CODE: 'real-code' });
+      expect(imsCreateFrom.firstCall.args[0].env.IMS_CLIENT_CODE).to.equal('real-code');
+    });
+
+    it('sends a well-formed POST to the login endpoint with the imsOrgId body and Bearer IMS token', async () => {
+      await getAuth();
+      const [, opts] = loginCall().args;
+      expect(opts.method).to.equal('POST');
+      expect(opts.headers.Authorization).to.equal('Bearer tok');
+      expect(opts.headers['Content-Type']).to.equal('application/json');
+      expect(opts.headers.Accept).to.equal('application/json');
+      expect(JSON.parse(opts.body)).to.deep.equal({ imsOrgId: IMS_ORG_ID });
+      expect(opts.timeout).to.equal(10_000);
+    });
+
+    it('normalizes a lowercase token_type to a Bearer scheme on the IMS authorization', async () => {
+      getServiceAccessTokenV3.resolves({ token_type: 'bearer', access_token: 'tok' });
+      await getAuth();
+      expect(loginCall().args[1].headers.Authorization).to.equal('Bearer tok');
+    });
+
+    // Both loaders (domain-urls + url-prompts) import getS2sSessionAuthorization from THIS one
+    // module, so at runtime they share this single module-level cache — the "no double-mint
+    // across entry points" guarantee is structural. A cross-loader esmock test can't prove it
+    // (esmock gives each esmock() call its own module instance / cache), so it's asserted here on
+    // the shared implementation both consumers route through.
     it('reuses the cached token for the same org (no double-mint), flagged fromCache', async () => {
       const first = await getAuth();
       const second = await getAuth();
@@ -124,13 +170,21 @@ describe('offsite-s2s-auth', function () {
       expect(error.reason).to.equal('ims_token_failed');
     });
 
-    it('throws with reason=session_token_auth_failed on a 401/403 exchange', async () => {
+    it('throws with reason=session_token_auth_failed on a 403 exchange (with body)', async () => {
       fetchStub.withArgs(sinon.match(isLogin))
         .resolves({ ok: false, status: 403, text: async () => 'denied' });
       const error = await capture(getAuth());
       expect(error.reason).to.equal('session_token_auth_failed');
       expect(error.status).to.equal(403);
       expect(error.responseBody).to.equal('denied');
+    });
+
+    it('classifies a 401 exchange as session_token_auth_failed too', async () => {
+      fetchStub.withArgs(sinon.match(isLogin))
+        .resolves({ ok: false, status: 401, text: async () => '' });
+      const error = await capture(getAuth());
+      expect(error.reason).to.equal('session_token_auth_failed');
+      expect(error.status).to.equal(401);
     });
 
     it('throws with reason=session_token_failed on a non-auth exchange failure', async () => {
@@ -198,6 +252,10 @@ describe('offsite-s2s-auth', function () {
     it('includes consumerId from either consumerId or consumer_id', () => {
       expect(mod.decodeS2sConsumerClaims(makeJwt({ consumerId: 'x' }))).to.include({ consumerId: 'x' });
       expect(mod.decodeS2sConsumerClaims(makeJwt({ consumer_id: 'y' }))).to.include({ consumerId: 'y' });
+    });
+
+    it('omits tenantCount when the token has no tenants claim', () => {
+      expect(mod.decodeS2sConsumerClaims(makeJwt({ client_id: 'cid' }))).to.not.have.property('tenantCount');
     });
 
     it('returns {} for a token with no payload segment', () => {

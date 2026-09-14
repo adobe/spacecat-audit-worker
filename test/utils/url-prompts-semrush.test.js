@@ -213,6 +213,20 @@ describe('url-prompts-semrush', function () {
     expect(olog.warn.lastCall.args[2]).to.include({ non2xx: 1 });
   });
 
+  it('drains the body of a non-2xx response so the connection is released', async () => {
+    const text = sandbox.stub().resolves('error body');
+    fetchStub.resolves({ ok: false, status: 500, text });
+    const result = await run([{ url: URL_A }]);
+    expect(result.size).to.equal(0);
+    expect(text).to.have.been.called;
+  });
+
+  it('tolerates a non-2xx body-drain that rejects (best-effort, never throws)', async () => {
+    fetchStub.resolves({ ok: false, status: 500, text: sandbox.stub().rejects(new Error('x')) });
+    const result = await run([{ url: URL_A }]);
+    expect(result.size).to.equal(0);
+  });
+
   it('evicts the cached session token when a request is rejected with 401/403', async () => {
     fetchStub.callsFake(async (url) => {
       const target = new URL(url).searchParams.get('url');
@@ -351,6 +365,31 @@ describe('url-prompts-semrush', function () {
     expect(result.size).to.equal(0);
     expect(getS2sSessionAuthorization).to.not.have.been.called;
     expect(olog.failure.lastCall.args[2]).to.include({ reason: 'prerequisites_failed' });
+  });
+
+  it('returns an empty Map when getDateWindowForPreviousWeeks throws (never throws out)', async () => {
+    mod = await loadModule({
+      '../../src/utils/offsite-brand-presence-postgrest.js': {
+        getDateWindowForPreviousWeeks: () => { throw new Error('boom'); },
+      },
+    });
+    const result = await run([{ url: URL_A }]);
+    expect(result.size).to.equal(0);
+    expect(olog.failure.lastCall.args[2]).to.include({ reason: 'prerequisites_failed' });
+  });
+
+  it('skips entries without a usable url and never builds a url=undefined request', async () => {
+    fetchStub.resolves(okJson({ prompts: [{ prompt: 'p' }] }));
+    const result = await run([{ url: URL_A }, {}]);
+    expect(fetchStub.callCount).to.equal(1);
+    expect(fetchStub.firstCall.args[0]).to.not.contain('url=undefined');
+    expect(result.get(URL_A)).to.deep.equal(['p']);
+  });
+
+  it('returns an empty Map when no entry has a usable url', async () => {
+    const result = await run([{}, { url: '' }]);
+    expect(result.size).to.equal(0);
+    expect(fetchStub).to.not.have.been.called;
   });
 
   it('coerces non-string prompt rows out and truncates oversized strings at ingestion', async () => {
