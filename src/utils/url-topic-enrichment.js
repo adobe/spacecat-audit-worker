@@ -99,7 +99,9 @@ export function enrichUrlsWithTopicData(urls, topics) {
       ...urlItem,
       ...(match.categories.size > 0 && { categories: [...match.categories] }),
       ...(match.timesCited > 0 && { timesCited: match.timesCited }),
-      ...(match.prompts.size > 0 && { prompts: [...match.prompts] }),
+      // Don't clobber Semrush-sourced prompts (url-prompts-semrush.js) with the legacy
+      // brand-presence-topic ones when both happen to match the same URL.
+      ...(!urlItem.isUrlFromSemrush && match.prompts.size > 0 && { prompts: [...match.prompts] }),
     };
   });
 }

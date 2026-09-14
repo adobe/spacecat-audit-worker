@@ -371,6 +371,82 @@ async function exchangeForSessionToken({ loginUrl, imsAuthorization, imsOrgId })
 }
 
 /**
+ * Resolves the fully-qualified api-service base URL (host root + gateway prefix) for the
+ * Semrush-backed Serenity endpoints. Both the S2S login and every data route must carry the
+ * `/api/v1` prefix on the LLMO edge (see {@link LLMO_API_DEFAULT_BASE_URL} /
+ * {@link LLMO_API_DEFAULT_PREFIX}). Shared by every Semrush loader (`domain-urls`,
+ * `url-prompts`) so host/prefix resolution stays in one place.
+ *
+ * @param {object} [env]
+ * @returns {string} e.g. `https://llmo.experiencecloud.live/api/v1`
+ */
+export function resolveApiBaseUrl(env) {
+  const baseUrl = env?.LLMO_API_BASE_URL || LLMO_API_DEFAULT_BASE_URL;
+  return `${baseUrl}${env?.LLMO_API_PREFIX || LLMO_API_DEFAULT_PREFIX}`;
+}
+
+/**
+ * Obtains a customer-scoped S2S session-token `Authorization` header for `imsOrgId`, reusing
+ * the module-level session-token cache so a warm container mints once per org per TTL no matter
+ * which loader (`domain-urls` or `url-prompts`) asks first. Encapsulates legs 2+3 of
+ * {@link loadCitedUrlsFromSemrush}: mint the consumer IMS token (`client_credentials`), then
+ * exchange it for a session token whose `tenants` claim names `imsOrgId`.
+ *
+ * On failure the thrown error carries a `.reason` fallback code (`ims_token_failed` |
+ * `session_token_auth_failed` | `session_token_failed`) — plus `.status`/`.responseBody` on the
+ * exchange leg — so best-effort callers can log/branch without re-deriving the classification.
+ * On a data-call `401/403` the caller should {@link evictSessionToken} to drop a stale cached
+ * token so the next run self-heals.
+ *
+ * @param {object} params
+ * @param {object} params.context - Lambda context (env + log).
+ * @param {string} params.imsOrgId - Customer IMS org id (`...@AdobeOrg`) to scope the token.
+ * @returns {Promise<string>} `Bearer <sessionToken>`.
+ * @throws {Error} with `.reason` (and `.status`/`.responseBody` on exchange failure).
+ */
+export async function getS2sSessionAuthorization({ context, imsOrgId }) {
+  const { env } = context;
+  const nowMs = Date.now();
+  const cached = getCachedSessionToken(imsOrgId, nowMs);
+  if (cached) {
+    return `Bearer ${cached}`;
+  }
+
+  let imsAuthorization;
+  try {
+    imsAuthorization = await getImsAuthorizationHeader(context);
+  } catch (error) {
+    error.reason = 'ims_token_failed';
+    throw error;
+  }
+
+  const loginUrl = env?.LLMO_S2S_LOGIN_URL || `${resolveApiBaseUrl(env)}/auth/s2s/login`;
+  let sessionToken;
+  try {
+    sessionToken = await exchangeForSessionToken({ loginUrl, imsAuthorization, imsOrgId });
+  } catch (error) {
+    error.reason = (error.status === 401 || error.status === 403)
+      ? 'session_token_auth_failed'
+      : 'session_token_failed';
+    throw error;
+  }
+
+  cacheSessionToken(imsOrgId, sessionToken, nowMs, resolveSessionTtlMs(env));
+  return `Bearer ${sessionToken}`;
+}
+
+/**
+ * Drops the cached session token for `imsOrgId` (exported wrapper over the module-level cache)
+ * so a best-effort caller that sees a `401/403` on a data call can force the next run to
+ * re-mint instead of replaying a revoked/rotated token for the rest of its TTL.
+ *
+ * @param {string} imsOrgId
+ */
+export function evictS2sSessionToken(imsOrgId) {
+  evictSessionToken(imsOrgId);
+}
+
+/**
  * Builds the single `domain-urls` request URL: no `hostname` (returns every source host)
  * and `platform=all` (Semrush aggregates citations across every AI engine server-side).
  *

@@ -975,4 +975,86 @@ describe('offsite-brand-presence-semrush', function () {
       expect(new URL(url).searchParams.get('pageSize')).to.equal('777');
     });
   });
+
+  // --- shared S2S auth helpers (reused by url-prompts-semrush) ---------------
+
+  describe('resolveApiBaseUrl', () => {
+    it('defaults to the LLMO host + /api/v1 prefix', () => {
+      expect(mod.resolveApiBaseUrl(undefined)).to.equal('https://llmo.experiencecloud.live/api/v1');
+    });
+
+    it('honours LLMO_API_BASE_URL and LLMO_API_PREFIX overrides', () => {
+      expect(mod.resolveApiBaseUrl({
+        LLMO_API_BASE_URL: 'https://stage.example', LLMO_API_PREFIX: '/api/ci',
+      })).to.equal('https://stage.example/api/ci');
+    });
+  });
+
+  describe('getS2sSessionAuthorization', () => {
+    const getAuth = (env = {}) => mod.getS2sSessionAuthorization({
+      context: makeContext(env), imsOrgId: IMS_ORG_ID,
+    });
+    const capture = async (promise) => {
+      try {
+        await promise;
+        return null;
+      } catch (error) {
+        return error;
+      }
+    };
+
+    it('mints an IMS token, exchanges it, and returns the Bearer session token', async () => {
+      const auth = await getAuth();
+      expect(auth).to.equal(`Bearer ${SESSION_TOKEN}`);
+      expect(loginCallCount()).to.equal(1);
+      expect(imsCreateFrom).to.have.been.called;
+    });
+
+    it('reuses the cached session token for the same org (mints/logs in once)', async () => {
+      const first = await getAuth();
+      const second = await getAuth();
+      expect(second).to.equal(first);
+      expect(loginCallCount()).to.equal(1);
+      expect(getServiceAccessTokenV3).to.have.been.calledOnce;
+    });
+
+    it('honours the LLMO_S2S_LOGIN_URL override', async () => {
+      await getAuth({ LLMO_S2S_LOGIN_URL: 'https://alt.example/auth/s2s/login' });
+      expect(loginCall().args[0]).to.equal('https://alt.example/auth/s2s/login');
+    });
+
+    it('throws with reason=ims_token_failed when the IMS mint fails', async () => {
+      getServiceAccessTokenV3.rejects(new Error('ims down'));
+      const error = await capture(getAuth());
+      expect(error).to.be.an('error');
+      expect(error.reason).to.equal('ims_token_failed');
+      expect(loginCallCount()).to.equal(0);
+    });
+
+    it('throws with reason=session_token_auth_failed on a 401/403 exchange', async () => {
+      fetchStub.withArgs(sinon.match(isLogin))
+        .resolves({ ok: false, status: 403, text: async () => 'denied' });
+      const error = await capture(getAuth());
+      expect(error.reason).to.equal('session_token_auth_failed');
+      expect(error.status).to.equal(403);
+    });
+
+    it('throws with reason=session_token_failed on a non-auth exchange failure', async () => {
+      fetchStub.withArgs(sinon.match(isLogin))
+        .resolves({ ok: false, status: 500, text: async () => 'boom' });
+      const error = await capture(getAuth());
+      expect(error.reason).to.equal('session_token_failed');
+    });
+  });
+
+  describe('evictS2sSessionToken', () => {
+    it('drops the cached token so the next call re-mints', async () => {
+      const context = makeContext();
+      await mod.getS2sSessionAuthorization({ context, imsOrgId: IMS_ORG_ID });
+      expect(loginCallCount()).to.equal(1);
+      mod.evictS2sSessionToken(IMS_ORG_ID);
+      await mod.getS2sSessionAuthorization({ context, imsOrgId: IMS_ORG_ID });
+      expect(loginCallCount()).to.equal(2);
+    });
+  });
 });

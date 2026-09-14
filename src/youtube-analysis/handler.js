@@ -32,6 +32,7 @@ import {
 import { OFFSITE_DOMAINS } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
+import { loadUrlPromptsFromSemrush } from '../utils/url-prompts-semrush.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
@@ -83,10 +84,12 @@ function getYouTubeConfig(site) {
  * Fetches all required data from stores for YouTube analysis
  * @param {string} siteId - The site ID
  * @param {Object} context - The audit context
+ * @param {Object} site - The site being audited
+ * @param {boolean} [enableSemrush] - When true, enrich URLs with Semrush url-prompts data
  * @returns {Promise<Object>} Object containing urls and sentimentConfig
  * @throws {StoreEmptyError} If any store returns empty results
  */
-async function fetchStoreData(siteId, context, site) {
+async function fetchStoreData(siteId, context, site, enableSemrush) {
   const { log } = context;
   const olog = createOffsiteLogger(log, { audit: AUDIT.YOUTUBE, siteId });
   const storeClient = StoreClient.createFrom(context);
@@ -105,6 +108,24 @@ async function fetchStoreData(siteId, context, site) {
   olog.success('data_acquisition_drs_scrape_content_checked', `${urls.length} YouTube URLs available in DRS${formatDrsExtras(counts)}`, {
     peer: PEER.DRS, direction: 'outbound', available: urls.length,
   });
+
+  // NOTE: there's currently no way to tell whether an individual URL actually came from
+  // the Semrush citations pipeline vs. the legacy brand-presence source — assume Semrush
+  // for every URL whenever the flag is on, until source-tracking exists on AuditUrl
+  // records (revisit later).
+  let semrushEnrichedUrls = urls;
+  if (enableSemrush) {
+    const semrushCandidates = urls.slice(0, MYSTIQUE_URLS_LIMIT);
+    const urlPromptsMap = await loadUrlPromptsFromSemrush({
+      site, urls: semrushCandidates, context,
+    });
+    const semrushCandidateSet = new Set(semrushCandidates.map((item) => item.url));
+    semrushEnrichedUrls = urls.map((item) => (semrushCandidateSet.has(item.url) ? {
+      ...item,
+      isUrlFromSemrush: true,
+      ...(urlPromptsMap.get(item.url)?.length > 0 && { prompts: urlPromptsMap.get(item.url) }),
+    } : item));
+  }
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
   olog.success('data_acquisition_bp_data_topics_resolved', 'Computed topics from brand presence data', {
@@ -127,7 +148,7 @@ async function fetchStoreData(siteId, context, site) {
   }
 
   return {
-    urls,
+    urls: semrushEnrichedUrls,
     sentimentConfig: { topics, guidelines },
     drsCounts: counts,
   };
@@ -188,7 +209,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
 
     olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS', {});
 
-    const storeData = await fetchStoreData(siteId, context, site);
+    const storeData = await fetchStoreData(siteId, context, site, enableSemrush);
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
     // a prior scrape (direct/scheduled run) changes the log and Slack wording so the thread
     // reads as a coherent sequence rather than a contradictory "no scrape needed".
