@@ -129,6 +129,7 @@ import offsiteBrandPresenceDrsStatus from './offsite-brand-presence/drs-status-h
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import { refreshGeoBrandPresenceDailyHandler } from './geo-brand-presence-daily/geo-brand-presence-refresh-handler.js';
 import brandClaims from './brand-claims/handler.js';
+import { analyze as seoGapAnalysis, aggregate as seoGapAnalysisAggregate } from './seo-gap-analysis/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -243,6 +244,10 @@ const HANDLERS = {
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'refresh:geo-brand-presence-daily': refreshGeoBrandPresenceDailyHandler,
   'brand-claims': brandClaims,
+  // SEO gap analysis: phase 1 (SERP + scrape fan-out) and phase 2 (aggregate + diff).
+  // Phase 2 is keyed on the content-scraper completion `type` (seo-comparison).
+  'seo-gap-analysis': seoGapAnalysis,
+  'seo-comparison': seoGapAnalysisAggregate,
   'rum-config-refresh': rumConfigRefresh,
   dummy: (message) => ok(message),
 };
