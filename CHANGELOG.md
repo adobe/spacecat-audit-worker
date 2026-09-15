@@ -1,3 +1,10 @@
+# [1.538.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.5...v1.538.0) (2026-09-15)
+
+
+### Features
+
+* **url-prompts:** Semrush url-prompts enrichment over S2S (LLMO-6712) ([#2972](https://github.com/adobe/spacecat-audit-worker/issues/2972)) ([0c60087](https://github.com/adobe/spacecat-audit-worker/commit/0c60087a1b41a8e51e40a4e2194857603cc7402b)), closes [#2872](https://github.com/adobe/spacecat-audit-worker/issues/2872) [#2965](https://github.com/adobe/spacecat-audit-worker/issues/2965) [#2970](https://github.com/adobe/spacecat-audit-worker/issues/2970) [#2971](https://github.com/adobe/spacecat-audit-worker/issues/2971) [#2872](https://github.com/adobe/spacecat-audit-worker/issues/2872)
+
 ## [1.537.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.4...v1.537.5) (2026-09-14)
 
 
