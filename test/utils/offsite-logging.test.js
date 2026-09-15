@@ -158,6 +158,23 @@ describe('offsite-logging helper', () => {
       expect(errorField(undefined)).to.deep.equal({});
       expect(errorField(null)).to.deep.equal({});
     });
+
+    it('also extracts name and message from an Error cause, when present', () => {
+      const cause = new TypeError('the real failure');
+      expect(errorField(new Error('generic reason', { cause }))).to.deep.equal({
+        errorName: 'Error',
+        errorMessage: 'generic reason',
+        errorCauseName: 'TypeError',
+        errorCauseMessage: 'the real failure',
+      });
+    });
+
+    it('omits cause fields when cause is not an Error', () => {
+      expect(errorField(new Error('reason', { cause: 'not an error' }))).to.deep.equal({
+        errorName: 'Error',
+        errorMessage: 'reason',
+      });
+    });
   });
 
   describe('resolveTriggerFields', () => {
