@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-const DAYS = 84; // 12 weeks
+export const DAYS = 84; // 12 weeks
 // GSC finalizes data with a ~2-3 day lag; treat the trailing 3 days as not yet available.
 export const GSC_LAG_DAYS = 3;
 // GSC retains ~16 months of history; older data falls off and returns empty.
