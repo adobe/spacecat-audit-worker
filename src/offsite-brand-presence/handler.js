@@ -26,6 +26,7 @@ import {
   resolveDrsPollIntervalSeconds,
   resolveEnableBrandProfile,
   resolveEnableSemrush,
+  resolveEnableSemrushWithHardstop,
   resolveForwardedUrlLimit,
 } from '../utils/offsite-audit-utils.js';
 import {
@@ -721,6 +722,8 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
  *   scraping completes (see drs-status-handler.js) still honor the same per-run Semrush
  *   override originally requested on Slack, instead of silently reverting to the env var
  *   across the scrape round-trip — mirrors enableBrandProfile/urlLimit exactly.
+ * @param {boolean} [enableSemrushWithHardstop] - Forwarded identically so the debug hardstop
+ *   flag reaches those analysis audits after the scrape round-trip.
  */
 async function scheduleDrsStatusPoll(
   drsResults,
@@ -733,6 +736,7 @@ async function scheduleDrsStatusPoll(
   enableBrandProfile,
   urlLimit,
   enableSemrush,
+  enableSemrushWithHardstop,
 ) {
   const { sqs, dataAccess, log } = context;
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
@@ -764,6 +768,7 @@ async function scheduleDrsStatusPoll(
       ...(enableBrandProfile != null && { enableBrandProfile }),
       ...(urlLimit != null && { urlLimit }),
       ...(enableSemrush != null && { enableSemrush }),
+      ...(enableSemrushWithHardstop != null && { enableSemrushWithHardstop }),
     },
   }, null, pollIntervalSeconds);
 
@@ -806,6 +811,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
   const urlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
   const enableSemrushOverride = resolveEnableSemrush(auditContext, olog);
+  // Debug hardstop flag — this orchestrator only forwards it; the hardstop itself happens in
+  // the analysis audits (cited/youtube/reddit) triggered once DRS scraping completes.
+  const enableSemrushWithHardstop = resolveEnableSemrushWithHardstop(auditContext, olog);
 
   // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
   // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
@@ -1026,6 +1034,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         enableBrandProfile,
         urlLimit,
         enableSemrushOverride,
+        enableSemrushWithHardstop,
       );
     } catch (err) {
       // The DRS jobs were already submitted successfully, but with no poll ever scheduled,
