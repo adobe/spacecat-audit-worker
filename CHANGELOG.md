@@ -1,3 +1,10 @@
+# [1.539.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.538.0...v1.539.0) (2026-09-15)
+
+
+### Features
+
+* index opportunity and suggestion source URLs on persist ([#2928](https://github.com/adobe/spacecat-audit-worker/issues/2928)) ([d561129](https://github.com/adobe/spacecat-audit-worker/commit/d561129aecedba1bbe36e95a8d4991b7d54bf435))
+
 # [1.538.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.5...v1.538.0) (2026-09-15)
 
 
