@@ -74,7 +74,12 @@ sink does not surface a second-arg object to Splunk — see ADR 002).
   `audit_housekeeping_start`, `audit_housekeeping_outdated_opportunities_read`,
   `audit_housekeeping_outdated_opportunities_deleted`,
   `audit_housekeeping_outdated_suggestions_read`,
-  `audit_housekeeping_outdated_suggestions_deleted`, `audit_housekeeping_end`.
+  `audit_housekeeping_outdated_suggestions_deleted`, `audit_housekeeping_end`,
+  `audit_funneling_start`, `audit_funneling_index_url_synced`, `audit_funneling_end` (the last three
+  are emitted only by the four types that index source URLs —
+  `wikipedia`/`cited`/`reddit`/`youtube`-analysis; the sync-outcome event names the URL lookup
+  dimension directly rather than carrying it in a field, while `start`/`end` stay the phase's fixed
+  generic boundary pair; see ADR [006](../decisions/006-lookup-service-write-foundation.md)).
 
 ### Gaps closed (P1–P4)
 - P1: `data_acquisition_drs_scrape_job_request_dispatched` skip/failure reasons (no_ims_org,

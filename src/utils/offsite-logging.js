@@ -145,18 +145,25 @@ export function appendFields(message, fields = {}) {
 }
 
 /**
- * Normalize an Error into taxonomy fields (`errorName`, `errorMessage`). Routing the message
- * through a field means it is quoted/sanitized by {@link renderField} rather than interpolated
- * raw into the log message, which closes the injection surface for upstream error text.
+ * Normalize an Error into taxonomy fields (`errorName`, `errorMessage`, and - when `err.cause` is
+ * itself an `Error` - `errorCauseName`/`errorCauseMessage`). Routing the message through a field
+ * means it is quoted/sanitized by {@link renderField} rather than interpolated raw into the log
+ * message, which closes the injection surface for upstream error text.
  *
  * @param {Error} [err]
- * @returns {{errorName?: string, errorMessage?: string}} empty object when no error
+ * @returns {{errorName?: string, errorMessage?: string, errorCauseName?: string,
+ *   errorCauseMessage?: string}} empty object when no error
  */
 export function errorField(err) {
   if (!err) {
     return {};
   }
-  return { errorName: err.name, errorMessage: err.message };
+  const fields = { errorName: err.name, errorMessage: err.message };
+  if (err.cause instanceof Error) {
+    fields.errorCauseName = err.cause.name;
+    fields.errorCauseMessage = err.cause.message;
+  }
+  return fields;
 }
 
 /**
