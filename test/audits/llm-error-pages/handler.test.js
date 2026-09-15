@@ -1914,8 +1914,33 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
       httpStatus: 404,
       agentTypes: ['Chatbots'],
       userAgents: ['ChatGPT'],
+      perAgent: {},
       avgTtfb: '50.0',
     });
+    // Absent perAgent on the input falls back to {} on both the history entry and the
+    // top-level snapshot (backward-compatible with pre-perAgent callers).
+    expect(mapped.data.perAgent).to.deep.equal({});
+  });
+
+  it('mapNewSuggestion carries an exact perAgent split when present', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+    const mapped = mapNewSuggestion({
+      url: '/p1',
+      httpStatus: 404,
+      hitCount: 12,
+      agentTypes: ['Chatbots'],
+      userAgents: ['ChatGPT', 'Claude'],
+      perAgent: { ChatGPT: 9, Claude: 3 },
+      avgTtfb: '50.0',
+    });
+    expect(mapped.data.perAgent).to.deep.equal({ ChatGPT: 9, Claude: 3 });
+    expect(mapped.data.history[0].perAgent).to.deep.equal({ ChatGPT: 9, Claude: 3 });
   });
 
   it('mergeDataFunction appends the current week to an existing data.history', async () => {
@@ -1953,6 +1978,35 @@ describe('LLM Error Pages Handler — DB dual-write', function () {
     expect(merged.history).to.have.lengthOf(2);
     expect(merged.history.map((h) => h.periodIdentifier)).to.deep.equal(['w14-2026', 'w15-2026']);
     expect(merged.history[1].userAgents).to.deep.equal(['Claude']);
+    // newDataItem had no perAgent → falls back to {} on the snapshot and the new week entry.
+    expect(merged.perAgent).to.deep.equal({});
+    expect(merged.history[1].perAgent).to.deep.equal({});
+  });
+
+  it('mergeDataFunction carries an exact perAgent split when present', async () => {
+    const sandbox = sinon.createSandbox();
+    const { handler, mockSyncSuggestions } = await buildHandler(sandbox);
+    const ctx = buildContext(sandbox);
+
+    await handler.runAuditAndSendToMystique(ctx);
+
+    const { mergeDataFunction } = mockSyncSuggestions.firstCall.args[0];
+    const merged = mergeDataFunction(
+      { url: '/p1', history: [] },
+      {
+        hitCount: 99,
+        httpStatus: 404,
+        agentTypes: ['Chatbots'],
+        userAgents: ['ChatGPT', 'Claude'],
+        perAgent: { ChatGPT: 70, Claude: 29 },
+        avgTtfb: '30.0',
+        countryCode: 'US',
+        product: 'P',
+        category: 'C',
+      },
+    );
+    expect(merged.perAgent).to.deep.equal({ ChatGPT: 70, Claude: 29 });
+    expect(merged.history[0].perAgent).to.deep.equal({ ChatGPT: 70, Claude: 29 });
   });
 
   it('runs retention sweep on existing opportunity for empty buckets', async () => {
