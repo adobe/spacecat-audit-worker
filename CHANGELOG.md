@@ -1,3 +1,10 @@
+## [1.541.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.541.0...v1.541.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **offsite:** preserve YouTube URL form + dedupe by video id so url-prompts matches (LLMO-6712) ([#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981)) ([74d07cb](https://github.com/adobe/spacecat-audit-worker/commit/74d07cb88d2bbc956ab79fab3a6e517f495efac1))
+
 # [1.541.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.540.1...v1.541.0) (2026-09-16)
 
 
