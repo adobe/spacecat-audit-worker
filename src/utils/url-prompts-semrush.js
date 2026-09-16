@@ -357,6 +357,9 @@ export async function loadUrlPromptsFromSemrush({
   const requests = urls
     .filter(({ url }) => url)
     .map(({ url }) => ({
+      // Query the stored url AS-IS: it's the exact form Semrush returned from domain-urls, which
+      // is what Semrush keys `CBF_source` on (watch OR youtu.be). Rewriting the form here would
+      // break the exact match for whichever form Semrush actually stored.
       url,
       requestUrl: buildUrlPromptsUrl({
         baseUrl, spaceCatId, brandId: brand.brandId, url, startDate, endDate,

@@ -38,7 +38,7 @@ const SESSION_TOKEN = 'sess-jwt-token';
 const PREVIOUS_WEEKS = [{ week: 29, year: 2026 }, { week: 28, year: 2026 }];
 
 const YT_URL = 'https://www.youtube.com/watch?v=abc';
-const YT_NORM = 'https://youtu.be/abc';
+const YT_NORM = 'https://www.youtube.com/watch?v=abc';
 const RD_URL = 'https://www.reddit.com/r/Lovesac/comments/1/pros_cons';
 const CITED_URL = 'https://example.org/page';
 
@@ -377,6 +377,18 @@ describe('offsite-brand-presence-semrush', function () {
     }));
     const allUrls = await run();
     expect(allUrls.get(YT_NORM).count).to.equal(7);
+  });
+
+  it('collapses the youtu.be and watch forms of one video, summing citations (keeps first form)', async () => {
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: 'https://youtu.be/abc', citations: 3 }, // first occurrence — form kept
+        { url: YT_URL, citations: 4 }, // watch form of the same video (v=abc) — folds in
+      ],
+    }));
+    const allUrls = await run();
+    expect(allUrls.get('https://youtu.be/abc')).to.deep.equal({ count: 7, domain: 'youtube.com' });
+    expect(allUrls.has(YT_NORM)).to.equal(false);
   });
 
   it('sums duplicate URLs within the cited bucket too', async () => {
