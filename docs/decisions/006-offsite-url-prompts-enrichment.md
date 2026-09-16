@@ -60,6 +60,15 @@ the `domain-urls` source, there is no alternative prompt source, and enrichment 
 metadata. On success it logs a `debug` line with the decoded consumer identity + cache-hit state
 (observability parity with `domain-urls`).
 
+**Entitlement gate.** Before minting an IMS token / S2S login, the loader runs the SAME shared
+`resolveSemrushEntitlement(context, { orgId, brandId })` flag-AND-workspace check the `domain-urls`
+source uses (a local feature-flag + workspace DB read, **not** a Semrush call; fails closed). A
+brand that isn't provisioned for Semrush therefore skips the wasted auth round-trip and returns an
+empty `Map` (`reason: not_entitled`, or `entitlement_check_failed` when the check is inconclusive),
+instead of relying on the S2S login to 403. This makes the "should we call Semrush at all?"
+decision one reusable check shared across every offsite audit (`domain-urls` + the three
+`url-prompts` analysis audits).
+
 The three analysis handlers call a single shared `enrichUrlsWithSemrushPrompts({ urls, site,
 context, olog, limit })` (one enrichment code path, not three copies). `limit` is the run's
 resolved Mystique URL limit, so enrichment fans out over exactly the set that will be
