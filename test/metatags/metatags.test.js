@@ -33,6 +33,7 @@ import {
   ONE_H1_ON_A_PAGE,
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
+import { isSuggestionLengthValid } from '../../src/metatags/metatags-auto-suggest.js';
 import testData from '../fixtures/meta-tags-data.js';
 import { removeTrailingSlash, getBaseUrl } from '../../src/utils/url-utils.js';
 import {
@@ -2767,6 +2768,113 @@ describe('Meta Tags', () => {
         );
         expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
       }).timeout(15000);
+
+      // SITES-42023: a description below the ideal 140-160 range fails the audit's own length
+      // check, so shipping it verbatim causes the next run to re-flag "Description too short".
+      it('retries Genvar when a description suggestion is below the ideal length and keeps the valid one', async () => {
+        const tooShort = `A${'a'.repeat(133)}`; // 134 chars -> below idealMinLength (140)
+        const inRange = `B${'b'.repeat(144)}`; // 145 chars -> within 140-160
+        genvarClientStub.generateSuggestions.onFirstCall().resolves({
+          '/add-on-and-refresh': {
+            description: { aiRationale: 'r', aiSuggestion: tooShort },
+            h1: { aiRationale: 'r', aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons' },
+          },
+        });
+        genvarClientStub.generateSuggestions.onSecondCall().resolves({
+          '/add-on-and-refresh': {
+            description: { aiRationale: 'r', aiSuggestion: inRange },
+            h1: { aiRationale: 'r', aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons' },
+          },
+        });
+
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
+
+        expect(genvarClientStub.generateSuggestions).to.have.been.calledTwice;
+        expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal(inRange);
+      }).timeout(15000);
+
+      it('ships the best-effort suggestion and warns when the ideal length is never reached', async () => {
+        const tooShort = `A${'a'.repeat(133)}`; // 134 chars, always below 140
+        genvarClientStub.generateSuggestions.resolves({
+          '/add-on-and-refresh': {
+            description: { aiRationale: 'r', aiSuggestion: tooShort },
+          },
+        });
+
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
+
+        // Retried up to the cap (1 initial + 2 retries), then shipped best-effort.
+        expect(genvarClientStub.generateSuggestions).to.have.been.calledThrice;
+        expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal(tooShort);
+        expect(log.warn).to.have.been.calledWithMatch(/outside the recommended length range \(134 chars\) after 3 attempts/);
+      }).timeout(15000);
+
+      it('locks in a length-valid suggestion and does not overwrite it on retry', async () => {
+        const validH1 = 'Revitalize Your Home with Lovesac Add-Ons'; // 41 chars, <= 70
+        const shortDesc = `A${'a'.repeat(133)}`; // 134 chars, triggers a retry
+        const goodDesc = `B${'b'.repeat(149)}`; // 150 chars, in range
+        genvarClientStub.generateSuggestions.onFirstCall().resolves({
+          '/add-on-and-refresh': {
+            h1: { aiRationale: 'r', aiSuggestion: validH1 },
+            description: { aiRationale: 'r', aiSuggestion: shortDesc },
+          },
+        });
+        // Second call regenerates the (already-valid) h1 differently; it must be ignored.
+        genvarClientStub.generateSuggestions.onSecondCall().resolves({
+          '/add-on-and-refresh': {
+            h1: { aiRationale: 'r', aiSuggestion: 'A Completely Different H1 That Should Be Ignored' },
+            description: { aiRationale: 'r', aiSuggestion: goodDesc },
+          },
+        });
+
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
+
+        expect(genvarClientStub.generateSuggestions).to.have.been.calledTwice;
+        expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal(validH1);
+        expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal(goodDesc);
+      }).timeout(15000);
+
+      it('ignores suggestions for tags that were not detected', async () => {
+        genvarClientStub.generateSuggestions.resolves({
+          '/about-us': {
+            // title was not detected for /about-us (only h1 was), so it must be dropped
+            title: { aiRationale: 'r', aiSuggestion: 'A Perfectly Fine Title Within Range' },
+            h1: { aiRationale: 'r', aiSuggestion: 'Our Story: Innovating Comfort for Every Home' },
+          },
+        });
+
+        const opts = { forceAutoSuggest: true };
+        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
+
+        expect(response['/about-us'].title).to.be.undefined;
+        expect(response['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
+      }).timeout(15000);
+
+      describe('isSuggestionLengthValid', () => {
+        it('accepts a description within the ideal 140-160 range', () => {
+          expect(isSuggestionLengthValid('description', 'x'.repeat(150))).to.be.true;
+        });
+        it('rejects a description below the ideal range', () => {
+          expect(isSuggestionLengthValid('description', 'x'.repeat(134))).to.be.false;
+        });
+        it('rejects a description above the ideal range', () => {
+          expect(isSuggestionLengthValid('description', 'x'.repeat(170))).to.be.false;
+        });
+        it('accepts a title within the ideal 40-60 range', () => {
+          expect(isSuggestionLengthValid('title', 'x'.repeat(50))).to.be.true;
+        });
+        it('accepts an h1 with no lower bound but rejects an empty one', () => {
+          expect(isSuggestionLengthValid('h1', 'x'.repeat(40))).to.be.true;
+          expect(isSuggestionLengthValid('h1', '')).to.be.false;
+          expect(isSuggestionLengthValid('h1', 'x'.repeat(71))).to.be.false;
+        });
+        it('treats a missing suggestion as length 0', () => {
+          expect(isSuggestionLengthValid('description', undefined)).to.be.false;
+        });
+      });
 
       it('should log an error and throw if the Genvar API call fails', async () => {
         genvarClientStub.generateSuggestions.throws(new Error('Genvar API failed'));
