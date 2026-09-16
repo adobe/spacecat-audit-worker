@@ -2061,6 +2061,101 @@ describe('Preflight Audit', () => {
       expect(completedJobEntity.save).not.to.have.been.called;
     });
 
+    it('preserves a job completed by guidance when a later preflight handler fails', async () => {
+      const handlerOrder = [];
+      const enrichedResult = [{
+        pageUrl: 'https://main--example--page.aem.page/page1',
+        step: PREFLIGHT_STEP_SUGGEST,
+        audits: [{
+          name: 'readability',
+          opportunities: [{
+            suggestionStatus: 'completed',
+            aiSuggestion: 'A clearer paragraph.',
+          }],
+        }],
+      }];
+      const metadataJobEntity = {
+        getMetadata: sinon.stub().returns({ payload: {} }),
+        setMetadata: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const completedJobEntity = {
+        getStatus: sinon.stub().returns('COMPLETED'),
+        getResult: sinon.stub().returns(enrichedResult),
+        setStatus: sinon.stub(),
+        setError: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const mockContext = new MockContextBuilder()
+        .withSandbox(sinon.createSandbox())
+        .withOverrides({
+          job: {
+            getMetadata: () => ({
+              payload: {
+                step: PREFLIGHT_STEP_SUGGEST,
+                urls: ['https://main--example--page.aem.page/page1'],
+                enableAuthentication: false,
+              },
+            }),
+            getStatus: sinon.stub().returns('IN_PROGRESS'),
+            getId: () => 'job-123',
+          },
+          site,
+          s3Client,
+          func: { version: 'test' },
+        })
+        .build();
+
+      mockContext.dataAccess.AsyncJob.findById = sinon.stub();
+      mockContext.dataAccess.AsyncJob.findById.onFirstCall().resolves(metadataJobEntity);
+      mockContext.dataAccess.AsyncJob.findById.onSecondCall().resolves(completedJobEntity);
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().callsFake(
+          (handlerName) => [
+            'preflight',
+            'readability-preflight',
+            'accessibility-preflight',
+          ].includes(handlerName),
+        ),
+        getHandlers: () => ({
+          preflight: { productCodes: ['aem-sites'] },
+          'readability-preflight': { productCodes: ['aem-sites'] },
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+        }),
+      };
+      mockContext.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+
+      const preflightError = new Error('accessibility failed');
+      const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/readability/preflight/handler.js': {
+          default: sinon.stub().callsFake(async () => {
+            handlerOrder.push('readability-completed');
+            return { processing: true };
+          }),
+        },
+        '../../src/preflight/accessibility.js': {
+          default: sinon.stub().callsFake(async () => {
+            handlerOrder.push('accessibility-failed');
+            throw preflightError;
+          }),
+        },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
+        },
+      });
+
+      await expect(testPreflightAudit(mockContext)).to.be.rejectedWith('accessibility failed');
+
+      expect(handlerOrder).to.deep.equal(['readability-completed', 'accessibility-failed']);
+      expect(completedJobEntity.getResult()).to.equal(enrichedResult);
+      expect(completedJobEntity.setStatus).not.to.have.been.called;
+      expect(completedJobEntity.setError).not.to.have.been.called;
+      expect(completedJobEntity.setEndedAt).not.to.have.been.called;
+      expect(completedJobEntity.save).not.to.have.been.called;
+    });
+
     it('should handle null handlerResults and use fallback', async () => {
       // This test covers the || [] fallback on line 269 when handlerResults is null/undefined
       const mockContext = new MockContextBuilder()

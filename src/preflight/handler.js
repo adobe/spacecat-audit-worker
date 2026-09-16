@@ -475,14 +475,18 @@ export const preflightAudit = async (context) => {
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Error during preflight audit.`, error);
     const jobEntity = await AsyncJobEntity.findById(jobId);
-    jobEntity.setStatus(AsyncJob.Status.FAILED);
-    jobEntity.setError({
-      code: 'EXCEPTION',
-      message: error.message,
-      details: error.stack,
-    });
-    jobEntity.setEndedAt(new Date().toISOString());
-    await jobEntity.save();
+    if (jobEntity.getStatus?.() === AsyncJob.Status.COMPLETED) {
+      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Async guidance already completed the job; preserving its result despite the preflight audit error.`);
+    } else {
+      jobEntity.setStatus(AsyncJob.Status.FAILED);
+      jobEntity.setError({
+        code: 'EXCEPTION',
+        message: error.message,
+        details: error.stack,
+      });
+      jobEntity.setEndedAt(new Date().toISOString());
+      await jobEntity.save();
+    }
     throw error;
   }
 
