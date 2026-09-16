@@ -30,8 +30,10 @@ const TAG_NAMES = ['title', 'description', 'h1'];
  */
 export function isSuggestionLengthValid(tagName, suggestion) {
   const limits = TAG_LENGTHS[tagName];
-  /* c8 ignore next - defensive: only known tag names (title/description/h1) reach here */
-  if (!limits) return true;
+  /* c8 ignore next 3 - defensive: only known tag names (title/description/h1) reach here */
+  if (!limits) {
+    return true;
+  }
   const length = suggestion?.length ?? 0;
   const min = limits.idealMinLength ?? 1;
   const max = limits.idealMaxLength;
