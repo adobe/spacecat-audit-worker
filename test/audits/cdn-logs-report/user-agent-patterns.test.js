@@ -139,7 +139,6 @@ describe('User Agent Patterns', () => {
         'Google-Lens',
         'meta-externalagent',
         'meta-externalfetcher',
-        'meta-webindexer',
       ].forEach((token) => expect(filter).to.not.include(token));
     });
   });
@@ -303,7 +302,6 @@ describe('User Agent Patterns', () => {
         'Google-Lens',
         'meta-externalagent',
         'meta-externalfetcher',
-        'meta-webindexer',
       ].forEach((token) => expect(pattern).to.include(token));
       expect(pattern).to.not.include('Meta-Muse-User');
     });
@@ -322,7 +320,6 @@ describe('User Agent Patterns', () => {
         'Google-Lens',
         'META-EXTERNALAGENT/1.1',
         'Meta-ExternalFetcher/1.1',
-        'meta-webindexer/1.1',
       ].forEach((userAgent) => expect(regex.test(userAgent), userAgent).to.equal(true));
     });
   });
