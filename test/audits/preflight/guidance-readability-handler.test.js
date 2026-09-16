@@ -12,10 +12,12 @@
 
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import esmock from 'esmock';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('Guidance Readability Handler Tests', () => {
   let handler;
@@ -24,6 +26,15 @@ describe('Guidance Readability Handler Tests', () => {
   let mockAsyncJob;
   let mockAsyncJobEntity;
   let mockDataAccess;
+  let mockS3Client;
+  let s3Objects;
+  let s3PutInputs;
+  let completionClaimError;
+  let deleteObjectError;
+  let deleteObjectsError;
+  let listContentsOverride;
+  let omitListContents;
+  let preconditionByStatusOnly;
   let logStub;
 
   before(async function setupMocks() {
@@ -82,9 +93,73 @@ describe('Guidance Readability Handler Tests', () => {
       AsyncJob: mockAsyncJobEntity,
     };
 
+    s3Objects = new Map();
+    s3PutInputs = [];
+    completionClaimError = null;
+    deleteObjectError = null;
+    deleteObjectsError = null;
+    listContentsOverride = null;
+    omitListContents = false;
+    preconditionByStatusOnly = false;
+    mockS3Client = {
+      send: sinon.stub().callsFake(async (command) => {
+        const { input } = command;
+        switch (command.constructor.name) {
+          case 'PutObjectCommand':
+            s3PutInputs.push(input);
+            if (input.Key.includes('preflight-readability/completions/') && completionClaimError) {
+              throw completionClaimError;
+            }
+            if (input.IfNoneMatch === '*' && s3Objects.has(input.Key)) {
+              const error = new Error('Precondition failed');
+              if (!preconditionByStatusOnly) {
+                error.name = 'PreconditionFailed';
+              }
+              error.$metadata = { httpStatusCode: 412 };
+              throw error;
+            }
+            s3Objects.set(input.Key, input.Body);
+            return {};
+          case 'ListObjectsV2Command':
+            if (omitListContents) {
+              return {};
+            }
+            return {
+              Contents: listContentsOverride ?? [...s3Objects.keys()]
+                .filter((key) => key.startsWith(input.Prefix))
+                .map((Key) => ({ Key })),
+            };
+          case 'GetObjectCommand':
+            return {
+              Body: {
+                transformToString: async () => s3Objects.get(input.Key),
+              },
+            };
+          case 'DeleteObjectCommand':
+            if (deleteObjectError) {
+              throw deleteObjectError;
+            }
+            s3Objects.delete(input.Key);
+            return {};
+          case 'DeleteObjectsCommand':
+            if (deleteObjectsError) {
+              throw deleteObjectsError;
+            }
+            input.Delete.Objects.forEach(({ Key }) => s3Objects.delete(Key));
+            return {};
+          default:
+            throw new Error(`Unexpected S3 command: ${command.constructor.name}`);
+        }
+      }),
+    };
+
     mockContext = {
       log: logStub,
       dataAccess: mockDataAccess,
+      s3Client: mockS3Client,
+      env: {
+        S3_MYSTIQUE_BUCKET_NAME: 'test-mystique-bucket',
+      },
     };
   });
 
@@ -310,7 +385,7 @@ describe('Guidance Readability Handler Tests', () => {
       expect(logStub.warn).to.have.been.calledWithMatch('No valid readability improvements found');
     });
 
-    it('should log AI classifier exclusion and persist an excluded suggestion row in job metadata', async () => {
+    it('should log AI classifier exclusion and persist an excluded response in S3', async () => {
       const message = {
         auditId: 'test-audit-id',
         siteId: 'test-site-id',
@@ -329,12 +404,12 @@ describe('Guidance Readability Handler Tests', () => {
         '[readability-suggest guidance]: Content excluded by AI classifier for siteId: test-site-id, '
         + 'reason: bibliography_or_attribution_block',
       );
-      expect(mockAsyncJob.setMetadata).to.have.been.called;
       expect(mockAsyncJob.save).to.have.been.called;
 
-      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
-      const updatedMetadata = setMetadataCall.args[0];
-      const suggestions = updatedMetadata.payload.readabilityMetadata.suggestions;
+      const storedResponse = JSON.parse(s3PutInputs.find(
+        ({ Key }) => Key.includes('preflight-readability/responses/'),
+      ).Body);
+      const { mappedSuggestions: suggestions } = storedResponse;
       expect(suggestions).to.have.lengthOf(1);
       expect(suggestions[0].suggestionStatus).to.equal('excluded');
       expect(suggestions[0].shouldExclude).to.equal(true);
@@ -376,7 +451,7 @@ describe('Guidance Readability Handler Tests', () => {
       });
     });
 
-    it('should update job metadata successfully', async () => {
+    it('should persist partial response progress without racing on job metadata', async () => {
       const message = {
         auditId: 'test-audit-id',
         siteId: 'test-site-id',
@@ -392,18 +467,17 @@ describe('Guidance Readability Handler Tests', () => {
       const result = await handler.default(message, mockContext);
 
       expect(result).to.deep.equal({ ok: true });
-      expect(mockAsyncJob.setMetadata).to.have.been.called;
-      expect(mockAsyncJob.save).to.have.been.called;
-
-      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
-      const updatedMetadata = setMetadataCall.args[0];
-      expect(updatedMetadata.payload.readabilityMetadata.mystiqueResponsesReceived).to.equal(1);
-      expect(updatedMetadata.payload.readabilityMetadata.processedSuggestionIds).to.include('message-id-5');
-      expect(updatedMetadata.payload.readabilityMetadata.suggestions).to.have.lengthOf(1);
+      expect(mockAsyncJob.setMetadata).to.not.have.been.called;
+      expect(mockAsyncJob.save).to.not.have.been.called;
+      const storedResponse = JSON.parse(s3PutInputs.find(
+        ({ Key }) => Key.includes('preflight-readability/responses/'),
+      ).Body);
+      expect(storedResponse.messageId).to.equal('message-id-5');
+      expect(storedResponse.mappedSuggestions).to.have.lengthOf(1);
     });
 
-    it('should handle job metadata update failures', async () => {
-      mockAsyncJob.save.rejects(new Error('Database error'));
+    it('should surface response persistence failures', async () => {
+      mockS3Client.send.rejects(new Error('S3 error'));
 
       const message = {
         auditId: 'test-audit-id',
@@ -419,13 +493,313 @@ describe('Guidance Readability Handler Tests', () => {
         await handler.default(message, mockContext);
         expect.fail('Should have thrown an error');
       } catch (error) {
-        expect(error.message).to.include('Failed to update job metadata');
-        expect(logStub.error).to.have.been.calledWithMatch('Updating job metadata for job');
+        expect(error.message).to.include('S3 error');
       }
     });
   });
 
   describe('All Responses Received Logic', () => {
+    it('atomically accumulates concurrent responses without losing either update', async () => {
+      const asyncJob = {
+        getMetadata: () => ({
+          payload: {
+            readabilityMetadata: {
+              originalOrderMapping: [],
+              mystiqueResponsesExpected: 2,
+            },
+          },
+        }),
+      };
+
+      const results = await Promise.all([
+        handler.accumulateReadabilityResponse({
+          s3Client: mockS3Client,
+          bucketName: 'test-mystique-bucket',
+          asyncJob,
+          auditId: 'test-audit-id',
+          messageId: 'message-1',
+          mappedSuggestions: [{ id: 'suggestion-1' }],
+          log: logStub,
+        }),
+        handler.accumulateReadabilityResponse({
+          s3Client: mockS3Client,
+          bucketName: 'test-mystique-bucket',
+          asyncJob,
+          auditId: 'test-audit-id',
+          messageId: 'message-2',
+          mappedSuggestions: [{ id: 'suggestion-2' }],
+          log: logStub,
+        }),
+      ]);
+
+      const completed = results.find(({ readabilityMetadata }) => (
+        readabilityMetadata.mystiqueResponsesReceived === 2
+      ));
+      expect(completed.readabilityMetadata.processedSuggestionIds).to.have.members([
+        'message-1',
+        'message-2',
+      ]);
+      expect(completed.readabilityMetadata.suggestions).to.have.length(2);
+    });
+
+    it('deduplicates concurrent deliveries of the same response', async () => {
+      const initialMetadata = {
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [],
+            mystiqueResponsesExpected: 2,
+          },
+        },
+      };
+      const asyncJob = {
+        getMetadata: () => initialMetadata,
+      };
+
+      const results = await Promise.all([
+        handler.accumulateReadabilityResponse({
+          s3Client: mockS3Client,
+          bucketName: 'test-mystique-bucket',
+          asyncJob,
+          auditId: 'test-audit-id',
+          messageId: 'duplicate-message',
+          mappedSuggestions: [{ id: 'suggestion-1' }],
+          log: logStub,
+        }),
+        handler.accumulateReadabilityResponse({
+          s3Client: mockS3Client,
+          bucketName: 'test-mystique-bucket',
+          asyncJob,
+          auditId: 'test-audit-id',
+          messageId: 'duplicate-message',
+          mappedSuggestions: [{ id: 'suggestion-1' }],
+          log: logStub,
+        }),
+      ]);
+
+      expect(results.map(({ readabilityMetadata }) => (
+        readabilityMetadata.mystiqueResponsesReceived
+      ))).to.deep.equal([1, 1]);
+      expect(s3Objects.size).to.equal(1);
+    });
+
+    it('handles empty and incomplete S3 listings', async () => {
+      const asyncJob = {
+        getMetadata: () => ({
+          payload: {
+            readabilityMetadata: {
+              originalOrderMapping: [],
+              mystiqueResponsesExpected: 2,
+            },
+          },
+        }),
+      };
+      listContentsOverride = [{}, { Key: '' }];
+
+      const result = await handler.accumulateReadabilityResponse({
+        s3Client: mockS3Client,
+        bucketName: 'test-mystique-bucket',
+        asyncJob,
+        auditId: 'test-audit-id',
+        messageId: 'message-1',
+        mappedSuggestions: [],
+        log: logStub,
+      });
+
+      expect(result.readabilityMetadata.mystiqueResponsesReceived).to.equal(0);
+
+      omitListContents = true;
+      const omittedResult = await handler.accumulateReadabilityResponse({
+        s3Client: mockS3Client,
+        bucketName: 'test-mystique-bucket',
+        asyncJob,
+        auditId: 'test-audit-id',
+        messageId: 'message-2',
+        mappedSuggestions: [],
+        log: logStub,
+      });
+      expect(omittedResult.readabilityMetadata.mystiqueResponsesReceived).to.equal(0);
+    });
+
+    it('handles stored responses without suggestions', async () => {
+      const prefix = 'preflight-readability/responses/test-audit-id/';
+      s3Objects.set(`${prefix}message-1.json`, JSON.stringify({ messageId: 'message-1' }));
+      const asyncJob = {
+        getMetadata: () => ({
+          payload: {
+            readabilityMetadata: {
+              originalOrderMapping: [],
+              mystiqueResponsesExpected: 2,
+            },
+          },
+        }),
+      };
+
+      const result = await handler.accumulateReadabilityResponse({
+        s3Client: mockS3Client,
+        bucketName: 'test-mystique-bucket',
+        asyncJob,
+        auditId: 'test-audit-id',
+        messageId: 'message-2',
+        mappedSuggestions: [{ id: 'suggestion-2' }],
+        log: logStub,
+      });
+
+      expect(result.readabilityMetadata.suggestions).to.deep.equal([{ id: 'suggestion-2' }]);
+    });
+
+    it('allows only one callback to complete a job when final responses overlap', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [
+              { originalIndex: 0, textContent: 'Text 1' },
+              { originalIndex: 1, textContent: 'Text 2' },
+            ],
+            mystiqueResponsesExpected: 2,
+            mystiqueResponsesReceived: 0,
+          },
+        },
+      });
+      mockAsyncJob.getResult.returns([{
+        audits: [{
+          name: 'readability',
+          opportunities: [
+            { elements: [{ textContent: 'Text 1' }], fleschReadingEase: 20 },
+            { elements: [{ textContent: 'Text 2' }], fleschReadingEase: 25 },
+          ],
+        }],
+      }]);
+
+      const makeMessage = (id, originalText) => ({
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        id,
+        data: {
+          original_paragraph: originalText,
+          improved_paragraph: `Improved ${originalText}`,
+          current_flesch_score: 20,
+          improved_flesch_score: 80,
+        },
+      });
+
+      const outcomes = await Promise.allSettled([
+        handler.default(makeMessage('message-1', 'Text 1'), mockContext),
+        handler.default(makeMessage('message-2', 'Text 2'), mockContext),
+      ]);
+
+      expect(outcomes.filter(({ status }) => status === 'fulfilled')).to.have.length(1);
+      expect(outcomes.filter(({ status }) => status === 'rejected')).to.have.length(1);
+      expect(mockAsyncJob.save).to.have.been.calledOnce;
+      expect(mockAsyncJob.setStatus).to.have.been.calledOnceWith('COMPLETED');
+      const completedResult = mockAsyncJob.setResult.getCall(0).args[0];
+      expect(completedResult[0].audits[0].opportunities).to.have.length(2);
+      expect(completedResult[0].audits[0].opportunities).to.satisfy(
+        (opportunities) => opportunities.every(
+          ({ suggestionStatus }) => suggestionStatus === 'completed',
+        ),
+      );
+      expect(s3Objects.size).to.equal(0);
+    });
+
+    it('removes a stale completion claim and retries the callback', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [],
+            mystiqueResponsesExpected: 1,
+          },
+        },
+      });
+      s3Objects.set(
+        'preflight-readability/completions/test-audit-id.lock',
+        new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+      );
+      preconditionByStatusOnly = true;
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        id: 'message-1',
+        data: {
+          improved_paragraph: 'Improved text.',
+          improved_flesch_score: 80,
+        },
+      };
+
+      await expect(handler.default(message, mockContext))
+        .to.be.rejectedWith('Removed stale completion claim');
+      expect(s3Objects.has('preflight-readability/completions/test-audit-id.lock')).to.equal(false);
+    });
+
+    it('surfaces unexpected completion claim failures', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [],
+            mystiqueResponsesExpected: 1,
+          },
+        },
+      });
+      completionClaimError = new Error('Claim failed');
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        id: 'message-1',
+        data: {
+          improved_paragraph: 'Improved text.',
+          improved_flesch_score: 80,
+        },
+      };
+
+      await expect(handler.default(message, mockContext)).to.be.rejectedWith('Claim failed');
+    });
+
+    it('surfaces response persistence failures', async () => {
+      const job = {
+        getMetadata: () => ({
+          payload: {
+            readabilityMetadata: {
+              originalOrderMapping: [],
+              mystiqueResponsesExpected: 1,
+            },
+          },
+        }),
+      };
+      mockS3Client.send.rejects(new Error('S3 error'));
+
+      await expect(handler.accumulateReadabilityResponse({
+          s3Client: mockS3Client,
+          bucketName: 'test-mystique-bucket',
+          asyncJob: job,
+          auditId: 'test-audit-id',
+          messageId: 'message-1',
+          mappedSuggestions: [],
+          log: logStub,
+        })).to.be.rejectedWith('S3 error');
+    });
+
+    it('rejects missing S3 context', async () => {
+      const job = {
+        getMetadata: () => ({
+          payload: {
+            readabilityMetadata: {
+              originalOrderMapping: [],
+              mystiqueResponsesExpected: 1,
+            },
+          },
+        }),
+      };
+
+      await expect(handler.accumulateReadabilityResponse({
+          asyncJob: job,
+          auditId: 'test-audit-id',
+          messageId: 'message-1',
+          mappedSuggestions: [],
+          log: logStub,
+        })).to.be.rejectedWith('Missing S3 context');
+    });
+
     it('should complete AsyncJob when all responses are received', async () => {
       mockAsyncJob.getMetadata.returns({
         payload: {
@@ -670,10 +1044,10 @@ describe('Guidance Readability Handler Tests', () => {
       const result = await handler.default(message, mockContext);
 
       expect(result).to.deep.equal({ ok: true });
-      expect(mockAsyncJob.setResult).to.have.been.called;
-      // Status should not be set again since it's already COMPLETED
+      expect(mockAsyncJob.setResult).to.not.have.been.called;
       expect(mockAsyncJob.setStatus).to.not.have.been.called;
       expect(mockAsyncJob.setEndedAt).to.not.have.been.called;
+      expect(mockS3Client.send).to.not.have.been.called;
     });
   });
 
@@ -1120,7 +1494,7 @@ describe('Guidance Readability Handler Tests', () => {
       ]);
     });
 
-    it('should handle AsyncJob completion errors gracefully', async () => {
+    it('should surface AsyncJob completion errors for retry', async () => {
       mockAsyncJob.getStatus.returns('IN_PROGRESS');
 
       // Simulate error during job completion
@@ -1138,14 +1512,11 @@ describe('Guidance Readability Handler Tests', () => {
         id: 'error-handling-message',
       };
 
-      const result = await handler.default(message, mockContext);
-
-      // Should still return ok() even though completion failed
-      expect(result).to.deep.equal({ ok: true });
+      await expect(handler.default(message, mockContext)).to.be.rejectedWith('Save failed');
       expect(logStub.error).to.have.been.calledWithMatch('Error updating AsyncJob');
     });
 
-    it('should handle fresh job reload failure', async () => {
+    it('should surface fresh job reload failures for retry', async () => {
       mockAsyncJob.getStatus.returns('IN_PROGRESS');
 
       // Simulate error during fresh job reload
@@ -1161,10 +1532,48 @@ describe('Guidance Readability Handler Tests', () => {
         id: 'reload-error-message',
       };
 
+      await expect(handler.default(message, mockContext)).to.be.rejectedWith('Job not found');
+      expect(logStub.error).to.have.been.calledWithMatch('Error updating AsyncJob');
+    });
+
+    it('should preserve the completion error when releasing its claim also fails', async () => {
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+      mockAsyncJob.save.rejects(new Error('Save failed'));
+      deleteObjectError = new Error('Delete failed');
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'cleanup-error-message',
+      };
+
+      await expect(handler.default(message, mockContext)).to.be.rejectedWith('Save failed');
+      expect(logStub.error).to.have.been.calledWithMatch('Failed to release completion claim');
+    });
+
+    it('should keep a completed job when response cleanup fails', async () => {
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+      deleteObjectsError = new Error('Bulk delete failed');
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'bulk-cleanup-error-message',
+      };
+
       const result = await handler.default(message, mockContext);
 
       expect(result).to.deep.equal({ ok: true });
-      expect(logStub.error).to.have.been.calledWithMatch('Error updating AsyncJob');
+      expect(mockAsyncJob.save).to.have.been.called;
+      expect(logStub.warn).to.have.been.calledWithMatch('Failed to clean up response objects');
     });
   });
 
@@ -1261,10 +1670,10 @@ describe('Guidance Readability Handler Tests', () => {
 
       expect(result).to.deep.equal({ ok: true });
 
-      // Should use auditUrl as fallback
-      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
-      const updatedMetadata = setMetadataCall.args[0];
-      const suggestion = updatedMetadata.payload.readabilityMetadata.suggestions[0];
+      const storedResponse = JSON.parse(s3PutInputs.find(
+        ({ Key }) => Key.includes('preflight-readability/responses/'),
+      ).Body);
+      const [suggestion] = storedResponse.mappedSuggestions;
       expect(suggestion.pageUrl).to.equal('https://example.com'); // Site's base URL
     });
 
@@ -1358,10 +1767,10 @@ describe('Guidance Readability Handler Tests', () => {
 
       expect(result).to.deep.equal({ ok: true });
 
-      // Verify the mapped suggestion structure
-      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
-      const updatedMetadata = setMetadataCall.args[0];
-      const mappedSuggestion = updatedMetadata.payload.readabilityMetadata.suggestions[0];
+      const storedResponse = JSON.parse(s3PutInputs.find(
+        ({ Key }) => Key.includes('preflight-readability/responses/'),
+      ).Body);
+      const [mappedSuggestion] = storedResponse.mappedSuggestions;
 
       expect(mappedSuggestion.id).to.include('readability-https://example.com/page1-0');
       expect(mappedSuggestion.pageUrl).to.equal('https://example.com/page1');
@@ -1526,10 +1935,10 @@ describe('Guidance Readability Handler Tests', () => {
 
       expect(result).to.deep.equal({ ok: true });
 
-      // Verify suggestions with 'unknown' pageUrl fallback were created
-      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
-      const updatedMetadata = setMetadataCall.args[0];
-      const { suggestions } = updatedMetadata.payload.readabilityMetadata;
+      const storedResponse = JSON.parse(s3PutInputs.find(
+        ({ Key }) => Key.includes('preflight-readability/responses/'),
+      ).Body);
+      const { mappedSuggestions: suggestions } = storedResponse;
 
       expect(suggestions[0].id).to.include('readability-unknown-0');
       expect(suggestions[1].id).to.include('readability-unknown-1');
