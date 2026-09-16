@@ -260,7 +260,6 @@ describe('Commerce Product Enrichments Handler', () => {
         scrapeJobId: 'site-1',
       },
       options: {
-        enableJavascript: false,
         waitTimeoutForMetaTags: 5000,
         screenshotTypes: [],
         expandShadowDOM: false,
@@ -515,7 +514,6 @@ describe('Commerce Product Enrichments Handler', () => {
         scrapeJobId: 'site-1',
       },
       options: {
-        enableJavascript: false,
         waitTimeoutForMetaTags: 5000,
         screenshotTypes: [],
         expandShadowDOM: false,
