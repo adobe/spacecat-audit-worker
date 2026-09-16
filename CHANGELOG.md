@@ -1,3 +1,10 @@
+# [1.540.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.2...v1.540.0) (2026-09-16)
+
+
+### Features
+
+* ingest additional Google and Meta user agents ([#2979](https://github.com/adobe/spacecat-audit-worker/issues/2979)) ([fc47703](https://github.com/adobe/spacecat-audit-worker/commit/fc47703f399c3882283f398f17423f84214551dd)), closes [Hi#level](https://github.com/Hi/issues/level)
+
 ## [1.539.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.1...v1.539.2) (2026-09-16)
 
 
