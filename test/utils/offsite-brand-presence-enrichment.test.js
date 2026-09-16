@@ -489,7 +489,7 @@ describe('offsite-brand-presence-enrichment', function () {
       expect(result).to.have.lengthOf(1);
     });
 
-    it('normalizes youtu.be watch URLs and classifies youtube domain', async () => {
+    it('normalizes youtube watch URLs to the canonical watch URL and classifies youtube domain', async () => {
       await setupSharePointStubs([makeBrandPresenceRow({
         Sources: 'https://www.youtube.com/watch?v=abc123',
         Topics: 'Vid',
@@ -499,7 +499,7 @@ describe('offsite-brand-presence-enrichment', function () {
       const site = makeSite();
 
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
-      expect(result[0].urls[0].url).to.equal('https://youtu.be/abc123');
+      expect(result[0].urls[0].url).to.equal('https://www.youtube.com/watch?v=abc123');
     });
 
     it('handles youtube watch without video id using origin pathname', async () => {

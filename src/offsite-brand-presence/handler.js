@@ -18,6 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { loadCitedUrlsFromSemrush } from '../utils/offsite-brand-presence-semrush.js';
+import { canonicalYoutubeWatchUrl } from '../utils/youtube-url.js';
 import { SEMRUSH_ENTITLEMENT_SKIP_REASONS } from '../utils/semrush-entitlement.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
@@ -121,9 +122,12 @@ const DOMAIN_ALIASES = Object.freeze({
 
 /**
  * Normalizes a YouTube URL to keep only essential identifiers.
- * URL store canonicalizes URLs before storing, so we use the short form to match.
- * - /watch?v=VIDEO_ID → converts to short form https://youtu.be/VIDEO_ID
+ * - /watch?v=VIDEO_ID → canonical watch URL https://www.youtube.com/watch?v=VIDEO_ID (only `v=`)
  * - /shorts/SHORT_ID → strips all query params
+ *
+ * The canonical watch URL (not the short `youtu.be/<id>` alias) is used so it exact-matches
+ * Semrush's `CBF_source` key for the url-prompts lookup (see youtube-url.js). Existing short-form
+ * records from the prior normalization are left to go stale (not migrated).
  *
  * @param {URL} parsed - Parsed URL object
  * @returns {string} Normalized URL
@@ -134,7 +138,7 @@ function normalizeYoutubeUrl(parsed) {
   if (pathname.startsWith('/watch')) {
     const videoId = parsed.searchParams.get('v');
     if (videoId) {
-      return `https://youtu.be/${videoId}`;
+      return canonicalYoutubeWatchUrl(videoId);
     }
   }
 

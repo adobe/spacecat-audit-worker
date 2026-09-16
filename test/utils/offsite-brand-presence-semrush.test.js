@@ -38,7 +38,7 @@ const SESSION_TOKEN = 'sess-jwt-token';
 const PREVIOUS_WEEKS = [{ week: 29, year: 2026 }, { week: 28, year: 2026 }];
 
 const YT_URL = 'https://www.youtube.com/watch?v=abc';
-const YT_NORM = 'https://youtu.be/abc';
+const YT_NORM = 'https://www.youtube.com/watch?v=abc';
 const RD_URL = 'https://www.reddit.com/r/Lovesac/comments/1/pros_cons';
 const CITED_URL = 'https://example.org/page';
 
