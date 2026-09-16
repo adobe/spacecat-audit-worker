@@ -1,3 +1,10 @@
+## [1.539.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.0...v1.539.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* extract SKUs from multiple JSON-LD blocks ([#2977](https://github.com/adobe/spacecat-audit-worker/issues/2977)) ([7ac3da7](https://github.com/adobe/spacecat-audit-worker/commit/7ac3da771254c27730e7d5a783d96d8c3651edee))
+
 # [1.539.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.538.0...v1.539.0) (2026-09-15)
 
 
