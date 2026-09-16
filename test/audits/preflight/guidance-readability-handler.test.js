@@ -28,8 +28,10 @@ describe('Guidance Readability Handler Tests', () => {
   let mockDataAccess;
   let mockS3Client;
   let s3Objects;
+  let s3PutInputs;
   let completionClaimError;
   let deleteObjectError;
+  let deleteObjectsError;
   let listContentsOverride;
   let omitListContents;
   let preconditionByStatusOnly;
@@ -92,8 +94,10 @@ describe('Guidance Readability Handler Tests', () => {
     };
 
     s3Objects = new Map();
+    s3PutInputs = [];
     completionClaimError = null;
     deleteObjectError = null;
+    deleteObjectsError = null;
     listContentsOverride = null;
     omitListContents = false;
     preconditionByStatusOnly = false;
@@ -102,6 +106,7 @@ describe('Guidance Readability Handler Tests', () => {
         const { input } = command;
         switch (command.constructor.name) {
           case 'PutObjectCommand':
+            s3PutInputs.push(input);
             if (input.Key.includes('/preflight-completions/') && completionClaimError) {
               throw completionClaimError;
             }
@@ -135,6 +140,12 @@ describe('Guidance Readability Handler Tests', () => {
               throw deleteObjectError;
             }
             s3Objects.delete(input.Key);
+            return {};
+          case 'DeleteObjectsCommand':
+            if (deleteObjectsError) {
+              throw deleteObjectsError;
+            }
+            input.Delete.Objects.forEach(({ Key }) => s3Objects.delete(Key));
             return {};
           default:
             throw new Error(`Unexpected S3 command: ${command.constructor.name}`);
@@ -395,7 +406,9 @@ describe('Guidance Readability Handler Tests', () => {
       );
       expect(mockAsyncJob.save).to.have.been.called;
 
-      const storedResponse = JSON.parse([...s3Objects.values()][0]);
+      const storedResponse = JSON.parse(s3PutInputs.find(
+        ({ Key }) => Key.includes('/preflight-responses/'),
+      ).Body);
       const { mappedSuggestions: suggestions } = storedResponse;
       expect(suggestions).to.have.lengthOf(1);
       expect(suggestions[0].suggestionStatus).to.equal('excluded');
@@ -456,7 +469,9 @@ describe('Guidance Readability Handler Tests', () => {
       expect(result).to.deep.equal({ ok: true });
       expect(mockAsyncJob.setMetadata).to.not.have.been.called;
       expect(mockAsyncJob.save).to.not.have.been.called;
-      const storedResponse = JSON.parse([...s3Objects.values()][0]);
+      const storedResponse = JSON.parse(s3PutInputs.find(
+        ({ Key }) => Key.includes('/preflight-responses/'),
+      ).Body);
       expect(storedResponse.messageId).to.equal('message-id-5');
       expect(storedResponse.mappedSuggestions).to.have.lengthOf(1);
     });
@@ -683,6 +698,7 @@ describe('Guidance Readability Handler Tests', () => {
           ({ suggestionStatus }) => suggestionStatus === 'completed',
         ),
       );
+      expect(s3Objects.size).to.equal(0);
     });
 
     it('removes a stale completion claim and retries the callback', async () => {
@@ -1538,6 +1554,27 @@ describe('Guidance Readability Handler Tests', () => {
       await expect(handler.default(message, mockContext)).to.be.rejectedWith('Save failed');
       expect(logStub.error).to.have.been.calledWithMatch('Failed to release completion claim');
     });
+
+    it('should keep a completed job when response cleanup fails', async () => {
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+      deleteObjectsError = new Error('Bulk delete failed');
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'bulk-cleanup-error-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(mockAsyncJob.save).to.have.been.called;
+      expect(logStub.warn).to.have.been.calledWithMatch('Failed to clean up response objects');
+    });
   });
 
   describe('Edge Cases and Boundary Conditions', () => {
@@ -1633,7 +1670,9 @@ describe('Guidance Readability Handler Tests', () => {
 
       expect(result).to.deep.equal({ ok: true });
 
-      const storedResponse = JSON.parse([...s3Objects.values()][0]);
+      const storedResponse = JSON.parse(s3PutInputs.find(
+        ({ Key }) => Key.includes('/preflight-responses/'),
+      ).Body);
       const [suggestion] = storedResponse.mappedSuggestions;
       expect(suggestion.pageUrl).to.equal('https://example.com'); // Site's base URL
     });
@@ -1728,7 +1767,9 @@ describe('Guidance Readability Handler Tests', () => {
 
       expect(result).to.deep.equal({ ok: true });
 
-      const storedResponse = JSON.parse([...s3Objects.values()][0]);
+      const storedResponse = JSON.parse(s3PutInputs.find(
+        ({ Key }) => Key.includes('/preflight-responses/'),
+      ).Body);
       const [mappedSuggestion] = storedResponse.mappedSuggestions;
 
       expect(mappedSuggestion.id).to.include('readability-https://example.com/page1-0');
@@ -1894,7 +1935,9 @@ describe('Guidance Readability Handler Tests', () => {
 
       expect(result).to.deep.equal({ ok: true });
 
-      const storedResponse = JSON.parse([...s3Objects.values()][0]);
+      const storedResponse = JSON.parse(s3PutInputs.find(
+        ({ Key }) => Key.includes('/preflight-responses/'),
+      ).Body);
       const { mappedSuggestions: suggestions } = storedResponse;
 
       expect(suggestions[0].id).to.include('readability-unknown-0');

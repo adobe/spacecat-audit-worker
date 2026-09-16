@@ -14,6 +14,7 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { AsyncJob } from '@adobe/spacecat-shared-data-access';
 import {
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -107,6 +108,7 @@ export async function accumulateReadabilityResponse({
 
   return {
     asyncJob,
+    responseKeys,
     readabilityMetadata: {
       ...readabilityMetadata,
       mystiqueResponsesReceived: responseCount,
@@ -237,6 +239,7 @@ export default async function handler(message, context) {
   });
   const {
     asyncJob: accumulatedJob,
+    responseKeys,
     readabilityMetadata: updatedReadabilityMetadata,
   } = accumulated;
   log.debug('[readability-suggest guidance]: Updated job with accumulated readability metadata');
@@ -492,6 +495,19 @@ export default async function handler(message, context) {
         log.error(`[readability-suggest guidance]: Failed to release completion claim for AsyncJob ${auditId}: ${cleanupError.message}`);
       }
       throw error;
+    }
+
+    try {
+      await s3Client.send(new DeleteObjectsCommand({
+        Bucket: env.S3_MYSTIQUE_BUCKET_NAME,
+        Delete: {
+          Objects: [...responseKeys, completionKey].map((Key) => ({ Key })),
+          Quiet: true,
+        },
+      }));
+      log.debug(`[readability-suggest guidance]: Cleaned up ${responseKeys.length} response objects for AsyncJob ${auditId}`);
+    } catch (cleanupError) {
+      log.warn(`[readability-suggest guidance]: Failed to clean up response objects for AsyncJob ${auditId}: ${cleanupError.message}`);
     }
   }
 
