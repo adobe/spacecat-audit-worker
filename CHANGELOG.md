@@ -1,3 +1,10 @@
+# [1.541.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.540.1...v1.541.0) (2026-09-16)
+
+
+### Features
+
+* **url-prompts:** gate url-prompts enrichment on the shared Semrush entitlement check (LLMO-6712) ([#2978](https://github.com/adobe/spacecat-audit-worker/issues/2978)) ([c5b9933](https://github.com/adobe/spacecat-audit-worker/commit/c5b99334263c57c3bf6433c1ceef6ad99f3ea3a7))
+
 ## [1.540.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.540.0...v1.540.1) (2026-09-16)
 
 
