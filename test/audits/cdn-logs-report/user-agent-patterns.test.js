@@ -135,6 +135,8 @@ describe('User Agent Patterns', () => {
       [
         'GoogleOther',
         'Google-GeminiNotebook',
+        'Google-AdWords',
+        'Google-Lens',
         'meta-externalagent',
         'meta-externalfetcher',
         'meta-webindexer',
@@ -297,19 +299,27 @@ describe('User Agent Patterns', () => {
       [
         'GoogleOther',
         'Google-GeminiNotebook',
+        'Google-AdWords',
+        'Google-Lens',
         'meta-externalagent',
         'meta-externalfetcher',
         'meta-webindexer',
       ].forEach((token) => expect(pattern).to.include(token));
+      expect(pattern).to.not.include('Meta-Muse-User');
     });
 
-    it('matches documented versioned ingestion-only user agents case-insensitively', () => {
+    it('matches ingestion-only user-agent variants case-insensitively', () => {
       const pattern = patternsByProvider[providerDirs[0]];
       const regex = new RegExp(pattern.replace('(?i)', ''), 'i');
 
       [
         'GoogleOther/1.0',
         'Google-GeminiNotebook/1.0',
+        'Google-Adwords',
+        'Google-Adwords-Instant',
+        'Google-Adwords-Instant-Mobile',
+        'Google-AdWords-Express',
+        'Google-Lens',
         'META-EXTERNALAGENT/1.1',
         'Meta-ExternalFetcher/1.1',
         'meta-webindexer/1.1',
