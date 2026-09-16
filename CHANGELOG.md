@@ -1,3 +1,10 @@
+## [1.539.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.1...v1.539.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **preflight:** preserve completed readability guidance (SITES-51778) ([#2976](https://github.com/adobe/spacecat-audit-worker/issues/2976)) ([556f12d](https://github.com/adobe/spacecat-audit-worker/commit/556f12d5d16a078250c115ac06db3698fc71ceb2))
+
 ## [1.539.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.0...v1.539.1) (2026-09-16)
 
 
