@@ -22,6 +22,7 @@ import {
   decodeS2sConsumerClaims,
 } from './offsite-s2s-auth.js';
 import { resolveSemrushTimeoutMs } from './offsite-brand-presence-semrush.js';
+import { resolveSemrushEntitlement } from './semrush-entitlement.js';
 import {
   createOffsiteLogger, errorField, OUTCOME, PEER,
 } from './offsite-logging.js';
@@ -259,6 +260,34 @@ export async function loadUrlPromptsFromSemrush({
       olog.warn(URL_PROMPTS_EVENT, 'No active brand; skipping url-prompts', {
         peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, reason: 'no_active_brand',
       });
+      return new Map();
+    }
+
+    // Gate on Semrush entitlement using the SAME shared flag-AND-workspace check the domain-urls
+    // source uses (resolveSemrushEntitlement) — BEFORE minting an IMS token / S2S login — so a
+    // brand not provisioned for Semrush doesn't pay the wasted auth round-trip. This is a local
+    // DB check (feature flag + workspace lookup), NOT a Semrush API call, and fails closed (any
+    // error/timeout → skip). Mirrors the offsite-brand-presence gate; keeps the two audits'
+    // "should we call Semrush?" decision in one reusable place.
+    const entitlement = await resolveSemrushEntitlement(context, {
+      orgId: spaceCatId, brandId: brand.brandId,
+    });
+    if (!entitlement.entitled) {
+      olog.warn(
+        URL_PROMPTS_EVENT,
+        entitlement.resolved
+          ? 'Brand not entitled for Semrush; skipping url-prompts'
+          : 'Semrush entitlement check inconclusive; skipping url-prompts',
+        {
+          peer: PEER.SEMRUSH,
+          direction: 'inbound',
+          orgId: spaceCatId,
+          brandId: brand.brandId,
+          reason: entitlement.resolved ? 'not_entitled' : 'entitlement_check_failed',
+          entitlementReason: entitlement.reason,
+          outcome: OUTCOME.SKIP,
+        },
+      );
       return new Map();
     }
 

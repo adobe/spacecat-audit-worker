@@ -44,6 +44,7 @@ describe('url-prompts-semrush', function () {
   let resolveApiBaseUrl;
   let resolveSemrushTimeoutMs;
   let decodeS2sConsumerClaims;
+  let resolveSemrushEntitlement;
   let mod;
 
   const site = { getOrganizationId: () => ORG_ID, getId: () => SITE_ID };
@@ -55,6 +56,7 @@ describe('url-prompts-semrush', function () {
     return esmock('../../src/utils/url-prompts-semrush.js', {
       '../../src/utils/brand-resolver.js': { resolveBrandResultForSite },
       '../../src/utils/data-access.js': { getImsOrgId },
+      '../../src/utils/semrush-entitlement.js': { resolveSemrushEntitlement },
       '../../src/utils/offsite-s2s-auth.js': {
         resolveApiBaseUrl,
         getS2sSessionAuthorization,
@@ -97,6 +99,8 @@ describe('url-prompts-semrush', function () {
     resolveApiBaseUrl = sandbox.stub().returns(API_BASE);
     resolveSemrushTimeoutMs = sandbox.stub().returns(TIMEOUT_MS);
     decodeS2sConsumerClaims = sandbox.stub().returns({ consumerClientId: 'consumer-1' });
+    resolveSemrushEntitlement = sandbox.stub()
+      .resolves({ entitled: true, resolved: true, reason: 'entitled' });
     mod = await loadModule();
   });
 
@@ -305,6 +309,37 @@ describe('url-prompts-semrush', function () {
     expect(result.size).to.equal(0);
     expect(fetchStub).to.not.have.been.called;
     expect(olog.warn).to.have.been.calledWithMatch(sinon.match.string, sinon.match.string, sinon.match({ reason: 'no_active_brand' }));
+  });
+
+  it('checks entitlement with the resolved org + brand', async () => {
+    fetchStub.resolves(okJson({ prompts: [] }));
+    await run([{ url: URL_A }]);
+    expect(resolveSemrushEntitlement).to.have.been.calledWithMatch(
+      sinon.match.any,
+      { orgId: ORG_ID, brandId: BRAND_ID },
+    );
+  });
+
+  it('skips (empty Map) without minting a token when the brand is not entitled', async () => {
+    resolveSemrushEntitlement.resolves({ entitled: false, resolved: true, reason: 'flag_disabled' });
+    const result = await run([{ url: URL_A }]);
+    expect(result.size).to.equal(0);
+    // No IMS mint / S2S login and no data call for a non-entitled brand.
+    expect(getS2sSessionAuthorization).to.not.have.been.called;
+    expect(fetchStub).to.not.have.been.called;
+    expect(olog.warn.lastCall.args[2]).to.include({
+      reason: 'not_entitled', entitlementReason: 'flag_disabled',
+    });
+  });
+
+  it('skips (empty Map) when the entitlement check is inconclusive (fails closed)', async () => {
+    resolveSemrushEntitlement.resolves({ entitled: false, resolved: false, reason: 'check_failed' });
+    const result = await run([{ url: URL_A }]);
+    expect(result.size).to.equal(0);
+    expect(getS2sSessionAuthorization).to.not.have.been.called;
+    expect(olog.warn.lastCall.args[2]).to.include({
+      reason: 'entitlement_check_failed', entitlementReason: 'check_failed',
+    });
   });
 
   it('returns an empty Map when no date window can be derived', async () => {
