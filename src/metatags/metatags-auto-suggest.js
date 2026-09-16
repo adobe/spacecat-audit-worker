@@ -17,11 +17,6 @@ import { TAG_LENGTHS } from './constants.js';
 
 const EXPIRY_IN_SECONDS = 25 * 60;
 const TAG_NAMES = ['title', 'description', 'h1'];
-// Max Genvar generation attempts (1 initial + retries) to obtain suggestions whose length
-// clears the audit's ideal range. Beyond this the best-effort suggestion is shipped and a
-// warning is logged. Only out-of-range results trigger a retry, so the healthy path adds no
-// latency. See SITES-42023.
-const MAX_GENVAR_ATTEMPTS = 3;
 
 /**
  * Returns true when an AI suggestion's length falls in the range that clears the metatags
@@ -93,64 +88,31 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
       baseUrl: site.getBaseURL(),
     },
   };
-  // Accumulate the best suggestion per endpoint/tag across attempts. Once a suggestion whose
-  // length clears the audit is found it is locked in (`valid: true`); out-of-range suggestions
-  // are retained only as a best-effort fallback if no valid one is ever produced. Retrying the
-  // whole Genvar call is the only in-repo lever, since the generation prompt lives in the
-  // external Genvar service. See SITES-42023.
-  const chosenSuggestions = {};
-  let attempt = 0;
-  let hasInvalidSuggestion = true;
-  while (attempt < MAX_GENVAR_ATTEMPTS && hasInvalidSuggestion) {
-    attempt += 1;
-    let responseWithSuggestions;
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      responseWithSuggestions = await generateGenvarSuggestions(context, requestBody);
-    } catch (err) {
-      log.error('Error while generating AI suggestions using Genvar', err);
-      throw err;
-    }
-
-    hasInvalidSuggestion = false;
-    for (const [endpoint, tags] of Object.entries(responseWithSuggestions)) {
-      for (const tagName of TAG_NAMES) {
-        const tagIssueData = tags[tagName];
-        // Skip tags without a complete suggestion, and tags for which a length-valid
-        // suggestion is already locked in from an earlier attempt.
-        const alreadyLocked = chosenSuggestions[endpoint]?.[tagName]?.valid;
-        if (tagIssueData?.aiSuggestion && tagIssueData.aiRationale && !alreadyLocked) {
-          const valid = isSuggestionLengthValid(tagName, tagIssueData.aiSuggestion);
-          chosenSuggestions[endpoint] ??= {};
-          chosenSuggestions[endpoint][tagName] = {
-            aiSuggestion: tagIssueData.aiSuggestion,
-            aiRationale: tagIssueData.aiRationale,
-            valid,
-          };
-          if (!valid) {
-            hasInvalidSuggestion = true;
-          }
-        }
-      }
-    }
-
-    if (hasInvalidSuggestion && attempt < MAX_GENVAR_ATTEMPTS) {
-      log.info(`Some Genvar meta-tag suggestions were outside the recommended length range; retrying (attempt ${attempt} of ${MAX_GENVAR_ATTEMPTS}).`);
-    }
+  let responseWithSuggestions;
+  try {
+    responseWithSuggestions = await generateGenvarSuggestions(context, requestBody);
+  } catch (err) {
+    log.error('Error while generating AI suggestions using Genvar', err);
+    throw err;
   }
 
   const updatedDetectedTags = {
     ...detectedTags,
   };
-  for (const [endpoint, tags] of Object.entries(chosenSuggestions)) {
+  for (const [endpoint, tags] of Object.entries(responseWithSuggestions)) {
     for (const tagName of TAG_NAMES) {
-      const chosen = tags[tagName];
-      if (chosen && updatedDetectedTags[endpoint]?.[tagName]) {
-        if (!chosen.valid) {
-          log.warn(`Genvar meta-tag suggestion for ${tagName} on ${endpoint} is outside the recommended length range (${chosen.aiSuggestion.length} chars) after ${MAX_GENVAR_ATTEMPTS} attempts; using best-effort suggestion.`);
+      const tagIssueData = tags[tagName];
+      if (updatedDetectedTags[endpoint]?.[tagName]
+        && tagIssueData?.aiSuggestion && tagIssueData.aiRationale) {
+        // Genvar runs at temperature 0, so re-requesting returns the same text — retrying here
+        // cannot help. When a suggestion is outside the audit's ideal length range we surface it
+        // for Splunk visibility but still ship the best-effort suggestion. The durable fix is the
+        // Genvar service's own regenerate-with-feedback loop (SITES-42023).
+        if (!isSuggestionLengthValid(tagName, tagIssueData.aiSuggestion)) {
+          log.warn(`Genvar meta-tag suggestion for ${tagName} on ${endpoint} is outside the recommended length range (${tagIssueData.aiSuggestion.length} chars); shipping best-effort suggestion. See SITES-42023.`);
         }
-        updatedDetectedTags[endpoint][tagName].aiSuggestion = chosen.aiSuggestion;
-        updatedDetectedTags[endpoint][tagName].aiRationale = chosen.aiRationale;
+        updatedDetectedTags[endpoint][tagName].aiSuggestion = tagIssueData.aiSuggestion;
+        updatedDetectedTags[endpoint][tagName].aiRationale = tagIssueData.aiRationale;
       }
     }
   }

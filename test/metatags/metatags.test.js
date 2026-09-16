@@ -2770,32 +2770,11 @@ describe('Meta Tags', () => {
       }).timeout(15000);
 
       // SITES-42023: a description below the ideal 140-160 range fails the audit's own length
-      // check, so shipping it verbatim causes the next run to re-flag "Description too short".
-      it('retries Genvar when a description suggestion is below the ideal length and keeps the valid one', async () => {
+      // check. Genvar runs at temperature 0, so retrying returns the same text; instead we warn
+      // (for Splunk visibility) and still ship the best-effort suggestion. The durable fix is the
+      // Genvar service's own regenerate loop.
+      it('warns but still ships a description below the ideal length (single Genvar call)', async () => {
         const tooShort = `A${'a'.repeat(133)}`; // 134 chars -> below idealMinLength (140)
-        const inRange = `B${'b'.repeat(144)}`; // 145 chars -> within 140-160
-        genvarClientStub.generateSuggestions.onFirstCall().resolves({
-          '/add-on-and-refresh': {
-            description: { aiRationale: 'r', aiSuggestion: tooShort },
-            h1: { aiRationale: 'r', aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons' },
-          },
-        });
-        genvarClientStub.generateSuggestions.onSecondCall().resolves({
-          '/add-on-and-refresh': {
-            description: { aiRationale: 'r', aiSuggestion: inRange },
-            h1: { aiRationale: 'r', aiSuggestion: 'Revitalize Your Home with Lovesac Add-Ons' },
-          },
-        });
-
-        const opts = { forceAutoSuggest: true };
-        const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
-
-        expect(genvarClientStub.generateSuggestions).to.have.been.calledTwice;
-        expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal(inRange);
-      }).timeout(15000);
-
-      it('ships the best-effort suggestion and warns when the ideal length is never reached', async () => {
-        const tooShort = `A${'a'.repeat(133)}`; // 134 chars, always below 140
         genvarClientStub.generateSuggestions.resolves({
           '/add-on-and-refresh': {
             description: { aiRationale: 'r', aiSuggestion: tooShort },
@@ -2805,36 +2784,24 @@ describe('Meta Tags', () => {
         const opts = { forceAutoSuggest: true };
         const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
-        // Retried up to the cap (1 initial + 2 retries), then shipped best-effort.
-        expect(genvarClientStub.generateSuggestions).to.have.been.calledThrice;
+        expect(genvarClientStub.generateSuggestions).to.have.been.calledOnce;
         expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal(tooShort);
-        expect(log.warn).to.have.been.calledWithMatch(/outside the recommended length range \(134 chars\) after 3 attempts/);
+        expect(log.warn).to.have.been.calledWithMatch(/outside the recommended length range \(134 chars\)/);
       }).timeout(15000);
 
-      it('locks in a length-valid suggestion and does not overwrite it on retry', async () => {
-        const validH1 = 'Revitalize Your Home with Lovesac Add-Ons'; // 41 chars, <= 70
-        const shortDesc = `A${'a'.repeat(133)}`; // 134 chars, triggers a retry
-        const goodDesc = `B${'b'.repeat(149)}`; // 150 chars, in range
-        genvarClientStub.generateSuggestions.onFirstCall().resolves({
+      it('does not warn when the suggestion is within the ideal length', async () => {
+        const inRange = `B${'b'.repeat(149)}`; // 150 chars -> within 140-160
+        genvarClientStub.generateSuggestions.resolves({
           '/add-on-and-refresh': {
-            h1: { aiRationale: 'r', aiSuggestion: validH1 },
-            description: { aiRationale: 'r', aiSuggestion: shortDesc },
-          },
-        });
-        // Second call regenerates the (already-valid) h1 differently; it must be ignored.
-        genvarClientStub.generateSuggestions.onSecondCall().resolves({
-          '/add-on-and-refresh': {
-            h1: { aiRationale: 'r', aiSuggestion: 'A Completely Different H1 That Should Be Ignored' },
-            description: { aiRationale: 'r', aiSuggestion: goodDesc },
+            description: { aiRationale: 'r', aiSuggestion: inRange },
           },
         });
 
         const opts = { forceAutoSuggest: true };
         const response = await metatagsAutoSuggest(allTags, context, siteStub, opts);
 
-        expect(genvarClientStub.generateSuggestions).to.have.been.calledTwice;
-        expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal(validH1);
-        expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal(goodDesc);
+        expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal(inRange);
+        expect(log.warn).not.to.have.been.calledWithMatch(/outside the recommended length range/);
       }).timeout(15000);
 
       it('ignores suggestions for tags that were not detected', async () => {
