@@ -203,7 +203,15 @@ export function filterBrandPresenceFiles(paths, targetWeek, targetYear) {
 }
 
 /**
- * Normalizes a YouTube URL to keep only essential identifiers.
+ * Normalizes a YouTube URL by keeping only essential identifiers, PRESERVING the URL form.
+ * - /watch?v=VIDEO_ID&… → `${origin}/watch?v=VIDEO_ID` (keep only `v=`, drop other query params)
+ * - other YouTube URLs (youtu.be, shorts, channels) → `${origin}${pathname}` (query stripped)
+ *
+ * The host/scheme/short-vs-watch form is deliberately NOT rewritten: Semrush's url-prompts keys
+ * prompts on the exact `CBF_source` string it returned, which may be either the `watch` or the
+ * `youtu.be` form — so preserving whatever came from the source keeps the exact match intact. The
+ * two forms of the same video are reconciled by video id at dedupe time (see the loader), not by
+ * rewriting one into the other.
  *
  * @param {URL} parsed - Parsed URL object
  * @returns {string} Normalized URL
@@ -214,7 +222,7 @@ function normalizeYoutubeUrl(parsed) {
   if (pathname.startsWith('/watch')) {
     const videoId = parsed.searchParams.get('v');
     if (videoId) {
-      return `https://youtu.be/${videoId}`;
+      return `${parsed.origin}/watch?v=${videoId}`;
     }
   }
 

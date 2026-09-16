@@ -179,6 +179,15 @@ describe('url-prompts-semrush', function () {
     expect(fetchStub.firstCall.args[0]).to.contain('https://stage.example/api/ci/v2/orgs/');
   });
 
+  it('queries a youtu.be stored url as-is (preserves the form Semrush keys CBF_source on)', async () => {
+    const stored = 'https://youtu.be/dQw4w9WgXcQ';
+    fetchStub.resolves(okJson({ prompts: [{ prompt: 'yt' }] }));
+    const result = await run([{ url: stored }]);
+    const sentUrl = new URL(fetchStub.firstCall.args[0]).searchParams.get('url');
+    expect(sentUrl).to.equal(stored);
+    expect(result.get(stored)).to.deep.equal(['yt']);
+  });
+
   it('logs a start line with the request template and a degraded summary on per-URL failure', async () => {
     fetchStub.rejects(new Error('network down'));
     const result = await run([{ url: URL_A }]);

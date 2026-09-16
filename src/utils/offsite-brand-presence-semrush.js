@@ -29,6 +29,7 @@ import {
 import { getDateWindowForPreviousWeeks } from './offsite-brand-presence-postgrest.js';
 import { getImsOrgId } from './data-access.js';
 import { classifyAndNormalize } from './offsite-brand-presence-enrichment.js';
+import { youtubeVideoId } from './youtube-url.js';
 import { computeBrandTokens, isExcludedCitedHost } from './offsite-audit-utils.js';
 import {
   createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
@@ -551,6 +552,10 @@ export async function loadCitedUrlsFromSemrush({
 
   const allUrls = new Map();
   const bucketCounts = { 'youtube.com': 0, 'reddit.com': 0, cited: 0 };
+  // Maps a YouTube video id -> the first stored URL for that video, so the `watch` and `youtu.be`
+  // forms of the same video collapse to ONE entry (keeping the first-seen form) and their
+  // citations sum, even though the exact strings differ. Non-YouTube dedupes by string as before.
+  const youtubeIdToUrl = new Map();
   for (const row of result.rows) {
     const bucketed = classifyRow(row, siteHostname, brandTokens);
     if (!bucketed) {
@@ -564,11 +569,25 @@ export async function loadCitedUrlsFromSemrush({
       // eslint-disable-next-line no-continue
       continue;
     }
-    const existing = allUrls.get(bucketed.url);
+    // Dedupe key: for a YouTube video, reuse the first URL already seen for its video id (so the
+    // other form's citations add to it); otherwise the URL itself is the key.
+    let key = bucketed.url;
+    if (bucketed.domain === 'youtube.com') {
+      const videoId = youtubeVideoId(bucketed.url);
+      if (videoId) {
+        const firstUrl = youtubeIdToUrl.get(videoId);
+        if (firstUrl) {
+          key = firstUrl;
+        } else {
+          youtubeIdToUrl.set(videoId, bucketed.url);
+        }
+      }
+    }
+    const existing = allUrls.get(key);
     if (existing) {
       existing.count += citations;
     } else {
-      allUrls.set(bucketed.url, { count: citations, domain: bucketed.domain });
+      allUrls.set(key, { count: citations, domain: bucketed.domain });
       bucketCounts[bucketed.domain ?? 'cited'] += 1;
     }
   }

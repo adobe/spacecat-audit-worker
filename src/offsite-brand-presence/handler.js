@@ -120,10 +120,13 @@ const DOMAIN_ALIASES = Object.freeze({
 });
 
 /**
- * Normalizes a YouTube URL to keep only essential identifiers.
- * URL store canonicalizes URLs before storing, so we use the short form to match.
- * - /watch?v=VIDEO_ID → converts to short form https://youtu.be/VIDEO_ID
- * - /shorts/SHORT_ID → strips all query params
+ * Normalizes a YouTube URL by keeping only essential identifiers, PRESERVING the URL form.
+ * - /watch?v=VIDEO_ID&… → `${origin}/watch?v=VIDEO_ID` (keep only `v=`, drop other query params)
+ * - /shorts/SHORT_ID, youtu.be, channels → `${origin}${pathname}` (query stripped)
+ *
+ * The host/scheme/short-vs-watch form is NOT rewritten: Semrush's url-prompts keys prompts on the
+ * exact `CBF_source` string it returned (watch OR youtu.be), so preserving the source form keeps
+ * the exact match intact. The two forms of one video are reconciled by video id at dedupe time.
  *
  * @param {URL} parsed - Parsed URL object
  * @returns {string} Normalized URL
@@ -134,7 +137,7 @@ function normalizeYoutubeUrl(parsed) {
   if (pathname.startsWith('/watch')) {
     const videoId = parsed.searchParams.get('v');
     if (videoId) {
-      return `https://youtu.be/${videoId}`;
+      return `${parsed.origin}/watch?v=${videoId}`;
     }
   }
 
