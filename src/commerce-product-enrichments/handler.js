@@ -170,6 +170,9 @@ async function buildScrapePayload({
       scrapeJobId: site.getId(),
     },
     options: {
+      // Product JSON-LD is expected in the server-rendered HTML. Disabling page scripts avoids
+      // site-side DOM mutations corrupting otherwise valid structured-data scrape results.
+      enableJavascript: false,
       waitTimeoutForMetaTags: 5000,
       screenshotTypes: [],
       expandShadowDOM: false,
@@ -363,6 +366,16 @@ export async function runAuditAndProcessResults(context) {
             url,
             status: 'NO_DATA',
             reason: 'Empty scrape data',
+          };
+        }
+
+        if (scrapeData.scrapeResult?.error) {
+          log.warn(`${LOG_PREFIX} Step 3: Scrape failed for ${url}: ${scrapeData.scrapeResult.error}`);
+          return {
+            success: false,
+            url,
+            status: 'SCRAPE_ERROR',
+            reason: scrapeData.scrapeResult.error,
           };
         }
 
