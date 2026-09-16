@@ -14,6 +14,7 @@ import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access';
 import {
   createOffsiteLogger, errorField, AUDIT, PEER, OUTCOME,
 } from '../utils/offsite-logging.js';
+import { copyOffsiteOpportunityTopicVectors } from './offsite-lookup-index.js';
 
 export const SNAPSHOT_TAG = 'offsite-snapshot';
 
@@ -296,6 +297,17 @@ export async function prepareSupersededRunSnapshot({
       evergreenOpportunityId: evergreenOpportunity.getId(),
       triggerAuditId: triggerAuditId || undefined,
       snapshotAction: 'created',
+    });
+
+    // Re-point the evergreen's topic vectors to the new snapshot id (copy, not re-embed) while the
+    // evergreen still holds them — before its refresh full-replaces them. Best-effort; a failed
+    // copy only means the snapshot is not topic-matchable until re-indexed. See ADR 007.
+    await copyOffsiteOpportunityTopicVectors({
+      dataAccess,
+      siteId: evergreenOpportunity.getSiteId(),
+      fromEntityId: evergreenOpportunity.getId(),
+      toEntityId: snapshot.getId(),
+      olog,
     });
   }
 

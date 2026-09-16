@@ -20,7 +20,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 // implementation, not a stand-in. A regression in the real function (e.g. silently
 // clearing scope on a transient resolver failure) must be visible here.
 import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
-import { getOpportunityUrls, getSuggestionUrls } from '../../../src/cited-analysis/guidance-handler.js';
+import { getOpportunityUrls, getSuggestionUrls, getOpportunityTopics } from '../../../src/cited-analysis/guidance-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -36,6 +36,7 @@ describe('Cited Analysis Guidance Handler', () => {
   let syncSuggestionsStub;
   let convertToOpportunityStub;
   let indexOffsiteOpportunityByUrlStub;
+  let indexOffsiteOpportunityByTopicStub;
   let fetchAnalysisStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
@@ -80,6 +81,7 @@ describe('Cited Analysis Guidance Handler', () => {
     syncSuggestionsStub = sandbox.stub().resolves();
     convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
     indexOffsiteOpportunityByUrlStub = sandbox.stub().resolves();
+    indexOffsiteOpportunityByTopicStub = sandbox.stub().resolves();
     fetchAnalysisStub = sandbox.stub();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     // Default: brand resolved with no match. Per-test cases override.
@@ -155,6 +157,7 @@ describe('Cited Analysis Guidance Handler', () => {
       },
       '../../../src/common/offsite-lookup-index.js': {
         indexOffsiteOpportunityByUrl: indexOffsiteOpportunityByUrlStub,
+        indexOffsiteOpportunityByTopic: indexOffsiteOpportunityByTopicStub,
       },
       '../../../src/common/offsite-refresh.js': {
         persistOffsiteOpportunity: convertToOpportunityStub,
@@ -253,6 +256,13 @@ describe('Cited Analysis Guidance Handler', () => {
       expect(funnelingArg.olog).to.be.an('object');
       expect(funnelingArg.getOpportunityUrls).to.equal(handler.getOpportunityUrls);
       expect(funnelingArg.getSuggestionUrls).to.equal(handler.getSuggestionUrls);
+
+      expect(indexOffsiteOpportunityByTopicStub).to.have.been.calledOnce;
+      const topicArg = indexOffsiteOpportunityByTopicStub.firstCall.args[0];
+      expect(topicArg.context).to.equal(context);
+      expect(topicArg.opportunity).to.equal(mockOpportunity);
+      expect(topicArg.auditType).to.equal(Audit.AUDIT_TYPES.CITED_ANALYSIS);
+      expect(topicArg.getTitles).to.equal(handler.getOpportunityTopics);
       // The sync must run after housekeeping deletes stale suggestions/snapshots, never before —
       // indexing ahead of that step would index rows housekeeping is about to remove.
       expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledAfter(deleteExpiredOutdatedSuggestionsStub);
@@ -2062,5 +2072,24 @@ describe('Cited Analysis URL-index extractors', () => {
 
   it('getSuggestionUrls returns an empty array when bindings are missing', () => {
     expect(getSuggestionUrls({ getData: () => ({}) })).to.deep.equal([]);
+  });
+
+  it('getOpportunityTopics pulls topic rows from insights.content.topics', () => {
+    const opportunity = {
+      getData: () => ({
+        dashboard: {
+          analytics: {
+            performance: {
+              insights: { content: { topics: [{ id: 't1', title: 'Pricing' }] } },
+            },
+          },
+        },
+      }),
+    };
+    expect(getOpportunityTopics(opportunity)).to.deep.equal([{ id: 't1', title: 'Pricing' }]);
+  });
+
+  it('getOpportunityTopics returns an empty array when the dashboard data is missing', () => {
+    expect(getOpportunityTopics({ getData: () => ({}) })).to.deep.equal([]);
   });
 });

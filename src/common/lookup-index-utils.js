@@ -26,6 +26,11 @@ export const REASON = {
   NO_INDEXABLE_URLS: 'Extraction returned candidates but none were indexable',
   FETCH_SUGGESTIONS_FAILED: 'Failed to fetch suggestions',
   SYNC_URL_INDEX_FAILED: 'Failed to sync the URL index',
+  // Topic dimension (semantic index).
+  EXTRACT_TOPICS_FAILED: 'Failed to extract topics',
+  NO_INDEXABLE_TOPICS: 'Extraction returned candidates but none were indexable',
+  EMBED_TOPICS_FAILED: 'Failed to embed topics',
+  SYNC_SEMANTIC_INDEX_FAILED: 'Failed to sync the semantic index',
 };
 
 export function failure(reason, cause) {
@@ -114,4 +119,47 @@ export function sanitizeUrls(candidates) {
     }
   }
   return Array.from(cleaned).slice(0, MAX_URLS_PER_ENTITY);
+}
+
+const MAX_TITLE_LENGTH = 1000;
+const MAX_TOPICS_PER_ENTITY = 500;
+
+/**
+ * Topic-dimension hygiene gate, parallel to `sanitizeUrls` (Decision 9): the topic titles a caller
+ * extracts are scraped/LLM-derived and every survivor ends up embedded and written to a shared,
+ * cross-tenant lookup table, so the gate lives here once rather than in each caller's extractor.
+ *
+ * Rejects a candidate whose `title` is not a non-empty string or exceeds `MAX_TITLE_LENGTH`.
+ * Trims the title; de-duplicates on the case-folded, whitespace-collapsed title (the same
+ * normalization the writer hashes on, so two variants that would collapse to one stored row do not
+ * inflate `topicCount`); and caps the result at `MAX_TOPICS_PER_ENTITY`. Keeps the first-seen
+ * `sourceId` for each distinct title.
+ *
+ * @param {unknown[]} candidates - raw topic rows (`{ id, title }`) from the opportunity payload
+ * @returns {{sourceId: (string|undefined), text: string}[]} indexable topics, de-duplicated, in
+ *   first-seen order, capped at `MAX_TOPICS_PER_ENTITY`
+ */
+export function sanitizeTopics(candidates) {
+  const seen = new Set();
+  const cleaned = [];
+  for (const candidate of candidates) {
+    const title = candidate?.title;
+    if (typeof title !== 'string') {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    const text = title.trim();
+    if (text.length === 0 || text.length > MAX_TITLE_LENGTH) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    const dedupeKey = text.replace(/\s+/g, ' ').toLowerCase();
+    if (seen.has(dedupeKey)) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    seen.add(dedupeKey);
+    cleaned.push({ sourceId: candidate.id, text });
+  }
+  return cleaned.slice(0, MAX_TOPICS_PER_ENTITY);
 }

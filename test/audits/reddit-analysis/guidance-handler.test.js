@@ -18,7 +18,7 @@ import esmock from 'esmock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 // Use the REAL applyScopeToOpportunity (see cited-analysis test for rationale).
 import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
-import { getOpportunityUrls, getSuggestionUrls } from '../../../src/reddit-analysis/guidance-handler.js';
+import { getOpportunityUrls, getSuggestionUrls, getOpportunityTopics } from '../../../src/reddit-analysis/guidance-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -34,6 +34,7 @@ describe('Reddit Analysis Guidance Handler', () => {
   let syncSuggestionsStub;
   let convertToOpportunityStub;
   let indexOffsiteOpportunityByUrlStub;
+  let indexOffsiteOpportunityByTopicStub;
   let fetchAnalysisStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
@@ -78,6 +79,7 @@ describe('Reddit Analysis Guidance Handler', () => {
     syncSuggestionsStub = sandbox.stub().resolves();
     convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
     indexOffsiteOpportunityByUrlStub = sandbox.stub().resolves();
+    indexOffsiteOpportunityByTopicStub = sandbox.stub().resolves();
     fetchAnalysisStub = sandbox.stub();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
@@ -151,6 +153,7 @@ describe('Reddit Analysis Guidance Handler', () => {
       },
       '../../../src/common/offsite-lookup-index.js': {
         indexOffsiteOpportunityByUrl: indexOffsiteOpportunityByUrlStub,
+        indexOffsiteOpportunityByTopic: indexOffsiteOpportunityByTopicStub,
       },
       '../../../src/common/offsite-refresh.js': {
         persistOffsiteOpportunity: convertToOpportunityStub,
@@ -246,6 +249,13 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(funnelingArg.olog).to.be.an('object');
       expect(funnelingArg.getOpportunityUrls).to.equal(handler.getOpportunityUrls);
       expect(funnelingArg.getSuggestionUrls).to.equal(handler.getSuggestionUrls);
+
+      expect(indexOffsiteOpportunityByTopicStub).to.have.been.calledOnce;
+      const topicArg = indexOffsiteOpportunityByTopicStub.firstCall.args[0];
+      expect(topicArg.context).to.equal(context);
+      expect(topicArg.opportunity).to.equal(mockOpportunity);
+      expect(topicArg.auditType).to.equal(Audit.AUDIT_TYPES.REDDIT_ANALYSIS);
+      expect(topicArg.getTitles).to.equal(handler.getOpportunityTopics);
       // The sync must run after housekeeping deletes stale suggestions/snapshots, never before —
       // indexing ahead of that step would index rows housekeeping is about to remove.
       expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledAfter(deleteExpiredOutdatedSuggestionsStub);
@@ -1869,5 +1879,24 @@ describe('Reddit Analysis URL-index extractors', () => {
 
   it('getSuggestionUrls returns an empty array when bindings are missing', () => {
     expect(getSuggestionUrls({ getData: () => ({}) })).to.deep.equal([]);
+  });
+
+  it('getOpportunityTopics pulls topic rows from insights.combined.topics', () => {
+    const opportunity = {
+      getData: () => ({
+        dashboard: {
+          analytics: {
+            performance: {
+              insights: { combined: { topics: [{ id: 't1', title: 'Reliability' }] } },
+            },
+          },
+        },
+      }),
+    };
+    expect(getOpportunityTopics(opportunity)).to.deep.equal([{ id: 't1', title: 'Reliability' }]);
+  });
+
+  it('getOpportunityTopics returns an empty array when the dashboard data is missing', () => {
+    expect(getOpportunityTopics({ getData: () => ({}) })).to.deep.equal([]);
   });
 });

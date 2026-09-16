@@ -18,7 +18,7 @@ import esmock from 'esmock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 // Use the REAL applyScopeToOpportunity (see cited-analysis test for rationale).
 import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
-import { getOpportunityUrls, getSuggestionUrls } from '../../../src/youtube-analysis/guidance-handler.js';
+import { getOpportunityUrls, getSuggestionUrls, getOpportunityTopics } from '../../../src/youtube-analysis/guidance-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -35,6 +35,7 @@ describe('YouTube Analysis Guidance Handler', () => {
   let mockConvertToOpportunity;
   let mockSyncSuggestions;
   let indexOffsiteOpportunityByUrlStub;
+  let indexOffsiteOpportunityByTopicStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
   let supersededRunSnapshotCreationStub;
@@ -102,6 +103,7 @@ describe('YouTube Analysis Guidance Handler', () => {
     mockConvertToOpportunity = sandbox.stub().resolves(mockOpportunity);
     mockSyncSuggestions = sandbox.stub().resolves();
     indexOffsiteOpportunityByUrlStub = sandbox.stub().resolves();
+    indexOffsiteOpportunityByTopicStub = sandbox.stub().resolves();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
     supersededRunSnapshotCreationStub = sandbox.stub().resolves(null);
@@ -177,6 +179,7 @@ describe('YouTube Analysis Guidance Handler', () => {
       },
       '../../../src/common/offsite-lookup-index.js': {
         indexOffsiteOpportunityByUrl: indexOffsiteOpportunityByUrlStub,
+        indexOffsiteOpportunityByTopic: indexOffsiteOpportunityByTopicStub,
       },
       '../../../src/common/offsite-refresh.js': {
         persistOffsiteOpportunity: mockConvertToOpportunity,
@@ -531,6 +534,13 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(funnelingArg.olog).to.be.an('object');
       expect(funnelingArg.getOpportunityUrls).to.equal(guidanceHandler.getOpportunityUrls);
       expect(funnelingArg.getSuggestionUrls).to.equal(guidanceHandler.getSuggestionUrls);
+
+      expect(indexOffsiteOpportunityByTopicStub).to.have.been.calledOnce;
+      const topicArg = indexOffsiteOpportunityByTopicStub.firstCall.args[0];
+      expect(topicArg.context).to.equal(context);
+      expect(topicArg.opportunity).to.equal(mockOpportunity);
+      expect(topicArg.auditType).to.equal(Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS);
+      expect(topicArg.getTitles).to.equal(guidanceHandler.getOpportunityTopics);
       // The sync must run after housekeeping deletes stale suggestions/snapshots, never before —
       // indexing ahead of that step would index rows housekeeping is about to remove.
       expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledAfter(deleteExpiredOutdatedSuggestionsStub);
@@ -1861,5 +1871,30 @@ describe('YouTube Analysis URL-index extractors', () => {
 
   it('getSuggestionUrls returns an empty array when bindings are missing', () => {
     expect(getSuggestionUrls({ getData: () => ({}) })).to.deep.equal([]);
+  });
+
+  it('getOpportunityTopics pulls from BOTH insights.content.topics and insights.comments.topics', () => {
+    const opportunity = {
+      getData: () => ({
+        dashboard: {
+          analytics: {
+            performance: {
+              insights: {
+                content: { topics: [{ id: 'c1', title: 'Setup' }] },
+                comments: { topics: [{ id: 'm1', title: 'Support' }] },
+              },
+            },
+          },
+        },
+      }),
+    };
+    expect(getOpportunityTopics(opportunity)).to.deep.equal([
+      { id: 'c1', title: 'Setup' },
+      { id: 'm1', title: 'Support' },
+    ]);
+  });
+
+  it('getOpportunityTopics returns an empty array when the dashboard data is missing', () => {
+    expect(getOpportunityTopics({ getData: () => ({}) })).to.deep.equal([]);
   });
 });

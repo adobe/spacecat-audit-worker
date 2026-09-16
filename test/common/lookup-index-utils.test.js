@@ -12,7 +12,7 @@
 
 import { expect } from 'chai';
 import {
-  sanitizeUrls, REASON, failure, resolvePostgrestClient,
+  sanitizeUrls, sanitizeTopics, REASON, failure, resolvePostgrestClient,
 } from '../../src/common/lookup-index-utils.js';
 
 describe('lookup-index-utils', () => {
@@ -105,6 +105,54 @@ describe('lookup-index-utils', () => {
       expect(result).to.have.lengthOf(500);
       expect(result[0]).to.equal('https://example.com/page-0');
       expect(result[499]).to.equal('https://example.com/page-499');
+    });
+  });
+
+  describe('sanitizeTopics', () => {
+    it('maps topic rows to {sourceId, text} and trims the title', () => {
+      expect(sanitizeTopics([{ id: 't1', title: '  Pricing  ' }])).to.deep.equal([
+        { sourceId: 't1', text: 'Pricing' },
+      ]);
+    });
+
+    it('drops rows with a non-string, empty, or missing title', () => {
+      expect(sanitizeTopics([
+        { id: 't1', title: 'Keep' },
+        { id: 't2', title: '   ' },
+        { id: 't3', title: 42 },
+        { id: 't4' },
+        null,
+      ])).to.deep.equal([{ sourceId: 't1', text: 'Keep' }]);
+    });
+
+    it('drops a title longer than the max length', () => {
+      const longTitle = 'a'.repeat(1001);
+      expect(sanitizeTopics([{ id: 't1', title: longTitle }])).to.deep.equal([]);
+    });
+
+    it('de-duplicates on the case-folded, whitespace-collapsed title, keeping the first sourceId', () => {
+      expect(sanitizeTopics([
+        { id: 't1', title: 'Pricing Plans' },
+        { id: 't2', title: 'pricing   plans' },
+      ])).to.deep.equal([{ sourceId: 't1', text: 'Pricing Plans' }]);
+    });
+
+    it('keeps an undefined sourceId when the row has no id', () => {
+      expect(sanitizeTopics([{ title: 'Pricing' }])).to.deep.equal([
+        { sourceId: undefined, text: 'Pricing' },
+      ]);
+    });
+
+    it('returns an empty array for an empty input', () => {
+      expect(sanitizeTopics([])).to.deep.equal([]);
+    });
+
+    it('caps the de-duplicated result at MAX_TOPICS_PER_ENTITY, keeping the first 500 in order', () => {
+      const many = Array.from({ length: 510 }, (_, i) => ({ id: `t${i}`, title: `Topic ${i}` }));
+      const result = sanitizeTopics(many);
+      expect(result).to.have.lengthOf(500);
+      expect(result[0]).to.deep.equal({ sourceId: 't0', text: 'Topic 0' });
+      expect(result[499]).to.deep.equal({ sourceId: 't499', text: 'Topic 499' });
     });
   });
 

@@ -16,7 +16,7 @@ import {
 import { Audit } from '@adobe/spacecat-shared-data-access';
 
 import { syncSuggestions } from '../utils/data-access.js';
-import { indexOffsiteOpportunityByUrl } from '../common/offsite-lookup-index.js';
+import { indexOffsiteOpportunityByUrl, indexOffsiteOpportunityByTopic } from '../common/offsite-lookup-index.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { postMessageOptional, buildAnalysisVisibilityMessage } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
@@ -48,6 +48,12 @@ export function getOpportunityUrls(opportunity) {
   const sources = opportunity.getData()?.dashboard?.analytics?.performance
     ?.insights?.content?.sources ?? [];
   return sources.map((source) => source.url);
+}
+
+// Cited topics live under `insights.content.topics` (rows of `{ id, title }`).
+export function getOpportunityTopics(opportunity) {
+  return opportunity.getData()?.dashboard?.analytics?.performance
+    ?.insights?.content?.topics ?? [];
 }
 
 export function getSuggestionUrls(suggestion) {
@@ -292,6 +298,15 @@ export default async function handler(message, context) {
       auditType,
       getOpportunityUrls,
       getSuggestionUrls,
+      olog: ologOpp,
+    });
+
+    // Topic dimension of the same funneling phase (semantic index; best-effort, never throws).
+    await indexOffsiteOpportunityByTopic({
+      context,
+      opportunity,
+      auditType,
+      getTitles: getOpportunityTopics,
       olog: ologOpp,
     });
 

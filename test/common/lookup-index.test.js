@@ -26,8 +26,10 @@ describe('lookup-index (shared foundation)', () => {
   let context;
   let syncUrlIndexStub;
   let syncUrlIndexManyStub;
+  let syncOpportunitySemanticStub;
   let indexOpportunityByUrl;
   let indexOpportunitySuggestionsByUrl;
+  let indexOpportunityByTopic;
 
   const makeSuggestion = (id, urls = []) => ({ getId: () => id, urls });
 
@@ -53,13 +55,18 @@ describe('lookup-index (shared foundation)', () => {
     syncUrlIndexStub = sandbox.stub().callsFake(async (_client, { urls }) => urls.length);
     syncUrlIndexManyStub = sandbox.stub()
       .callsFake(async (_client, { entries }) => new Map(entries.map((e) => [e.entityId, e])));
+    syncOpportunitySemanticStub = sandbox.stub()
+      .callsFake(async (_client, { sources }) => sources.length);
     getUrls.reset();
-    ({ indexOpportunityByUrl, indexOpportunitySuggestionsByUrl } = await esmock(
+    ({
+      indexOpportunityByUrl, indexOpportunitySuggestionsByUrl, indexOpportunityByTopic,
+    } = await esmock(
       '../../src/common/lookup-index.js',
       {
         '@adobe/spacecat-shared-data-access': {
           syncUrlIndex: syncUrlIndexStub,
           syncUrlIndexMany: syncUrlIndexManyStub,
+          syncOpportunitySemantic: syncOpportunitySemanticStub,
         },
       },
     ));
@@ -535,6 +542,130 @@ describe('lookup-index (shared foundation)', () => {
       });
 
       expect(result.error.message).to.equal('Failed to sync the URL index');
+      expect(result.error.cause).to.equal(cause);
+    });
+  });
+
+  describe('indexOpportunityByTopic', () => {
+    const getTitles = sandbox.stub();
+    let embeddingClient;
+
+    beforeEach(() => {
+      getTitles.reset();
+      embeddingClient = {
+        createEmbeddings: sandbox.stub()
+          .callsFake(async (inputs) => inputs.map((_t, i) => [i, i + 1])),
+      };
+    });
+
+    it('embeds the topics and full-replaces the opportunity vectors, reporting what was submitted', async () => {
+      getTitles.returns([{ id: 't1', title: 'Pricing' }, { id: 't2', title: 'Support' }]);
+      const opportunity = makeOpportunity();
+
+      const result = await indexOpportunityByTopic({
+        context, opportunity, entityType: 'cited-analysis', getTitles, embeddingClient,
+      });
+
+      expect(result).to.deep.equal({
+        opportunityId: 'oppty-1',
+        submittedEntry: { entityId: 'oppty-1', sourceType: 'topic', topicCount: 2 },
+        syncedIndexResult: 2,
+      });
+      expect(embeddingClient.createEmbeddings).to.have.been.calledOnceWith(['Pricing', 'Support']);
+      // native dims: no dimensions arg
+      expect(embeddingClient.createEmbeddings.firstCall.args[1]).to.equal(undefined);
+      expect(syncOpportunitySemanticStub).to.have.been.calledOnceWith(postgrestClient, {
+        siteId: 'site-1',
+        entityId: 'oppty-1',
+        entityType: 'cited-analysis',
+        sourceType: 'topic',
+        sources: [
+          {
+            text: 'Pricing', vector: [0, 1], model: 'azure/text-embedding-3-small', dims: 1536, sourceId: 't1',
+          },
+          {
+            text: 'Support', vector: [1, 2], model: 'azure/text-embedding-3-small', dims: 1536, sourceId: 't2',
+          },
+        ],
+      });
+    });
+
+    it('clears (empty sources, no embed) when the opportunity genuinely has no topics', async () => {
+      getTitles.returns([]);
+      const opportunity = makeOpportunity();
+
+      const result = await indexOpportunityByTopic({
+        context, opportunity, entityType: 'cited-analysis', getTitles, embeddingClient,
+      });
+
+      expect(result).to.deep.equal({
+        opportunityId: 'oppty-1',
+        submittedEntry: { entityId: 'oppty-1', sourceType: 'topic', topicCount: 0 },
+        syncedIndexResult: 0,
+      });
+      expect(embeddingClient.createEmbeddings).to.not.have.been.called;
+      expect(syncOpportunitySemanticStub.firstCall.args[1].sources).to.deep.equal([]);
+    });
+
+    it('fails with RESOLVE_POSTGREST_CLIENT_FAILED when the client is missing', async () => {
+      const result = await indexOpportunityByTopic({
+        context: { dataAccess: { services: {} } },
+        opportunity: makeOpportunity(),
+        entityType: 'cited-analysis',
+        getTitles,
+        embeddingClient,
+      });
+      expect(result.error.message).to.equal('Failed to resolve postgrest client');
+      expect(getTitles).to.not.have.been.called;
+    });
+
+    it('fails with EXTRACT_TOPICS_FAILED when getTitles returns a non-array', async () => {
+      getTitles.returns('nope');
+      const result = await indexOpportunityByTopic({
+        context, opportunity: makeOpportunity(), entityType: 'cited-analysis', getTitles, embeddingClient,
+      });
+      expect(result.error.message).to.equal('Failed to extract topics');
+    });
+
+    it('fails with EXTRACT_TOPICS_FAILED (with cause) when getTitles throws', async () => {
+      const cause = new Error('boom');
+      getTitles.throws(cause);
+      const result = await indexOpportunityByTopic({
+        context, opportunity: makeOpportunity(), entityType: 'cited-analysis', getTitles, embeddingClient,
+      });
+      expect(result.error.message).to.equal('Failed to extract topics');
+      expect(result.error.cause).to.equal(cause);
+    });
+
+    it('fails with NO_INDEXABLE_TOPICS when candidates exist but none survive hygiene', async () => {
+      getTitles.returns([{ id: 't1', title: '  ' }, { id: 't2' }]);
+      const result = await indexOpportunityByTopic({
+        context, opportunity: makeOpportunity(), entityType: 'cited-analysis', getTitles, embeddingClient,
+      });
+      expect(result.error.message).to.equal('Extraction returned candidates but none were indexable');
+      expect(embeddingClient.createEmbeddings).to.not.have.been.called;
+    });
+
+    it('fails with EMBED_TOPICS_FAILED (with cause) when embedding throws', async () => {
+      getTitles.returns([{ id: 't1', title: 'Pricing' }]);
+      const cause = new Error('azure down');
+      embeddingClient.createEmbeddings.rejects(cause);
+      const result = await indexOpportunityByTopic({
+        context, opportunity: makeOpportunity(), entityType: 'cited-analysis', getTitles, embeddingClient,
+      });
+      expect(result.error.message).to.equal('Failed to embed topics');
+      expect(result.error.cause).to.equal(cause);
+      expect(syncOpportunitySemanticStub).to.not.have.been.called;
+    });
+
+    it('fails with SYNC_SEMANTIC_INDEX_FAILED (with cause) when the writer throws', async () => {
+      getTitles.returns([{ id: 't1', title: 'Pricing' }]);
+      const cause = new Error('pg boom');
+      syncOpportunitySemanticStub.rejects(cause);
+      const result = await indexOpportunityByTopic({
+        context, opportunity: makeOpportunity(), entityType: 'cited-analysis', getTitles, embeddingClient,
+      });
+      expect(result.error.message).to.equal('Failed to sync the semantic index');
       expect(result.error.cause).to.equal(cause);
     });
   });
