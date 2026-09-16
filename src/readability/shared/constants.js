@@ -15,7 +15,7 @@ export const READABILITY_GUIDANCE_TYPE = 'guidance:readability';
 export const READABILITY_OBSERVATION = 'Content readability needs improvement';
 export const MYSTIQUE_BATCH_SIZE = 10;
 export const READABILITY_BATCH_PREFIX = 'readability/batch-requests';
-export const READABILITY_PREFLIGHT_RESPONSE_PREFIX = 'preflight-readability/response';
+export const READABILITY_PREFLIGHT_RESPONSE_PREFIX = 'preflight-readability/responses';
 export const READABILITY_PREFLIGHT_COMPLETION_PREFIX = 'preflight-readability/completions';
 
 // Opportunity audit constants

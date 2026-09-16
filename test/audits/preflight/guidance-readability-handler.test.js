@@ -407,7 +407,7 @@ describe('Guidance Readability Handler Tests', () => {
       expect(mockAsyncJob.save).to.have.been.called;
 
       const storedResponse = JSON.parse(s3PutInputs.find(
-        ({ Key }) => Key.includes('preflight-readability/response/'),
+        ({ Key }) => Key.includes('preflight-readability/responses/'),
       ).Body);
       const { mappedSuggestions: suggestions } = storedResponse;
       expect(suggestions).to.have.lengthOf(1);
@@ -470,7 +470,7 @@ describe('Guidance Readability Handler Tests', () => {
       expect(mockAsyncJob.setMetadata).to.not.have.been.called;
       expect(mockAsyncJob.save).to.not.have.been.called;
       const storedResponse = JSON.parse(s3PutInputs.find(
-        ({ Key }) => Key.includes('preflight-readability/response/'),
+        ({ Key }) => Key.includes('preflight-readability/responses/'),
       ).Body);
       expect(storedResponse.messageId).to.equal('message-id-5');
       expect(storedResponse.mappedSuggestions).to.have.lengthOf(1);
@@ -621,7 +621,7 @@ describe('Guidance Readability Handler Tests', () => {
     });
 
     it('handles stored responses without suggestions', async () => {
-      const prefix = 'preflight-readability/response/test-audit-id/';
+      const prefix = 'preflight-readability/responses/test-audit-id/';
       s3Objects.set(`${prefix}message-1.json`, JSON.stringify({ messageId: 'message-1' }));
       const asyncJob = {
         getMetadata: () => ({
@@ -1671,7 +1671,7 @@ describe('Guidance Readability Handler Tests', () => {
       expect(result).to.deep.equal({ ok: true });
 
       const storedResponse = JSON.parse(s3PutInputs.find(
-        ({ Key }) => Key.includes('preflight-readability/response/'),
+        ({ Key }) => Key.includes('preflight-readability/responses/'),
       ).Body);
       const [suggestion] = storedResponse.mappedSuggestions;
       expect(suggestion.pageUrl).to.equal('https://example.com'); // Site's base URL
@@ -1768,7 +1768,7 @@ describe('Guidance Readability Handler Tests', () => {
       expect(result).to.deep.equal({ ok: true });
 
       const storedResponse = JSON.parse(s3PutInputs.find(
-        ({ Key }) => Key.includes('preflight-readability/response/'),
+        ({ Key }) => Key.includes('preflight-readability/responses/'),
       ).Body);
       const [mappedSuggestion] = storedResponse.mappedSuggestions;
 
@@ -1936,7 +1936,7 @@ describe('Guidance Readability Handler Tests', () => {
       expect(result).to.deep.equal({ ok: true });
 
       const storedResponse = JSON.parse(s3PutInputs.find(
-        ({ Key }) => Key.includes('preflight-readability/response/'),
+        ({ Key }) => Key.includes('preflight-readability/responses/'),
       ).Body);
       const { mappedSuggestions: suggestions } = storedResponse;
 
