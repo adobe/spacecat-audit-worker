@@ -38,6 +38,33 @@ function hasValidCommerceLlmoConfig(site) {
 
 const MAX_EXCLUDED_URLS = 500;
 
+function extractProductSkus(jsonLd) {
+  const skus = new Set();
+
+  const visit = (value, isProduct = false) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, isProduct));
+      return;
+    }
+
+    if (!value || typeof value !== 'object') {
+      return;
+    }
+
+    const types = Array.isArray(value['@type']) ? value['@type'] : [value['@type']];
+    if ((isProduct || types.includes('Product')) && value.sku) {
+      skus.add(value.sku);
+    }
+
+    Object.entries(value).forEach(([key, nestedValue]) => {
+      visit(nestedValue, key === 'Product');
+    });
+  };
+
+  visit(jsonLd);
+  return skus;
+}
+
 /**
  * Step 1: Import Top Pages
  * Prepares the audit context and returns metadata for the import worker.
@@ -345,15 +372,13 @@ export async function runAuditAndProcessResults(context) {
         let skuCount = 0;
         let sku = null;
 
-        const Product = scrapeData?.scrapeResult?.structuredData?.jsonld?.Product;
-        if (Array.isArray(Product) && Product.length > 0) {
-          const uniqueSkus = new Set(Product.filter((p) => p.sku).map((p) => p.sku));
-          skuCount = uniqueSkus.size;
-          isProductPage = skuCount === 1;
-          // Extract the actual SKU value
-          if (isProductPage) {
-            sku = Product.find((p) => p.sku)?.sku;
-          }
+        const uniqueSkus = extractProductSkus(
+          scrapeData?.scrapeResult?.structuredData?.jsonld,
+        );
+        skuCount = uniqueSkus.size;
+        isProductPage = skuCount === 1;
+        if (isProductPage) {
+          [sku] = uniqueSkus;
         }
 
         log.debug(`${LOG_PREFIX} Step 3: Processed page: ${url} (isProductPage: ${isProductPage})`);
