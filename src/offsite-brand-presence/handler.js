@@ -18,7 +18,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { getPreviousWeeks, loadBrandPresenceData } from '../utils/offsite-brand-presence-enrichment.js';
 import { loadCitedUrlsFromSemrush } from '../utils/offsite-brand-presence-semrush.js';
-import { canonicalYoutubeWatchUrl } from '../utils/youtube-url.js';
 import { SEMRUSH_ENTITLEMENT_SKIP_REASONS } from '../utils/semrush-entitlement.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
@@ -121,13 +120,13 @@ const DOMAIN_ALIASES = Object.freeze({
 });
 
 /**
- * Normalizes a YouTube URL to keep only essential identifiers.
- * - /watch?v=VIDEO_ID → canonical watch URL https://www.youtube.com/watch?v=VIDEO_ID (only `v=`)
- * - /shorts/SHORT_ID → strips all query params
+ * Normalizes a YouTube URL by keeping only essential identifiers, PRESERVING the URL form.
+ * - /watch?v=VIDEO_ID&… → `${origin}/watch?v=VIDEO_ID` (keep only `v=`, drop other query params)
+ * - /shorts/SHORT_ID, youtu.be, channels → `${origin}${pathname}` (query stripped)
  *
- * The canonical watch URL (not the short `youtu.be/<id>` alias) is used so it exact-matches
- * Semrush's `CBF_source` key for the url-prompts lookup (see youtube-url.js). Existing short-form
- * records from the prior normalization are left to go stale (not migrated).
+ * The host/scheme/short-vs-watch form is NOT rewritten: Semrush's url-prompts keys prompts on the
+ * exact `CBF_source` string it returned (watch OR youtu.be), so preserving the source form keeps
+ * the exact match intact. The two forms of one video are reconciled by video id at dedupe time.
  *
  * @param {URL} parsed - Parsed URL object
  * @returns {string} Normalized URL
@@ -138,7 +137,7 @@ function normalizeYoutubeUrl(parsed) {
   if (pathname.startsWith('/watch')) {
     const videoId = parsed.searchParams.get('v');
     if (videoId) {
-      return canonicalYoutubeWatchUrl(videoId);
+      return `${parsed.origin}/watch?v=${videoId}`;
     }
   }
 

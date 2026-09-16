@@ -23,7 +23,6 @@ import {
 } from './offsite-s2s-auth.js';
 import { resolveSemrushTimeoutMs } from './offsite-brand-presence-semrush.js';
 import { resolveSemrushEntitlement } from './semrush-entitlement.js';
-import { toCanonicalYoutubeUrl } from './youtube-url.js';
 import {
   createOffsiteLogger, errorField, OUTCOME, PEER,
 } from './offsite-logging.js';
@@ -358,18 +357,12 @@ export async function loadUrlPromptsFromSemrush({
   const requests = urls
     .filter(({ url }) => url)
     .map(({ url }) => ({
-      // Result is keyed by the ORIGINAL stored url (so the handler's candidate matching lines
-      // up), but the CBF_source we query is canonicalized: Semrush keys prompts on the canonical
-      // watch URL (`youtube.com/watch?v=<id>`), so a `youtu.be/<id>` (or param-laden) stored form
-      // would exact-match-miss and return 0 prompts. No-op for non-YouTube URLs.
+      // Query the stored url AS-IS: it's the exact form Semrush returned from domain-urls, which
+      // is what Semrush keys `CBF_source` on (watch OR youtu.be). Rewriting the form here would
+      // break the exact match for whichever form Semrush actually stored.
       url,
       requestUrl: buildUrlPromptsUrl({
-        baseUrl,
-        spaceCatId,
-        brandId: brand.brandId,
-        url: toCanonicalYoutubeUrl(url),
-        startDate,
-        endDate,
+        baseUrl, spaceCatId, brandId: brand.brandId, url, startDate, endDate,
       }),
     }));
   if (requests.length === 0) {

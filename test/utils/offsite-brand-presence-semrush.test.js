@@ -379,6 +379,18 @@ describe('offsite-brand-presence-semrush', function () {
     expect(allUrls.get(YT_NORM).count).to.equal(7);
   });
 
+  it('collapses the youtu.be and watch forms of one video, summing citations (keeps first form)', async () => {
+    fetchStub.resolves(okJson({
+      urls: [
+        { url: 'https://youtu.be/abc', citations: 3 }, // first occurrence — form kept
+        { url: YT_URL, citations: 4 }, // watch form of the same video (v=abc) — folds in
+      ],
+    }));
+    const allUrls = await run();
+    expect(allUrls.get('https://youtu.be/abc')).to.deep.equal({ count: 7, domain: 'youtube.com' });
+    expect(allUrls.has(YT_NORM)).to.equal(false);
+  });
+
   it('sums duplicate URLs within the cited bucket too', async () => {
     fetchStub.resolves(okJson({
       urls: [{ url: CITED_URL, citations: 3 }, { url: CITED_URL, citations: 4 }],

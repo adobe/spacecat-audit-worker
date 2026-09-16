@@ -10,24 +10,19 @@
  * governing permissions and limitations under the License.
  */
 
-/**
- * Small helpers for canonicalizing YouTube video URLs to a single form.
- *
- * The offsite pipeline stores a video by its **canonical watch URL**
- * `https://www.youtube.com/watch?v=<id>` (extra params like `t=`/`list=` stripped). Semrush's
- * URL-Inspector keys prompts on that same watch URL (exact `CBF_source` match), so both the
- * stored form and the `url-prompts` query must use it — the short `youtu.be/<id>` alias does not
- * match. These helpers convert between the two so a URL stored/collected in either form resolves
- * to the same video.
- */
-
-// A YouTube video id is 11 chars of `[A-Za-z0-9_-]`; allow a small range for forward-compat.
-const YT_VIDEO_ID = /^[\w-]{8,15}$/;
+// A YouTube video id is `[A-Za-z0-9_-]`; length isn't constrained (test fixtures use short ids,
+// real ids are 11 chars) — the host/path gate below already guarantees it's a video slot.
+const YT_VIDEO_ID = /^[\w-]+$/;
 
 /**
  * Extracts the video id from a YouTube watch (`youtube.com/watch?v=<id>`) or short
  * (`youtu.be/<id>`) URL. Returns `null` for anything else (channels, shorts, playlists,
  * non-YouTube, unparseable).
+ *
+ * Used to dedupe the two forms of the same video: `youtube.com/watch?v=ID` and `youtu.be/ID`
+ * share a video id, so they collapse to one URL-store entry (and their citations sum) even
+ * though the exact URL strings differ. The URL *form* itself is preserved (first occurrence
+ * kept) — Semrush's url-prompts keys on the exact form it returned, which can be either.
  *
  * @param {string} rawUrl
  * @returns {string|null}
@@ -49,39 +44,4 @@ export function youtubeVideoId(rawUrl) {
     return id && YT_VIDEO_ID.test(id) ? id : null;
   }
   return null;
-}
-
-/**
- * The canonical watch URL for a video id.
- *
- * @param {string} videoId
- * @returns {string} `https://www.youtube.com/watch?v=<id>`
- */
-export function canonicalYoutubeWatchUrl(videoId) {
-  return `https://www.youtube.com/watch?v=${videoId}`;
-}
-
-/**
- * If `rawUrl` is a YouTube watch/short video URL, returns its canonical watch URL; otherwise
- * returns `rawUrl` unchanged. Idempotent, safe on non-YouTube URLs.
- *
- * @param {string} rawUrl
- * @returns {string}
- */
-export function toCanonicalYoutubeUrl(rawUrl) {
-  const id = youtubeVideoId(rawUrl);
-  return id ? canonicalYoutubeWatchUrl(id) : rawUrl;
-}
-
-/**
- * If `rawUrl` is a YouTube watch/short video URL, returns the equivalent `youtu.be/<id>` short
- * form; otherwise `null`. Used to recognize a legacy short-form record as the same video during
- * dedup after the canonical-form switch.
- *
- * @param {string} rawUrl
- * @returns {string|null}
- */
-export function youtubeShortForm(rawUrl) {
-  const id = youtubeVideoId(rawUrl);
-  return id ? `https://youtu.be/${id}` : null;
 }

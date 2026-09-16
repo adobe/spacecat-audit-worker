@@ -179,14 +179,12 @@ describe('url-prompts-semrush', function () {
     expect(fetchStub.firstCall.args[0]).to.contain('https://stage.example/api/ci/v2/orgs/');
   });
 
-  it('queries the canonical watch URL for a youtu.be video but keys the result by the stored url', async () => {
+  it('queries a youtu.be stored url as-is (preserves the form Semrush keys CBF_source on)', async () => {
     const stored = 'https://youtu.be/dQw4w9WgXcQ';
     fetchStub.resolves(okJson({ prompts: [{ prompt: 'yt' }] }));
     const result = await run([{ url: stored }]);
-    // CBF_source sent to Semrush is the canonical watch URL (exact-match key)...
     const sentUrl = new URL(fetchStub.firstCall.args[0]).searchParams.get('url');
-    expect(sentUrl).to.equal('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
-    // ...but prompts are attached to the original stored (youtu.be) url.
+    expect(sentUrl).to.equal(stored);
     expect(result.get(stored)).to.deep.equal(['yt']);
   });
 
