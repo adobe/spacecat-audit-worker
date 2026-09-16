@@ -1,3 +1,10 @@
+## [1.540.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.540.0...v1.540.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* do not exclude failed commerce scrapes ([#2980](https://github.com/adobe/spacecat-audit-worker/issues/2980)) ([3e16457](https://github.com/adobe/spacecat-audit-worker/commit/3e164572ff724610853c7172e68988794aec2701))
+
 # [1.540.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.2...v1.540.0) (2026-09-16)
 
 
