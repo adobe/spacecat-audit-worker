@@ -366,6 +366,16 @@ export async function runAuditAndProcessResults(context) {
           };
         }
 
+        if (scrapeData.scrapeResult?.error) {
+          log.warn(`${LOG_PREFIX} Step 3: Scrape failed for ${url}: ${scrapeData.scrapeResult.error}`);
+          return {
+            success: false,
+            url,
+            status: 'SCRAPE_ERROR',
+            reason: scrapeData.scrapeResult.error,
+          };
+        }
+
         // Product page detection logic
         // Check for JSON-LD Product structure with SKU (follows product-metatags pattern)
         let isProductPage = false;
