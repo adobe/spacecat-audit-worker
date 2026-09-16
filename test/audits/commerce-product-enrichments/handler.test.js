@@ -1890,6 +1890,211 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     }]);
   });
 
+  it('detects zip-corvette style JSON-LD script-block arrays and sends SKU 504399', async () => {
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'accepted', jobId: 'job-zip-1' }),
+    });
+
+    const productUrl = 'https://www.zip-corvette.com/84-96-center-console-lock-w-key.html';
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: productUrl,
+            finalUrl: productUrl,
+            scrapeResult: {
+              structuredData: {
+                jsonld: [
+                  {
+                    '@context': 'https://schema.org',
+                    '@type': 'WebSite',
+                    name: 'Zip Corvette',
+                    description: null,
+                    sameAs: ['https://www.zip-corvette.com', null, 1],
+                    '@graph': [
+                      null,
+                      'ignored',
+                      {
+                        '@type': 'SearchAction',
+                        target: 'https://www.zip-corvette.com/search?q={search_term_string}',
+                      },
+                    ],
+                  },
+                  {
+                    '@context': 'https://schema.org',
+                    '@type': 'Organization',
+                    name: 'Zip Products Inc.',
+                    url: 'https://www.zip-corvette.com',
+                    '@graph': [
+                      {
+                        '@type': 'WebPage',
+                        name: 'Product Detail',
+                      },
+                      false,
+                    ],
+                  },
+                  {
+                    '@context': 'https://schema.org',
+                    '@type': ['Product', 'Thing'],
+                    name: '84-96 center console lock w/key',
+                    sku: '504399',
+                    offers: {
+                      '@type': 'Offer',
+                      price: '39.95',
+                      availability: 'https://schema.org/InStock',
+                      seller: null,
+                    },
+                  },
+                ],
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-zip-1' },
+      finalUrl: 'https://www.zip-corvette.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+      },
+      dataAccess,
+      scrapeResultPaths: new Map([
+        [productUrl, 'scrapes/site-1/product-zip/scrape.json'],
+      ]),
+    };
+
+    const result = await runAuditWithIms(context);
+
+    expect(result.auditResult.status).to.equal('OPPORTUNITIES_FOUND');
+    expect(result.auditResult.productPages).to.equal(1);
+
+    const enrichmentCall = fetchStub.getCalls().find((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
+    expect(enrichmentCall).to.exist;
+
+    const payload = JSON.parse(enrichmentCall.args[1].body);
+    expect(payload.scrapes).to.have.lengthOf(1);
+    expect(payload.scrapes[0].sku).to.equal('504399');
+  });
+
+  it('rejects two distinct grouped Product SKUs across separate JSON-LD script blocks', async () => {
+    fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(validACCSConfig),
+    });
+
+    fetchStub.withArgs('https://test-enrichment-endpoint/catalog-enrichment', sinon.match.any).resolves({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ status: 'accepted', jobId: 'unexpected' }),
+    });
+
+    const listingUrl = 'https://example.com/multi-product-listing';
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: listingUrl,
+            finalUrl: listingUrl,
+            scrapeResult: {
+              structuredData: {
+                jsonld: [
+                  {
+                    '@context': 'https://schema.org',
+                    '@type': 'WebSite',
+                    name: 'Example Store',
+                    description: null,
+                    potentialAction: false,
+                  },
+                  {
+                    '@context': 'https://schema.org',
+                    '@type': 'CollectionPage',
+                    Product: {
+                      '@type': ['Product', 'Thing'],
+                      sku: 'SKU-111',
+                      name: 'Grouped Product 1',
+                    },
+                    breadcrumbs: [null, 'Home', 42],
+                  },
+                  {
+                    '@context': 'https://schema.org',
+                    '@type': 'CollectionPage',
+                    '@graph': [
+                      'ignored',
+                      null,
+                      {
+                        Product: {
+                          '@type': 'Product',
+                          sku: 'SKU-222',
+                          name: 'Grouped Product 2',
+                          offers: {
+                            '@type': 'Offer',
+                            price: '14.99',
+                          },
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          })),
+        },
+      }),
+    };
+
+    const context = {
+      site,
+      audit: { getId: () => 'audit-zip-2' },
+      finalUrl: 'https://example.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+        IMS_HOST: 'ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+      },
+      dataAccess,
+      scrapeResultPaths: new Map([
+        [listingUrl, 'scrapes/site-1/listing/scrape.json'],
+      ]),
+    };
+
+    const result = await runAuditWithIms(context);
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.productPages).to.equal(0);
+    const enrichmentCalls = fetchStub.getCalls().filter((call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment');
+    expect(enrichmentCalls).to.have.lengthOf(0);
+  });
+
   it('includes null organizationId in payload when Organization.findById returns no record', async () => {
     dataAccess.Organization.findById.resolves(null);
 
@@ -2004,7 +2209,6 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     const payload = JSON.parse(enrichmentCall.args[1].body);
     expect(payload).to.have.property('imsOrgId', null);
   });
-
 
   it('handles enrichment API failure gracefully', async () => {
     fetchStub.withArgs(sinon.match(/config\.json/)).resolves({
@@ -2282,7 +2486,6 @@ describe('Commerce Product Enrichments - CAS IMS Authentication', () => {
     expect(result.auditResult.enrichmentResponse).to.be.an('array').with.lengthOf(1);
     expect(result.auditResult.enrichmentResponse[0]).to.have.property('error');
   });
-
 });
 
 describe('Commerce Product Enrichments - Manual Config Grouping', () => {
