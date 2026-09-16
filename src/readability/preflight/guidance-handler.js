@@ -38,6 +38,96 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
   });
 }
 
+function nextUpdatedAt(previousUpdatedAt) {
+  const previousTimestamp = Date.parse(previousUpdatedAt);
+  const timestamp = Math.max(Date.now(), previousTimestamp + 1);
+  return new Date(timestamp).toISOString();
+}
+
+export async function accumulateReadabilityResponse({
+  AsyncJobEntity,
+  asyncJob,
+  auditId,
+  messageId,
+  mappedSuggestions,
+  log,
+  maxAttempts = 50,
+}) {
+  const supportsConditionalUpdates = typeof AsyncJobEntity.updateByKeys === 'function'
+    && typeof asyncJob.getUpdatedAt === 'function';
+  let currentJob = asyncJob;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const jobMetadata = currentJob.getMetadata();
+    const { readabilityMetadata } = jobMetadata.payload;
+    const processedSuggestionIds = new Set(readabilityMetadata.processedSuggestionIds || []);
+    processedSuggestionIds.add(messageId);
+    const updatedReadabilityMetadata = {
+      ...readabilityMetadata,
+      mystiqueResponsesReceived: (readabilityMetadata.mystiqueResponsesReceived || 0) + 1,
+      mystiqueResponsesExpected: readabilityMetadata.mystiqueResponsesExpected || 0,
+      totalReadabilityIssues: readabilityMetadata.totalReadabilityIssues || 0,
+      processedSuggestionIds: [...processedSuggestionIds],
+      lastMystiqueResponse: new Date().toISOString(),
+      suggestions: [...(readabilityMetadata.suggestions || []), ...mappedSuggestions],
+    };
+    const updatedJobMetadata = {
+      ...jobMetadata,
+      payload: {
+        ...jobMetadata.payload,
+        readabilityMetadata: updatedReadabilityMetadata,
+      },
+    };
+
+    log.debug(`[readability-suggest guidance]: Received ${updatedReadabilityMetadata.mystiqueResponsesReceived}/${updatedReadabilityMetadata.mystiqueResponsesExpected} responses from Mystique`);
+
+    try {
+      if (!supportsConditionalUpdates) {
+        currentJob.setMetadata(updatedJobMetadata);
+        // eslint-disable-next-line no-await-in-loop
+        await currentJob.save();
+        return {
+          asyncJob: currentJob,
+          readabilityMetadata: updatedReadabilityMetadata,
+        };
+      }
+
+      const previousUpdatedAt = currentJob.getUpdatedAt();
+      // eslint-disable-next-line no-await-in-loop
+      await AsyncJobEntity.updateByKeys(
+        { asyncJobId: auditId, updatedAt: previousUpdatedAt },
+        {
+          metadata: updatedJobMetadata,
+          updatedAt: nextUpdatedAt(previousUpdatedAt),
+        },
+      );
+
+      // eslint-disable-next-line no-await-in-loop
+      const persistedJob = await AsyncJobEntity.findById(auditId);
+      const persistedReadabilityMetadata = persistedJob
+        .getMetadata().payload.readabilityMetadata;
+      if (persistedReadabilityMetadata.processedSuggestionIds?.includes(messageId)) {
+        return {
+          asyncJob: persistedJob,
+          readabilityMetadata: persistedReadabilityMetadata,
+        };
+      }
+
+      currentJob = persistedJob;
+      // Spread competing callbacks across retries instead of keeping them in lockstep.
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => {
+        setTimeout(resolve, Math.min((attempt + 1) * 5, 25));
+      });
+    } catch (e) {
+      log.error(`[readability-suggest guidance]: Updating job metadata for job ${auditId} failed with error: ${e.message}`, e);
+      throw new Error(`[readability-suggest guidance]: Failed to update job metadata for job ${auditId}: ${e.message}`);
+    }
+  }
+
+  throw new Error(`[readability-suggest guidance]: Failed to atomically update job metadata for job ${auditId} after ${maxAttempts} attempts`);
+}
+
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
@@ -81,13 +171,9 @@ export default async function handler(message, context) {
     throw new Error(errorMsg);
   }
 
-  // Track processed suggestions in job metadata
-  const processedSuggestionIds = new Set(readabilityMetadata.processedSuggestionIds || []);
-  if (processedSuggestionIds.has(messageId)) {
+  if (readabilityMetadata.processedSuggestionIds?.includes(messageId)) {
     log.info(`[readability-suggest guidance]: Suggestions with id ${messageId} already processed. Skipping processing.`);
     return ok();
-  } else {
-    processedSuggestionIds.add(messageId);
   }
 
   // Process different response formats from Mystique
@@ -135,36 +221,19 @@ export default async function handler(message, context) {
     return ok();
   }
 
-  // Update job metadata with response tracking (preflight audit pattern)
-  const updatedReadabilityMetadata = {
-    ...readabilityMetadata,
-    mystiqueResponsesReceived: (readabilityMetadata.mystiqueResponsesReceived || 0) + 1,
-    mystiqueResponsesExpected: readabilityMetadata.mystiqueResponsesExpected || 0,
-    totalReadabilityIssues: readabilityMetadata.totalReadabilityIssues || 0,
-    processedSuggestionIds: [...processedSuggestionIds],
-    lastMystiqueResponse: new Date().toISOString(),
-    // Store suggestions directly in job metadata
-    suggestions: [...(readabilityMetadata.suggestions || []), ...mappedSuggestions],
-  };
-
-  log.debug(`[readability-suggest guidance]: Received ${updatedReadabilityMetadata.mystiqueResponsesReceived}/${updatedReadabilityMetadata.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
-
-  // Update job with accumulated data (preflight audit pattern)
-  try {
-    const updatedJobMetadata = {
-      ...jobMetadata,
-      payload: {
-        ...jobMetadata.payload,
-        readabilityMetadata: updatedReadabilityMetadata,
-      },
-    };
-    asyncJob.setMetadata(updatedJobMetadata);
-    await asyncJob.save();
-    log.debug('[readability-suggest guidance]: Updated job with accumulated readability metadata');
-  } catch (e) {
-    log.error(`[readability-suggest guidance]: Updating job metadata for job ${auditId} failed with error: ${e.message}`, e);
-    throw new Error(`[readability-suggest guidance]: Failed to update job metadata for job ${auditId}: ${e.message}`);
-  }
+  const accumulated = await accumulateReadabilityResponse({
+    AsyncJobEntity,
+    asyncJob,
+    auditId,
+    messageId,
+    mappedSuggestions,
+    log,
+  });
+  const {
+    asyncJob: accumulatedJob,
+    readabilityMetadata: updatedReadabilityMetadata,
+  } = accumulated;
+  log.debug('[readability-suggest guidance]: Updated job with accumulated readability metadata');
 
   // For preflight audits, suggestions are stored in job metadata (not as opportunity suggestions)
   if (mappedSuggestions.length > 0) {
@@ -182,7 +251,7 @@ export default async function handler(message, context) {
       // Use the AsyncJob we already validated earlier
       if (asyncJob) {
         // Get current job result
-        const currentResult = asyncJob.getResult() || [];
+        const currentResult = accumulatedJob.getResult() || [];
 
         // Update the readability audit opportunities with the completed suggestions
         const updatedResult = currentResult.map((pageResult) => {

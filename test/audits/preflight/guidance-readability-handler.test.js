@@ -426,6 +426,206 @@ describe('Guidance Readability Handler Tests', () => {
   });
 
   describe('All Responses Received Logic', () => {
+    it('atomically accumulates concurrent responses without losing either update', async () => {
+      const initialMetadata = {
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [],
+            mystiqueResponsesExpected: 7,
+            mystiqueResponsesReceived: 5,
+            processedSuggestionIds: ['message-1', 'message-2', 'message-3', 'message-4', 'message-5'],
+            suggestions: [{ id: 'suggestion-1' }, { id: 'suggestion-2' },
+              { id: 'suggestion-3' }, { id: 'suggestion-4' }, { id: 'suggestion-5' }],
+          },
+        },
+      };
+      let persisted = {
+        metadata: initialMetadata,
+        updatedAt: '2026-09-16T00:33:15.805Z',
+      };
+      const snapshot = () => {
+        const record = structuredClone(persisted);
+        return {
+          getMetadata: () => record.metadata,
+          getUpdatedAt: () => record.updatedAt,
+        };
+      };
+      const collection = {
+        findById: sinon.stub().callsFake(async () => snapshot()),
+        updateByKeys: sinon.stub().callsFake(async (keys, updates) => {
+          if (keys.updatedAt === persisted.updatedAt) {
+            persisted = {
+              metadata: structuredClone(updates.metadata),
+              updatedAt: updates.updatedAt,
+            };
+          }
+        }),
+      };
+
+      await Promise.all([
+        handler.accumulateReadabilityResponse({
+          AsyncJobEntity: collection,
+          asyncJob: snapshot(),
+          auditId: 'test-audit-id',
+          messageId: 'message-6',
+          mappedSuggestions: [{ id: 'suggestion-6' }],
+          log: logStub,
+        }),
+        handler.accumulateReadabilityResponse({
+          AsyncJobEntity: collection,
+          asyncJob: snapshot(),
+          auditId: 'test-audit-id',
+          messageId: 'message-7',
+          mappedSuggestions: [{ id: 'suggestion-7' }],
+          log: logStub,
+        }),
+      ]);
+
+      const readabilityMetadata = persisted.metadata.payload.readabilityMetadata;
+      expect(readabilityMetadata.mystiqueResponsesReceived).to.equal(7);
+      expect(readabilityMetadata.processedSuggestionIds).to.include.members([
+        'message-6',
+        'message-7',
+      ]);
+      expect(readabilityMetadata.suggestions).to.have.length(7);
+    });
+
+    it('deduplicates concurrent deliveries of the same response', async () => {
+      let persisted = {
+        metadata: {
+          payload: {
+            readabilityMetadata: {
+              originalOrderMapping: [{ originalIndex: 0, textContent: 'Original text.' }],
+              mystiqueResponsesExpected: 2,
+              mystiqueResponsesReceived: 0,
+              processedSuggestionIds: [],
+              suggestions: [],
+            },
+          },
+        },
+        result: [],
+        updatedAt: '2026-09-16T00:33:15.805Z',
+      };
+      const snapshot = () => {
+        const record = structuredClone(persisted);
+        return {
+          getMetadata: () => record.metadata,
+          getResult: () => record.result,
+          getStatus: () => 'IN_PROGRESS',
+          getUpdatedAt: () => record.updatedAt,
+        };
+      };
+      let initialReads = 0;
+      let releaseInitialReads;
+      const initialReadsReady = new Promise((resolve) => {
+        releaseInitialReads = resolve;
+      });
+      mockAsyncJobEntity.findById.callsFake(async () => {
+        const job = snapshot();
+        if (initialReads < 2) {
+          initialReads += 1;
+          if (initialReads === 2) {
+            releaseInitialReads();
+          }
+          await initialReadsReady;
+        }
+        return job;
+      });
+      mockAsyncJobEntity.updateByKeys = sinon.stub().callsFake(async (keys, updates) => {
+        if (keys.updatedAt === persisted.updatedAt) {
+          persisted = {
+            ...persisted,
+            metadata: structuredClone(updates.metadata),
+            updatedAt: updates.updatedAt,
+          };
+        }
+      });
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        id: 'duplicate-message',
+        data: {
+          improved_paragraph: 'Improved text.',
+          improved_flesch_score: 80,
+          original_paragraph: 'Original text.',
+        },
+      };
+
+      await Promise.all([
+        handler.default(message, mockContext),
+        handler.default(message, mockContext),
+      ]);
+
+      const readabilityMetadata = persisted.metadata.payload.readabilityMetadata;
+      expect(readabilityMetadata.mystiqueResponsesReceived).to.equal(1);
+      expect(readabilityMetadata.processedSuggestionIds).to.deep.equal(['duplicate-message']);
+      expect(readabilityMetadata.suggestions).to.have.length(1);
+    });
+
+    it('surfaces conditional metadata update failures', async () => {
+      const job = {
+        getMetadata: () => ({
+          payload: {
+            readabilityMetadata: {
+              originalOrderMapping: [],
+              mystiqueResponsesExpected: 1,
+            },
+          },
+        }),
+        getUpdatedAt: () => '2026-09-16T00:33:15.805Z',
+      };
+      const collection = {
+        updateByKeys: sinon.stub().rejects(new Error('Database error')),
+      };
+
+      try {
+        await handler.accumulateReadabilityResponse({
+          AsyncJobEntity: collection,
+          asyncJob: job,
+          auditId: 'test-audit-id',
+          messageId: 'message-1',
+          mappedSuggestions: [],
+          log: logStub,
+        });
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.include('Failed to update job metadata');
+      }
+    });
+
+    it('fails after exhausting conditional update retries', async () => {
+      const job = {
+        getMetadata: () => ({
+          payload: {
+            readabilityMetadata: {
+              originalOrderMapping: [],
+              mystiqueResponsesExpected: 1,
+            },
+          },
+        }),
+        getUpdatedAt: () => '2026-09-16T00:33:15.805Z',
+      };
+      const collection = {
+        updateByKeys: sinon.stub().resolves(),
+        findById: sinon.stub().resolves(job),
+      };
+
+      try {
+        await handler.accumulateReadabilityResponse({
+          AsyncJobEntity: collection,
+          asyncJob: job,
+          auditId: 'test-audit-id',
+          messageId: 'message-1',
+          mappedSuggestions: [],
+          log: logStub,
+          maxAttempts: 1,
+        });
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.include('after 1 attempts');
+      }
+    });
+
     it('should complete AsyncJob when all responses are received', async () => {
       mockAsyncJob.getMetadata.returns({
         payload: {
