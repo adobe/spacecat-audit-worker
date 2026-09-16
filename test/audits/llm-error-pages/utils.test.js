@@ -1566,9 +1566,34 @@ describe('LLM Error Pages Utils', () => {
       expect(p1.userAgents).to.have.members(['ChatGPT', 'Perplexity']);
       expect(p1.avgTtfb).to.equal(100);
 
+      // Exact per-user-agent hit split: ChatGPT 10 + 3 = 13, Perplexity 5.
+      expect(p1.perAgent).to.deep.equal({ ChatGPT: 13, Perplexity: 5 });
+
       const p2 = result.find((r) => r.url === '/p2');
       expect(p2.hitCount).to.equal(7);
       expect(p2.userAgents).to.deep.equal(['Claude']);
+      expect(p2.perAgent).to.deep.equal({ Claude: 7 });
+    });
+
+    it('caps perAgent to the top MAX_AGENT_ENTRIES (10) user agents by hits', () => {
+      // 12 distinct user agents on one URL, ascending hit counts.
+      const errors = Array.from({ length: 12 }, (_, i) => ({
+        url: '/p', status: 404, total_requests: i + 1, agent_type: 'Chatbots', user_agent: `UA${i + 1}`,
+      }));
+      const [entry] = groupErrorsByUrl(errors);
+      const kept = Object.keys(entry.perAgent);
+      expect(kept).to.have.lengthOf(10);
+      // The two lowest-hit agents (UA1=1, UA2=2) are dropped; the highest (UA12=12) is kept.
+      expect(entry.perAgent).to.not.have.property('UA1');
+      expect(entry.perAgent).to.not.have.property('UA2');
+      expect(entry.perAgent.UA12).to.equal(12);
+    });
+
+    it('excludes rows without a user_agent from perAgent', () => {
+      const [entry] = groupErrorsByUrl([
+        { url: '/p', status: 404, total_requests: 5, agent_type: 'Chatbots' },
+      ]);
+      expect(entry.perAgent).to.deep.equal({});
     });
 
     it('treats missing total_requests as 0 on first and subsequent rows', () => {
@@ -1577,6 +1602,7 @@ describe('LLM Error Pages Utils', () => {
         { url: '/p', status: 404, agent_type: 'B', user_agent: 'V' },
       ]);
       expect(result[0].hitCount).to.equal(0);
+      expect(result[0].perAgent).to.deep.equal({ U: 0, V: 0 });
     });
 
     it('returns empty array for empty input', () => {

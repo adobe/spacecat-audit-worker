@@ -24,6 +24,7 @@ import {
   getSiteCountryIgnoreList,
   parsePeriodIdentifier,
   toPathOnly,
+  MAX_AGENT_ENTRIES,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { buildSiteFilters, getS3Config, getCdnAwsRuntime } from '../utils/cdn-utils.js';
@@ -46,9 +47,6 @@ export const HISTORY_RETENTION_WEEKS = 6;
 const RETENTION_MS = DB_RETENTION_WEEKS * 7 * 24 * 60 * 60 * 1000;
 const NEW_WINDOW_WEEKS = 4;
 const NEW_WINDOW_MS = NEW_WINDOW_WEEKS * 7 * 24 * 60 * 60 * 1000;
-
-// Limit per-week agent lists so history payloads stay bounded.
-const MAX_AGENT_ENTRIES = 10;
 
 // Statuses protected from automatic retention changes.
 const PROTECTED_SWEEP_STATUSES = new Set([
@@ -90,6 +88,9 @@ function buildWeekHistoryEntry(item, periodIdentifier) {
     httpStatus: item.httpStatus,
     agentTypes: item.agentTypes.slice(0, MAX_AGENT_ENTRIES),
     userAgents: item.userAgents.slice(0, MAX_AGENT_ENTRIES),
+    // Exact per-user-agent hit split (already bounded to top MAX_AGENT_ENTRIES upstream
+    // in groupErrorsByUrl). Additive/optional: {} when no user agent is known.
+    perAgent: item.perAgent ?? {},
     avgTtfb: item.avgTtfb,
   };
 }
@@ -526,6 +527,7 @@ export async function runAuditAndSendToMystique(context) {
                   hitCount: newDataItem.hitCount,
                   agentTypes: newDataItem.agentTypes,
                   userAgents: newDataItem.userAgents,
+                  perAgent: newDataItem.perAgent ?? {},
                   avgTtfb: newDataItem.avgTtfb,
                   countryCode: newDataItem.countryCode,
                   product: newDataItem.product,
@@ -551,6 +553,7 @@ export async function runAuditAndSendToMystique(context) {
                     httpStatus: error.httpStatus,
                     agentTypes: error.agentTypes,
                     userAgents: error.userAgents,
+                    perAgent: error.perAgent ?? {},
                     hitCount: error.hitCount,
                     avgTtfb: error.avgTtfb,
                     countryCode: error.countryCode,

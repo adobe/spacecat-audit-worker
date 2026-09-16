@@ -39,6 +39,11 @@ export const LLM_USER_AGENT_PATTERNS = Object.fromEntries(
 // Each status is capped independently so no single status can dominate results.
 export const ROWS_PER_STATUS = 300;
 
+// Maximum number of agents kept per week history entry (agentTypes / userAgents /
+// perAgent). Bounds the stored history payload. Exported so groupErrorsByUrl (here)
+// and buildWeekHistoryEntry (handler.js) share one definition.
+export const MAX_AGENT_ENTRIES = 10;
+
 const TIME_CONSTANTS = {
   ISO_MONDAY: 1,
   ISO_SUNDAY: 0,
@@ -629,6 +634,7 @@ export function groupErrorsByUrl(errors, siteIgnoreList = []) {
         hitCount: 0,
         agentTypes: new Set(),
         userAgents: new Set(),
+        perAgent: {},
         avgTtfb: error.avg_ttfb_ms,
         countryCode: validateCountryCode(error.country_code, siteIgnoreList),
         product: error.product,
@@ -642,6 +648,11 @@ export function groupErrorsByUrl(errors, siteIgnoreList = []) {
     }
     if (error.user_agent) {
       entry.userAgents.add(error.user_agent);
+      // Preserve the exact per-user-agent hit split that Athena already provides
+      // (one row per URL × user_agent). Consumers use it to attribute a week's hits
+      // to individual agents instead of approximating with the whole-week hitCount.
+      entry.perAgent[error.user_agent] = (entry.perAgent[error.user_agent] ?? 0)
+        + (error.total_requests ?? 0);
     }
   }
 
@@ -649,6 +660,13 @@ export function groupErrorsByUrl(errors, siteIgnoreList = []) {
     ...entry,
     agentTypes: [...entry.agentTypes],
     userAgents: [...entry.userAgents],
+    // Bound perAgent to the top MAX_AGENT_ENTRIES agents by hits, mirroring the
+    // agentTypes/userAgents caps so history payloads stay bounded.
+    perAgent: Object.fromEntries(
+      Object.entries(entry.perAgent)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, MAX_AGENT_ENTRIES),
+    ),
   }));
 }
 
