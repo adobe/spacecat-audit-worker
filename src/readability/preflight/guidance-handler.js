@@ -12,7 +12,17 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { AsyncJob } from '@adobe/spacecat-shared-data-access';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
 import { toElementTargets } from '../../preflight/utils/dom-selector.js';
+import {
+  READABILITY_PREFLIGHT_COMPLETION_PREFIX,
+  READABILITY_PREFLIGHT_RESPONSE_PREFIX,
+} from '../shared/constants.js';
 
 /**
  * Maps Mystique readability suggestions to the same format used in opportunityHandler.js
@@ -38,98 +48,89 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
   });
 }
 
-function nextUpdatedAt(previousUpdatedAt) {
-  const previousTimestamp = Date.parse(previousUpdatedAt);
-  const timestamp = Math.max(Date.now(), previousTimestamp + 1);
-  return new Date(timestamp).toISOString();
-}
-
 export async function accumulateReadabilityResponse({
-  AsyncJobEntity,
+  s3Client,
+  bucketName,
   asyncJob,
   auditId,
   messageId,
   mappedSuggestions,
   log,
-  maxAttempts = 50,
 }) {
-  const supportsConditionalUpdates = typeof AsyncJobEntity.updateByKeys === 'function'
-    && typeof asyncJob.getUpdatedAt === 'function';
-  let currentJob = asyncJob;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const jobMetadata = currentJob.getMetadata();
-    const { readabilityMetadata } = jobMetadata.payload;
-    const processedSuggestionIds = new Set(readabilityMetadata.processedSuggestionIds || []);
-    processedSuggestionIds.add(messageId);
-    const updatedReadabilityMetadata = {
-      ...readabilityMetadata,
-      mystiqueResponsesReceived: (readabilityMetadata.mystiqueResponsesReceived || 0) + 1,
-      mystiqueResponsesExpected: readabilityMetadata.mystiqueResponsesExpected || 0,
-      totalReadabilityIssues: readabilityMetadata.totalReadabilityIssues || 0,
-      processedSuggestionIds: [...processedSuggestionIds],
-      lastMystiqueResponse: new Date().toISOString(),
-      suggestions: [...(readabilityMetadata.suggestions || []), ...mappedSuggestions],
-    };
-    const updatedJobMetadata = {
-      ...jobMetadata,
-      payload: {
-        ...jobMetadata.payload,
-        readabilityMetadata: updatedReadabilityMetadata,
-      },
-    };
-
-    log.debug(`[readability-suggest guidance]: Received ${updatedReadabilityMetadata.mystiqueResponsesReceived}/${updatedReadabilityMetadata.mystiqueResponsesExpected} responses from Mystique`);
-
-    try {
-      if (!supportsConditionalUpdates) {
-        currentJob.setMetadata(updatedJobMetadata);
-        // eslint-disable-next-line no-await-in-loop
-        await currentJob.save();
-        return {
-          asyncJob: currentJob,
-          readabilityMetadata: updatedReadabilityMetadata,
-        };
-      }
-
-      const previousUpdatedAt = currentJob.getUpdatedAt();
-      // eslint-disable-next-line no-await-in-loop
-      await AsyncJobEntity.updateByKeys(
-        { asyncJobId: auditId, updatedAt: previousUpdatedAt },
-        {
-          metadata: updatedJobMetadata,
-          updatedAt: nextUpdatedAt(previousUpdatedAt),
-        },
-      );
-
-      // eslint-disable-next-line no-await-in-loop
-      const persistedJob = await AsyncJobEntity.findById(auditId);
-      const persistedReadabilityMetadata = persistedJob
-        .getMetadata().payload.readabilityMetadata;
-      if (persistedReadabilityMetadata.processedSuggestionIds?.includes(messageId)) {
-        return {
-          asyncJob: persistedJob,
-          readabilityMetadata: persistedReadabilityMetadata,
-        };
-      }
-
-      currentJob = persistedJob;
-      // Spread competing callbacks across retries instead of keeping them in lockstep.
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => {
-        setTimeout(resolve, Math.min((attempt + 1) * 5, 25));
-      });
-    } catch (e) {
-      log.error(`[readability-suggest guidance]: Updating job metadata for job ${auditId} failed with error: ${e.message}`, e);
-      throw new Error(`[readability-suggest guidance]: Failed to update job metadata for job ${auditId}: ${e.message}`);
-    }
+  if (!s3Client || !bucketName) {
+    throw new Error('[readability-suggest guidance]: Missing S3 context for response accumulation');
   }
 
-  throw new Error(`[readability-suggest guidance]: Failed to atomically update job metadata for job ${auditId} after ${maxAttempts} attempts`);
+  const responsePrefix = `${READABILITY_PREFLIGHT_RESPONSE_PREFIX}/${auditId}/`;
+  const responseKey = `${responsePrefix}${encodeURIComponent(messageId)}.json`;
+
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: responseKey,
+    Body: JSON.stringify({ messageId, mappedSuggestions }),
+    ContentType: 'application/json',
+  }));
+
+  const listResponse = await s3Client.send(new ListObjectsV2Command({
+    Bucket: bucketName,
+    Prefix: responsePrefix,
+  }));
+  const responseKeys = (listResponse.Contents || []).map(({ Key }) => Key).filter(Boolean);
+  const jobMetadata = asyncJob.getMetadata();
+  const { readabilityMetadata } = jobMetadata.payload;
+  const responsesExpected = readabilityMetadata.mystiqueResponsesExpected || 0;
+  const storedResponseIds = readabilityMetadata.processedSuggestionIds || [];
+  const s3ResponseIds = responseKeys.map((key) => decodeURIComponent(
+    key.slice(responsePrefix.length, -'.json'.length),
+  ));
+  const storedResponseIdSet = new Set(storedResponseIds);
+  const newS3ResponseIds = s3ResponseIds.filter((id) => !storedResponseIdSet.has(id));
+  const storedResponseCount = Math.max(
+    readabilityMetadata.mystiqueResponsesReceived || 0,
+    storedResponseIds.length,
+  );
+  const responseCount = storedResponseCount + newS3ResponseIds.length;
+
+  log.debug(`[readability-suggest guidance]: Received ${responseCount}/${responsesExpected} responses from Mystique`);
+
+  let responses = [];
+  if (responseCount >= responsesExpected && responsesExpected > 0) {
+    responses = await Promise.all(responseKeys.map(async (Key) => {
+      const response = await s3Client.send(new GetObjectCommand({
+        Bucket: bucketName,
+        Key,
+      }));
+      return JSON.parse(await response.Body.transformToString());
+    }));
+    responses = responses.filter(({ messageId: id }) => !storedResponseIdSet.has(id));
+  }
+
+  return {
+    asyncJob,
+    readabilityMetadata: {
+      ...readabilityMetadata,
+      mystiqueResponsesReceived: responseCount,
+      mystiqueResponsesExpected: responsesExpected,
+      totalReadabilityIssues: readabilityMetadata.totalReadabilityIssues || 0,
+      processedSuggestionIds: [
+        ...storedResponseIds,
+        ...responses.map(({ messageId: id }) => id),
+      ],
+      lastMystiqueResponse: new Date().toISOString(),
+      suggestions: [
+        ...(readabilityMetadata.suggestions || []),
+        ...responses.flatMap(({ mappedSuggestions: responseSuggestions }) => (
+          responseSuggestions || []
+        )),
+      ],
+    },
+  };
 }
 
 export default async function handler(message, context) {
-  const { log, dataAccess } = context;
+  const {
+    log, dataAccess, s3Client, env,
+  } = context;
   const {
     Site, AsyncJob: AsyncJobEntity,
   } = dataAccess;
@@ -160,6 +161,11 @@ export default async function handler(message, context) {
     return notFound('AsyncJob not found');
   }
   log.debug(`[readability-suggest guidance]: Found AsyncJob with status: ${asyncJob.getStatus()}`);
+
+  if (asyncJob.getStatus() === AsyncJob.Status.COMPLETED) {
+    log.info(`[readability-suggest guidance]: AsyncJob ${auditId} is already completed. Skipping processing.`);
+    return ok();
+  }
 
   // Get readability metadata from job instead of opportunity (preflight audit pattern)
   const jobMetadata = asyncJob.getMetadata() || {};
@@ -218,11 +224,11 @@ export default async function handler(message, context) {
   // For classifier exclusions without attachable paragraph, still persist response counts below
   if (mappedSuggestions.length === 0 && !isAiExcluded) {
     log.warn(`[readability-suggest guidance]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
-    return ok();
   }
 
   const accumulated = await accumulateReadabilityResponse({
-    AsyncJobEntity,
+    s3Client,
+    bucketName: env?.S3_MYSTIQUE_BUCKET_NAME,
     asyncJob,
     auditId,
     messageId,
@@ -244,6 +250,34 @@ export default async function handler(message, context) {
   const allResponsesReceived = updatedReadabilityMetadata.mystiqueResponsesReceived
     >= updatedReadabilityMetadata.mystiqueResponsesExpected;
   if (allResponsesReceived && updatedReadabilityMetadata.mystiqueResponsesExpected > 0) {
+    const completionKey = `${READABILITY_PREFLIGHT_COMPLETION_PREFIX}/${auditId}.lock`;
+    try {
+      await s3Client.send(new PutObjectCommand({
+        Bucket: env.S3_MYSTIQUE_BUCKET_NAME,
+        Key: completionKey,
+        Body: new Date().toISOString(),
+        ContentType: 'text/plain',
+        IfNoneMatch: '*',
+      }));
+    } catch (error) {
+      if (error.name === 'PreconditionFailed' || error.$metadata?.httpStatusCode === 412) {
+        const claim = await s3Client.send(new GetObjectCommand({
+          Bucket: env.S3_MYSTIQUE_BUCKET_NAME,
+          Key: completionKey,
+        }));
+        const claimedAt = Date.parse(await claim.Body.transformToString());
+        if (Number.isFinite(claimedAt) && Date.now() - claimedAt > 5 * 60 * 1000) {
+          await s3Client.send(new DeleteObjectCommand({
+            Bucket: env.S3_MYSTIQUE_BUCKET_NAME,
+            Key: completionKey,
+          }));
+          throw new Error(`[readability-suggest guidance]: Removed stale completion claim for AsyncJob ${auditId}; retrying`);
+        }
+        throw new Error(`[readability-suggest guidance]: Completion is already in progress for AsyncJob ${auditId}`);
+      }
+      throw error;
+    }
+
     try {
       log.debug(`[readability-suggest guidance]: All ${updatedReadabilityMetadata.mystiqueResponsesExpected} `
         + `Mystique responses received. Updating AsyncJob ${auditId} to COMPLETED.`);
@@ -424,12 +458,17 @@ export default async function handler(message, context) {
         // internal state causing getResult() to return the stale (empty) result
         freshAsyncJob.setResult(updatedResult);
 
-        // Clean up the suggestions buffer from metadata now that they're in the result
+        // Persist completion progress without copying the transient S3 suggestion buffer.
         const freshMetadata = freshAsyncJob.getMetadata();
-        if (freshMetadata.payload?.readabilityMetadata?.suggestions) {
-          delete freshMetadata.payload.readabilityMetadata.suggestions;
-          freshAsyncJob.setMetadata(freshMetadata);
-        }
+        const completedReadabilityMetadata = { ...updatedReadabilityMetadata };
+        delete completedReadabilityMetadata.suggestions;
+        freshAsyncJob.setMetadata({
+          ...freshMetadata,
+          payload: {
+            ...freshMetadata.payload,
+            readabilityMetadata: completedReadabilityMetadata,
+          },
+        });
 
         if (freshAsyncJob.getStatus() !== AsyncJob.Status.COMPLETED) {
           freshAsyncJob.setStatus(AsyncJob.Status.COMPLETED);
@@ -444,7 +483,15 @@ export default async function handler(message, context) {
     } catch (error) {
       log.error(`[readability-suggest guidance]: Error updating AsyncJob ${auditId} with completed suggestions: `
         + `${error.message}`, error);
-      // Don't throw - the suggestions were still processed successfully
+      try {
+        await s3Client.send(new DeleteObjectCommand({
+          Bucket: env.S3_MYSTIQUE_BUCKET_NAME,
+          Key: completionKey,
+        }));
+      } catch (cleanupError) {
+        log.error(`[readability-suggest guidance]: Failed to release completion claim for AsyncJob ${auditId}: ${cleanupError.message}`);
+      }
+      throw error;
     }
   }
 
