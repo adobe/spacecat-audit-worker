@@ -11,6 +11,53 @@
  */
 
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+
+function normalizeSiteUrl(value) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, '');
+    const pathname = url.pathname.replace(/\/+$/, '');
+    return `${hostname}${url.port ? `:${url.port}` : ''}${pathname}${url.search}`;
+  } catch {
+    return value;
+  }
+}
+
+function findContentSourceForSite(contentSources, site) {
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const siteUrls = new Set(
+    [overrideBaseURL, site.getBaseURL()].filter(Boolean).map(normalizeSiteUrl),
+  );
+
+  return contentSources.find((source) => (
+    siteUrls.has(normalizeSiteUrl(source.acquisitionConfig?.baseUrl))
+  ));
+}
+
+async function parseResponse(response, action) {
+  if (!response.ok) {
+    let detail;
+    try {
+      const problem = await response.json();
+      detail = problem.detail;
+    } catch {
+      // Use the HTTP status text when the response is not problem JSON.
+    }
+
+    const error = new Error(
+      `${action}: ${response.status} ${detail || response.statusText}`.trim(),
+    );
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.status === 204 ? null : response.json();
+}
 
 /**
  * Calculates a weekly cron schedule set to run one hour from now.
@@ -76,66 +123,132 @@ export class ContentAIClient {
     return `${this.tokenResponse.token_type} ${this.tokenResponse.access_token}`;
   }
 
-  /**
-   * Gets all Content AI configurations
-   * @returns {Promise<Array>} Array of configuration objects
-   */
-  async getConfigurations() {
-    let allItems = [];
-    let cursor = null;
+  getHeaders() {
+    return {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: this.getAuthHeader(),
+    };
+  }
+
+  async listAcquisitionContentSources() {
+    const contentSources = [];
+    let cursor;
 
     do {
-      const url = cursor
-        ? `${this.env.CONTENTAI_ENDPOINT}/configurations?cursor=${cursor}`
-        : `${this.env.CONTENTAI_ENDPOINT}/configurations`;
-
-      // eslint-disable-next-line no-await-in-loop
-      const response = await fetch(url, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: this.getAuthHeader(),
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to get configurations from ContentAI: ${response.status} ${response.statusText}`);
+      const url = new URL(`${this.env.CONTENTAI_ENDPOINT}/content-sources/acquisition`);
+      url.searchParams.set('limit', '50');
+      if (cursor) {
+        url.searchParams.set('cursor', cursor);
       }
 
       // eslint-disable-next-line no-await-in-loop
-      const json = await response.json();
-      if (json.items) {
-        allItems = allItems.concat(json.items);
-      }
-      cursor = json.cursor;
+      const response = await fetch(url, { headers: this.getHeaders() });
+      // eslint-disable-next-line no-await-in-loop
+      const page = await parseResponse(
+        response,
+        'Failed to list Content AI acquisition sources',
+      );
+      contentSources.push(...(page?.items || []));
+      cursor = page?.cursor;
     } while (cursor);
 
-    return allItems;
+    return contentSources;
+  }
+
+  static async persistContentSourceName(site, name) {
+    const siteConfig = site.getConfig();
+    siteConfig.updateContentAiConfig({ name });
+    site.setConfig(Config.toDynamoItem(siteConfig));
+    await site.save();
   }
 
   /**
-   * Runs a semantic search query against Content AI
-   * @param {string} text - The search query text
-   * @param {string} type - The query type (e.g., 'vector')
-   * @param {string} indexName - The index name to search
-   * @param {Object} options - Optional search parameters
-   * @param {number} options.limit - Number of results to return (default: 1)
-   * @param {number} options.numCandidates - Number of candidates for vector search (default: 3)
-   * @param {number} options.boost - Boost factor for the query (default: 1)
-   * @param {string} options.vectorSpace - Vector space selection (default: 'semantic')
-   * @param {string} options.lexicalSpace - Lexical space selection (default: 'fulltext')
-   * @returns {Promise<Response>} The fetch response object
+    * Resolves the persisted or discovered Content AI source name for a site.
+   * @param {Object} site - The site object
+    * @returns {Promise<string|null>} The source name or null if not found
    */
-  async runSemanticSearch(text, type, indexName, options = {}, pageLimit = 1) {
+  async resolveContentSourceName(site) {
+    const persistedName = site.getConfig()?.getContentAiConfig()?.name;
+    if (persistedName) {
+      return persistedName;
+    }
+
+    const contentSources = await this.listAcquisitionContentSources();
+    const contentSource = findContentSourceForSite(contentSources, site);
+    if (!contentSource) {
+      return null;
+    }
+
+    await ContentAIClient.persistContentSourceName(site, contentSource.name);
+    return contentSource.name;
+  }
+
+  /**
+    * Creates and persists an acquisition content source for a site.
+   * @param {Object} site - The site object
+    * @returns {Promise<string>} The persisted source name
+   */
+  async createAcquisitionContentSource(site) {
+    const existingName = await this.resolveContentSourceName(site);
+    if (existingName) {
+      this.log?.info(`Content AI source already exists for site ${site.getBaseURL()}`);
+      return existingName;
+    }
+
+    const baseUrl = site.getConfig()?.getFetchConfig()?.overrideBaseURL || site.getBaseURL();
+    const name = new URL(baseUrl).hostname.replace(/^www\./, '');
     const requestBody = {
-      searchIndexConfig: {
-        indexes: [
-          {
-            name: indexName,
-          },
-        ],
+      name,
+      description: `Content acquired from ${baseUrl}`,
+      acquisitionConfig: {
+        baseUrl,
+        discovery: {
+          includePdfs: true,
+        },
+        schedule: {
+          cronSchedule: calculateWeeklyCronSchedule(),
+          enabled: true,
+        },
+      },
+    };
+
+    const response = await fetch(`${this.env.CONTENTAI_ENDPOINT}/content-sources/acquisition`, {
+      method: 'POST',
+      body: JSON.stringify(requestBody),
+      headers: this.getHeaders(),
+    });
+
+    if (response.status === 409) {
+      const contentSources = await this.listAcquisitionContentSources();
+      const contentSource = findContentSourceForSite(contentSources, site);
+      if (contentSource) {
+        await ContentAIClient.persistContentSourceName(site, contentSource.name);
+        return contentSource.name;
+      }
+    }
+
+    const contentSource = await parseResponse(
+      response,
+      `Failed to enable Content AI for site ${site.getId()}`,
+    );
+    if (!contentSource?.name) {
+      throw new Error(`Content AI source response did not include a name for site ${site.getId()}`);
+    }
+
+    await ContentAIClient.persistContentSourceName(site, contentSource.name);
+    this.log?.info(`Content AI source ${contentSource.name} created for site ${baseUrl}`);
+    return contentSource.name;
+  }
+
+  async searchContentSource(name, text, options = {}, pageLimit = 1) {
+    const requestBody = {
+      contentSource: {
+        name,
+        type: 'ACQUISITION',
       },
       query: {
-        type,
+        type: 'vector',
         text,
         options,
       },
@@ -146,111 +259,12 @@ export class ContentAIClient {
       },
     };
 
-    const searchResponse = await fetch(`${this.env.CONTENTAI_ENDPOINT}/search`, {
+    const response = await fetch(`${this.env.CONTENTAI_ENDPOINT}/content-sources/search`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.getAuthHeader(),
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify(requestBody),
     });
 
-    return searchResponse;
-  }
-
-  /**
-   * Gets the Content AI configuration for a site
-   * @param {Object} site - The site object
-   * @returns {Promise<Object|null>} The configuration object or null if not found
-   */
-  async getConfigurationForSite(site) {
-    const configurations = await this.getConfigurations();
-
-    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
-    const baseURL = site.getBaseURL();
-
-    const existingConf = configurations.find(
-      (conf) => conf.steps?.find(
-        (step) => step.baseUrl === baseURL
-          || (!!overrideBaseURL && step.baseUrl === overrideBaseURL),
-      ),
-    );
-
-    return existingConf || null;
-  }
-
-  /**
-   * Creates a Content AI configuration for a site
-   * @param {Object} site - The site object
-   * @returns {Promise<void>}
-   */
-  async createConfiguration(site) {
-    const configurations = await this.getConfigurations();
-
-    const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
-    const baseURL = site.getBaseURL();
-
-    const existingConf = configurations.find(
-      (conf) => conf.steps?.find(
-        (step) => step.baseUrl === baseURL
-          || (!!overrideBaseURL && step.baseUrl === overrideBaseURL),
-      ),
-    );
-
-    if (existingConf) {
-      this.log?.info(`ContentAI configuration already exists for site ${baseURL}`);
-      return;
-    }
-
-    const timestamp = Date.now();
-    const cronSchedule = calculateWeeklyCronSchedule();
-    const name = `${baseURL.replace(/https?:\/\//, '')}-generative`;
-
-    this.log?.info(`Creating ContentAI configuration for site ${baseURL} with cron schedule ${cronSchedule} and name ${name}`);
-
-    const contentAiData = {
-      steps: [
-        {
-          type: 'index',
-          name,
-        },
-        {
-          type: 'discovery',
-          sourceId: `${name}-${timestamp}`,
-          baseUrl: baseURL,
-          discoveryProperties: {
-            type: 'website',
-            includePdfs: true,
-          },
-          schedule: {
-            cronSchedule,
-            enabled: true,
-          },
-        },
-        {
-          type: 'generative',
-          name: 'Comprehensive Q&A assitant',
-          description: 'AI assistant for answering any user question about a topic in the indexed knowledge',
-          prompts: {
-            system: 'You are a helpful AI Assistant powering the search experience.\nYou will answer questions using the provided context.\nContext: {context}\n',
-            user: 'Please answer the following question: {question}\n',
-          },
-        },
-      ],
-    };
-
-    const response = await fetch(`${this.env.CONTENTAI_ENDPOINT}/configurations`, {
-      method: 'POST',
-      body: JSON.stringify(contentAiData),
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.getAuthHeader(),
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to enable content AI for site ${site.getId()}: ${response.status} ${response.statusText}`);
-    }
-    this.log?.info(`ContentAI configuration created for site ${baseURL}`);
+    return parseResponse(response, `Content AI search failed for source ${name}`);
   }
 }
