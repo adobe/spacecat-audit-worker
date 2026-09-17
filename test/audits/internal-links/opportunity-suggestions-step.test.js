@@ -127,7 +127,7 @@ describe('internal-links opportunity suggestions step', () => {
     expect(payload.data.brokenLinks[0].urlTo).to.equal('https://example.com/broken-link');
   });
 
-  it('bows out (no convertToOpportunity, no Mystique dispatch) and resolves the legacy opportunity when brokenInternalLinksEngine=blackboard', async () => {
+  it('bows out (no convertToOpportunity, no Mystique dispatch) WITHOUT resolving the shared opportunity when brokenInternalLinksEngine=blackboard (SITES-51620)', async () => {
     const sqs = { sendMessage: sinon.stub().resolves() };
     const convertToOpportunity = sinon.stub().resolves({
       getId: () => 'oppty-1', getType: () => 'broken-internal-links',
@@ -206,8 +206,12 @@ describe('internal-links opportunity suggestions step', () => {
     expect(result.status).to.equal('complete');
     expect(convertToOpportunity.called).to.equal(false);
     expect(sqs.sendMessage.called).to.equal(false);
-    expect(context.dataAccess.Opportunity.allBySiteIdAndStatus.calledWith('site-1', 'NEW')).to.equal(true);
-    expect(bulkUpdateStatus.calledOnce).to.equal(true);
+    // SITES-51620: the bow-out must NOT resolve the shared (V1/V2) opportunity — V2 owns
+    // its lifecycle. No status flip and no suggestion outdating happen here.
+    expect(context.dataAccess.Opportunity.allBySiteIdAndStatus.called).to.equal(false);
+    expect(legacyOppty.setStatus.called).to.equal(false);
+    expect(legacyOppty.save.called).to.equal(false);
+    expect(bulkUpdateStatus.called).to.equal(false);
   });
 
   it('treats missing itemType as link for Mystique filtering', async () => {

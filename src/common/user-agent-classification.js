@@ -43,6 +43,15 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
 };
 
 /**
+ * Canonical agentic/LLM provider set — the Agentic Traffic tab's source of truth.
+ * Keys index into PROVIDER_USER_AGENT_PATTERNS; the set deliberately excludes search
+ * bots (google/bing) and copilot. Both the agentic-traffic report filter
+ * (`buildUserAgentFilter`) and the llm-error-pages provider list (`LLM_PROVIDERS`)
+ * derive from this array so the two surfaces cannot drift out of sync.
+ */
+export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable'];
+
+/**
  * User agent display name mappings for better readability in reports
  * Each entry maps a LIKE pattern to a display name
  */

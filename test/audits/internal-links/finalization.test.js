@@ -29,6 +29,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['not_found_404'],
         getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links,
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -82,6 +84,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['not_found_404'],
         getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links,
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -119,6 +123,144 @@ describe('internal-links finalization', () => {
     expect(updateAuditResult.firstCall.args[2]).to.deep.equal([]);
   });
 
+  it('drops uncorroborated boilerplate crawl links when suppression is enabled', async () => {
+    const calculatePriority = sinon.spy((links) => links);
+    const updateAuditResult = sinon.stub().resolves({});
+    const base = 'https://example.com';
+    const boilerplate = Array.from({ length: 11 }, (_, i) => ({
+      urlFrom: `${base}/page-${i}`,
+      urlTo: `${base}/support/privacy-notice/`,
+      itemType: 'link',
+      detectionSource: 'crawl',
+      statusBucket: 'not_found_404',
+      httpStatus: 404,
+    }));
+    const genuine = {
+      urlFrom: `${base}/blog`,
+      urlTo: `${base}/genuinely-missing/`,
+      itemType: 'link',
+      detectionSource: 'crawl',
+      statusBucket: 'not_found_404',
+      httpStatus: 404,
+    };
+    const rumLink = {
+      urlFrom: `${base}/home`,
+      urlTo: `${base}/rum-broken/`,
+      itemType: 'link',
+      detectionSource: 'rum',
+      statusBucket: 'not_found_404',
+      httpStatus: 404,
+    };
+
+    const finalize = createFinalizeCrawlDetection({
+      auditType: 'broken-internal-links',
+      createContextLogger: (log) => log,
+      createConfigResolver: () => ({
+        getIncludedStatusBuckets: () => ['not_found_404'],
+        getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
+      }),
+      calculatePriority,
+      mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
+      loadFinalResults: sinon.stub().resolves([...boilerplate, genuine]),
+      cleanupBatchState: sinon.stub().resolves(),
+      getTimeoutStatus: sinon.stub().returns({
+        percentUsed: 1,
+        safeTimeRemaining: 100000,
+        isApproachingTimeout: false,
+      }),
+      updateAuditResult,
+      opportunityAndSuggestionsStep: sinon.stub().resolves({ status: 'complete' }),
+      filterByStatusIfNeeded,
+      filterByItemTypes,
+    });
+
+    await finalize({
+      log: {
+        info: sinon.stub(), warn: sinon.stub(), error: sinon.stub(), debug: sinon.stub(),
+      },
+      site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+      env: {},
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({ brokenInternalLinks: [rumLink] }),
+      },
+      dataAccess: {},
+      linkCheckerResults: [],
+    }, { skipCrawlDetection: false });
+
+    const prioritized = calculatePriority.firstCall.args[0];
+    const targets = prioritized.map((l) => l.urlTo);
+    expect(targets).to.not.include(`${base}/support/privacy-notice/`);
+    expect(targets).to.include(`${base}/genuinely-missing/`);
+    expect(targets).to.include(`${base}/rum-broken/`);
+
+    const savedResult = updateAuditResult.firstCall.args[1];
+    expect(savedResult.suppressedBoilerplateLinks).to.include({ count: 11, applied: true });
+    expect(savedResult.suppressedBoilerplateLinks.targets)
+      .to.deep.equal([`${base}/support/privacy-notice`]);
+  });
+
+  it('shadow mode (default): records suppressedBoilerplateLinks but keeps the links', async () => {
+    const calculatePriority = sinon.spy((links) => links);
+    const updateAuditResult = sinon.stub().resolves({});
+    const base = 'https://example.com';
+    const boilerplate = Array.from({ length: 11 }, (_, i) => ({
+      urlFrom: `${base}/page-${i}`,
+      urlTo: `${base}/support/privacy-notice/`,
+      itemType: 'link',
+      detectionSource: 'crawl',
+      statusBucket: 'not_found_404',
+      httpStatus: 404,
+    }));
+
+    const finalize = createFinalizeCrawlDetection({
+      auditType: 'broken-internal-links',
+      createContextLogger: (log) => log,
+      createConfigResolver: () => ({
+        getIncludedStatusBuckets: () => ['not_found_404'],
+        getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => false,
+        getBoilerplateMinSourcePages: () => 10,
+      }),
+      calculatePriority,
+      mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
+      loadFinalResults: sinon.stub().resolves([...boilerplate]),
+      cleanupBatchState: sinon.stub().resolves(),
+      getTimeoutStatus: sinon.stub().returns({
+        percentUsed: 1,
+        safeTimeRemaining: 100000,
+        isApproachingTimeout: false,
+      }),
+      updateAuditResult,
+      opportunityAndSuggestionsStep: sinon.stub().resolves({ status: 'complete' }),
+      filterByStatusIfNeeded,
+      filterByItemTypes,
+    });
+
+    await finalize({
+      log: {
+        info: sinon.stub(), warn: sinon.stub(), error: sinon.stub(), debug: sinon.stub(),
+      },
+      site: { getId: () => 'site-1', getBaseURL: () => 'https://example.com' },
+      env: {},
+      audit: {
+        getId: () => 'audit-1',
+        getAuditResult: () => ({ brokenInternalLinks: [{ urlFrom: `${base}/x`, urlTo: `${base}/y`, detectionSource: 'rum' }] }),
+      },
+      dataAccess: {},
+      linkCheckerResults: [],
+    }, { skipCrawlDetection: false });
+
+    const prioritized = calculatePriority.firstCall.args[0];
+    // Links are NOT removed in shadow mode...
+    expect(prioritized.filter((l) => l.urlTo === `${base}/support/privacy-notice/`)).to.have.lengthOf(11);
+    // ...but the audit result records what WOULD have been suppressed.
+    const savedResult = updateAuditResult.firstCall.args[1];
+    expect(savedResult.suppressedBoilerplateLinks).to.include({ count: 11, applied: false });
+  });
+
   it('filters final links by configured status buckets and item types', async () => {
     const updateAuditResult = sinon.stub();
     updateAuditResult.resolves({});
@@ -129,6 +271,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['not_found_404', 'masked_by_linkchecker'],
         getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -204,6 +348,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['not_found_404'],
         getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -262,6 +408,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['not_found_404'],
         getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -317,6 +465,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['not_found_404'],
         getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -382,6 +532,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['not_found_404'],
         getIncludedItemTypes: () => ['js'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -451,6 +603,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['masked_by_linkchecker', 'not_found_404'],
         getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -536,6 +690,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['not_found_404'],
         getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -597,6 +753,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['not_found_404'],
         getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -647,6 +805,8 @@ describe('internal-links finalization', () => {
       createConfigResolver: () => ({
         getIncludedStatusBuckets: () => ['not_found_404'],
         getIncludedItemTypes: () => ['link'],
+        getSuppressUncorroboratedBoilerplate: () => true,
+        getBoilerplateMinSourcePages: () => 10,
       }),
       calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
       mergeAndDeduplicate: (firstLinks, secondLinks) => [...secondLinks, ...firstLinks],
@@ -716,6 +876,8 @@ describe('internal-links finalization', () => {
         createConfigResolver: () => ({
           getIncludedStatusBuckets: () => ['not_found_404', 'masked_by_linkchecker'],
           getIncludedItemTypes: () => ['link'],
+          getSuppressUncorroboratedBoilerplate: () => true,
+          getBoilerplateMinSourcePages: () => 10,
         }),
         calculatePriority: (links) => links.map((link) => ({ ...link, priority: 'high' })),
         mergeAndDeduplicate: (first, second) => [...second, ...first],

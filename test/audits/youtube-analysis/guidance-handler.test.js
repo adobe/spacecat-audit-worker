@@ -15,8 +15,10 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 // Use the REAL applyScopeToOpportunity (see cited-analysis test for rationale).
 import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
+import { getOpportunityUrls, getSuggestionUrls } from '../../../src/youtube-analysis/guidance-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -32,6 +34,7 @@ describe('YouTube Analysis Guidance Handler', () => {
   let mockFetchAnalysis;
   let mockConvertToOpportunity;
   let mockSyncSuggestions;
+  let indexOffsiteOpportunityByUrlStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
   let supersededRunSnapshotCreationStub;
@@ -98,6 +101,7 @@ describe('YouTube Analysis Guidance Handler', () => {
     mockFetchAnalysis = sandbox.stub();
     mockConvertToOpportunity = sandbox.stub().resolves(mockOpportunity);
     mockSyncSuggestions = sandbox.stub().resolves();
+    indexOffsiteOpportunityByUrlStub = sandbox.stub().resolves();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
     supersededRunSnapshotCreationStub = sandbox.stub().resolves(null);
@@ -170,6 +174,9 @@ describe('YouTube Analysis Guidance Handler', () => {
       },
       '../../../src/utils/data-access.js': {
         syncSuggestions: mockSyncSuggestions,
+      },
+      '../../../src/common/offsite-lookup-index.js': {
+        indexOffsiteOpportunityByUrl: indexOffsiteOpportunityByUrlStub,
       },
       '../../../src/common/offsite-refresh.js': {
         persistOffsiteOpportunity: mockConvertToOpportunity,
@@ -514,6 +521,23 @@ describe('YouTube Analysis Guidance Handler', () => {
       expect(mockOpportunity.setStatus).to.have.been.calledWith('NEW');
       expect(mockOpportunity.save).to.have.been.calledOnce;
       expect(response.status).to.equal(200);
+
+      // The URL index is wired in after persist with this audit's type and its own extractors.
+      expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledOnce;
+      const funnelingArg = indexOffsiteOpportunityByUrlStub.firstCall.args[0];
+      expect(funnelingArg.context).to.equal(context);
+      expect(funnelingArg.opportunity).to.equal(mockOpportunity);
+      expect(funnelingArg.auditType).to.equal(Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS);
+      expect(funnelingArg.olog).to.be.an('object');
+      expect(funnelingArg.getOpportunityUrls).to.equal(guidanceHandler.getOpportunityUrls);
+      expect(funnelingArg.getSuggestionUrls).to.equal(guidanceHandler.getSuggestionUrls);
+      // The sync must run after housekeeping deletes stale suggestions/snapshots, never before —
+      // indexing ahead of that step would index rows housekeeping is about to remove.
+      expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledAfter(deleteExpiredOutdatedSuggestionsStub);
+      expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledAfter(deleteExpiredSnapshotsStub);
+      // A normal (non-suppressed) run must not pin suggestions SKIPPED.
+      const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+      expect(mapNewSuggestion({ id: 'sug_1', rank: 1, data: {} })).to.not.have.property('status');
     });
 
     it('should set status from opportunityData when provided by Mystique', async () => {
@@ -1178,6 +1202,15 @@ describe('YouTube Analysis Guidance Handler', () => {
       // a new opportunity, never reusing (or re-querying for) the visible one.
       const propsArg = mockConvertToOpportunity.firstCall.args[5];
       expect(propsArg).to.have.property('opportunityToUpdate', null);
+      // A suppressed run's suggestions keep their normal status - lookup-visibility for a
+      // suppressed run's opportunity and suggestions is the read side's job (excluding an
+      // IGNORED opportunity, and - pending a matching fix there - its suggestions), not
+      // something achieved by mutating what gets persisted to the primary suggestions table.
+      const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+      expect(mapNewSuggestion({ id: 'test_1', data: {} })).to.not.have.property('status');
+      // The funneling sync still runs for a suppressed run: the index carries no status of its
+      // own, so it relies entirely on the reader to hide an IGNORED opportunity.
+      expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledOnce;
     });
 
     // Whether nothing exists yet, or the only prior opportunity is already IGNORED, the
@@ -1786,5 +1819,47 @@ describe('YouTube Analysis Guidance Handler', () => {
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
     });
+  });
+});
+
+describe('YouTube Analysis URL-index extractors', () => {
+  // These extractors return raw candidate values, unfiltered - the hygiene gate (rejecting
+  // non-http(s)/credential-bearing/oversized values) runs once inside lookup-index.js
+  // (`sanitizeUrls`, see test/common/lookup-index.test.js and test/common/lookup-index-utils.test.js)
+  // rather than being duplicated per extractor.
+  it('getOpportunityUrls pulls from insights.content.sources', () => {
+    const opportunity = {
+      getData: () => ({
+        dashboard: {
+          analytics: {
+            performance: {
+              insights: {
+                content: {
+                  sources: [{ url: 'https://example.com/a' }, { url: '' }, {}],
+                },
+              },
+            },
+          },
+        },
+      }),
+    };
+
+    expect(getOpportunityUrls(opportunity)).to.deep.equal(['https://example.com/a', '', undefined]);
+  });
+
+  it('getOpportunityUrls returns an empty array when the dashboard data is missing', () => {
+    expect(getOpportunityUrls({ getData: () => ({}) })).to.deep.equal([]);
+  });
+
+  it('getSuggestionUrls pulls from data.bindings.sources', () => {
+    const suggestion = {
+      getData: () => ({ bindings: { sources: [{ url: 'https://example.com/b' }] } }),
+    };
+
+    expect(getSuggestionUrls(suggestion)).to.deep.equal(['https://example.com/b']);
+  });
+
+  it('getSuggestionUrls returns an empty array when bindings are missing', () => {
+    expect(getSuggestionUrls({ getData: () => ({}) })).to.deep.equal([]);
   });
 });

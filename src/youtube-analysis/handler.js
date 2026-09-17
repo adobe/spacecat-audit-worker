@@ -24,6 +24,8 @@ import {
   resolveForwardedUrlLimit,
   resolveEnableBrandProfile,
   resolveEnableSemrush,
+  resolveEnableSemrushWithHardstop,
+  buildSemrushDebugHaltResult,
   requestOffsiteScrape,
   buildAnalysisScrapeStatusMessage,
   formatDrsExtras,
@@ -32,6 +34,7 @@ import {
 import { OFFSITE_DOMAINS } from '../offsite-brand-presence/constants.js';
 import { computeTopicsFromBrandPresence } from '../utils/offsite-brand-presence-enrichment.js';
 import { enrichUrlsWithTopicData } from '../utils/url-topic-enrichment.js';
+import { enrichUrlsWithSemrushPrompts } from '../utils/url-prompts-semrush.js';
 import { resolveBrandForSite, applyBrandScope } from '../utils/brand-resolver.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
 import {
@@ -83,10 +86,12 @@ function getYouTubeConfig(site) {
  * Fetches all required data from stores for YouTube analysis
  * @param {string} siteId - The site ID
  * @param {Object} context - The audit context
+ * @param {Object} site - The site being audited
+ * @param {boolean} [runSemrush] - When true, enrich URLs with Semrush url-prompts data
  * @returns {Promise<Object>} Object containing urls and sentimentConfig
  * @throws {StoreEmptyError} If any store returns empty results
  */
-async function fetchStoreData(siteId, context, site) {
+async function fetchStoreData(siteId, context, site, runSemrush, urlLimit) {
   const { log } = context;
   const olog = createOffsiteLogger(log, { audit: AUDIT.YOUTUBE, siteId });
   const storeClient = StoreClient.createFrom(context);
@@ -105,6 +110,19 @@ async function fetchStoreData(siteId, context, site) {
   olog.success('data_acquisition_drs_scrape_content_checked', `${urls.length} YouTube URLs available in DRS${formatDrsExtras(counts)}`, {
     peer: PEER.DRS, direction: 'outbound', available: urls.length,
   });
+
+  // NOTE: there's currently no way to tell whether an individual URL actually came from
+  // the Semrush citations pipeline vs. the legacy brand-presence source — assume Semrush
+  // for every URL whenever the flag is on, until source-tracking exists on AuditUrl
+  // records (revisit later).
+  let semrushEnrichedUrls = urls;
+  if (runSemrush) {
+    // Cap enrichment at the run's effective Mystique URL limit so we don't issue token-bearing
+    // requests for URLs that will be dropped before dispatch (see enrichUrlsWithSemrushPrompts).
+    semrushEnrichedUrls = await enrichUrlsWithSemrushPrompts({
+      urls, site, context, olog, limit: urlLimit,
+    });
+  }
 
   const topics = await computeTopicsFromBrandPresence(siteId, context, site);
   olog.success('data_acquisition_bp_data_topics_resolved', 'Computed topics from brand presence data', {
@@ -127,7 +145,7 @@ async function fetchStoreData(siteId, context, site) {
   }
 
   return {
-    urls,
+    urls: semrushEnrichedUrls,
     sentimentConfig: { topics, guidelines },
     drsCounts: counts,
   };
@@ -156,6 +174,10 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
   const enableSemrush = resolveEnableSemrush(auditContext, olog);
+  const enableSemrushWithHardstop = resolveEnableSemrushWithHardstop(auditContext, olog);
+  // Enrichment runs when EITHER flag is set; the hardstop (skip Mystique) is applied only for
+  // the `enableSemrushWithHardstop` debug flag.
+  const runSemrush = enableSemrush === true || enableSemrushWithHardstop === true;
 
   try {
     const youtubeConfig = getYouTubeConfig(site);
@@ -188,7 +210,17 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
 
     olog.start('data_acquisition_start', 'Fetching URLs and readiness signals from stores/DRS', {});
 
-    const storeData = await fetchStoreData(siteId, context, site);
+    // Resolved before fetchStoreData so the Semrush enrichment can be capped at the same URL
+    // limit that Mystique dispatch uses (no wasted requests for URLs that get dropped).
+    const urlLimit = resolveMystiqueUrlLimit(auditContext, olog);
+    const storeData = await fetchStoreData(siteId, context, site, runSemrush, urlLimit);
+
+    // Debug hardstop: `enableSemrushWithHardstop` runs the url-prompts enrichment above, then
+    // ends the audit here so nothing is dispatched to Mystique (the enrichment result is in the
+    // loader's summary log). Deliberately reports as a failed audit — see the ADR.
+    if (enableSemrushWithHardstop === true) {
+      return buildSemrushDebugHaltResult({ olog, url, storeData });
+    }
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
     // a prior scrape (direct/scheduled run) changes the log and Slack wording so the thread
     // reads as a coherent sequence rather than a contradictory "no scrape needed".
@@ -200,8 +232,6 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
         : 'Reusing previously scraped DRS content; no new scrape needed, proceeding to Mystique',
       { status: 'pending_analysis', urls: storeData.urls.length, scrapedNow },
     );
-
-    const urlLimit = resolveMystiqueUrlLimit(auditContext, olog);
 
     const { slackContext } = auditContext;
 
@@ -281,6 +311,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
+        enableSemrushWithHardstop,
         olog,
       );
       return {
@@ -326,6 +357,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
+        enableSemrushWithHardstop,
         olog,
       );
       return {

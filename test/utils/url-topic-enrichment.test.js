@@ -151,6 +151,26 @@ describe('enrichUrlsWithTopicData', () => {
     expect(result[0].prompts).to.deep.equal(['p1', 'p2', 'p3']);
   });
 
+  it('fills in legacy topic prompts for a Semrush-tagged URL that has no Semrush prompts', () => {
+    // isUrlFromSemrush is set for every candidate URL regardless of whether Semrush returned
+    // prompts; a tagged-but-empty URL should still get its legacy prompts (no coverage loss).
+    const urls = [{ url: redditUrl1, isUrlFromSemrush: true }];
+    const topics = [{
+      topicId: 't', urls: [{ url: redditUrl1, timesCited: 1, subPrompts: ['legacy-1'] }],
+    }];
+    const result = enrichUrlsWithTopicData(urls, topics);
+    expect(result[0].prompts).to.deep.equal(['legacy-1']);
+  });
+
+  it('does not overwrite existing Semrush prompts with legacy topic prompts', () => {
+    const urls = [{ url: redditUrl1, isUrlFromSemrush: true, prompts: ['semrush-1', 'semrush-2'] }];
+    const topics = [{
+      topicId: 't', urls: [{ url: redditUrl1, timesCited: 1, subPrompts: ['legacy-1'] }],
+    }];
+    const result = enrichUrlsWithTopicData(urls, topics);
+    expect(result[0].prompts).to.deep.equal(['semrush-1', 'semrush-2']);
+  });
+
   it('should match urls case-insensitively', () => {
     const urls = [
       { url: 'https://WWW.Reddit.com/r/France/comments/ABC123/Post_Title' },

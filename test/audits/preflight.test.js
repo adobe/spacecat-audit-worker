@@ -1934,6 +1934,7 @@ describe('Preflight Audit', () => {
 
       mockContext.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
         getId: () => 'job-123',
+        getStatus: sinon.stub().returns('IN_PROGRESS'),
         setResult: sinon.stub(),
         setStatus: sinon.stub(),
         setResultType: sinon.stub(),
@@ -1979,6 +1980,180 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.setStatus).to.have.been.calledWith('IN_PROGRESS');
       expect(finalJobEntity.setEndedAt).not.to.have.been.called; // Should not set endedAt yet
       expect(finalJobEntity.save).to.have.been.called;
+    });
+
+    it('preserves a job completed by guidance before final persistence', async () => {
+      const enrichedResult = [{
+        pageUrl: 'https://main--example--page.aem.page/page1',
+        step: PREFLIGHT_STEP_SUGGEST,
+        audits: [{
+          name: 'readability',
+          opportunities: [{
+            suggestionStatus: 'completed',
+            aiSuggestion: 'A clearer paragraph.',
+          }],
+        }],
+      }];
+      const metadataJobEntity = {
+        getMetadata: sinon.stub().returns({ payload: {} }),
+        setMetadata: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const completedJobEntity = {
+        getStatus: sinon.stub().returns('COMPLETED'),
+        getResult: sinon.stub().returns(enrichedResult),
+        setResult: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const mockContext = new MockContextBuilder()
+        .withSandbox(sinon.createSandbox())
+        .withOverrides({
+          job: {
+            getMetadata: () => ({
+              payload: {
+                step: PREFLIGHT_STEP_SUGGEST,
+                urls: ['https://main--example--page.aem.page/page1'],
+                enableAuthentication: false,
+              },
+            }),
+            getStatus: sinon.stub().returns('IN_PROGRESS'),
+            getId: () => 'job-123',
+          },
+          site,
+          s3Client,
+          func: { version: 'test' },
+        })
+        .build();
+
+      mockContext.dataAccess.AsyncJob.findById = sinon.stub();
+      mockContext.dataAccess.AsyncJob.findById.onFirstCall().resolves(metadataJobEntity);
+      mockContext.dataAccess.AsyncJob.findById.onSecondCall().resolves(completedJobEntity);
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().callsFake(
+          (handlerName) => handlerName === 'preflight' || handlerName === 'readability-preflight',
+        ),
+        getHandlers: () => ({
+          preflight: { productCodes: ['aem-sites'] },
+          'readability-preflight': { productCodes: ['aem-sites'] },
+        }),
+      };
+      mockContext.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+
+      const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/readability/preflight/handler.js': {
+          default: sinon.stub().resolves({ processing: true }),
+        },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
+        },
+      });
+
+      await testPreflightAudit(mockContext);
+
+      expect(completedJobEntity.getResult()).to.equal(enrichedResult);
+      expect(completedJobEntity.setResult).not.to.have.been.called;
+      expect(completedJobEntity.setStatus).not.to.have.been.called;
+      expect(completedJobEntity.save).not.to.have.been.called;
+    });
+
+    it('preserves a job completed by guidance when a later preflight handler fails', async () => {
+      const handlerOrder = [];
+      const enrichedResult = [{
+        pageUrl: 'https://main--example--page.aem.page/page1',
+        step: PREFLIGHT_STEP_SUGGEST,
+        audits: [{
+          name: 'readability',
+          opportunities: [{
+            suggestionStatus: 'completed',
+            aiSuggestion: 'A clearer paragraph.',
+          }],
+        }],
+      }];
+      const metadataJobEntity = {
+        getMetadata: sinon.stub().returns({ payload: {} }),
+        setMetadata: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const completedJobEntity = {
+        getStatus: sinon.stub().returns('COMPLETED'),
+        getResult: sinon.stub().returns(enrichedResult),
+        setStatus: sinon.stub(),
+        setError: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+      const mockContext = new MockContextBuilder()
+        .withSandbox(sinon.createSandbox())
+        .withOverrides({
+          job: {
+            getMetadata: () => ({
+              payload: {
+                step: PREFLIGHT_STEP_SUGGEST,
+                urls: ['https://main--example--page.aem.page/page1'],
+                enableAuthentication: false,
+              },
+            }),
+            getStatus: sinon.stub().returns('IN_PROGRESS'),
+            getId: () => 'job-123',
+          },
+          site,
+          s3Client,
+          func: { version: 'test' },
+        })
+        .build();
+
+      mockContext.dataAccess.AsyncJob.findById = sinon.stub();
+      mockContext.dataAccess.AsyncJob.findById.onFirstCall().resolves(metadataJobEntity);
+      mockContext.dataAccess.AsyncJob.findById.onSecondCall().resolves(completedJobEntity);
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().callsFake(
+          (handlerName) => [
+            'preflight',
+            'readability-preflight',
+            'accessibility-preflight',
+          ].includes(handlerName),
+        ),
+        getHandlers: () => ({
+          preflight: { productCodes: ['aem-sites'] },
+          'readability-preflight': { productCodes: ['aem-sites'] },
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+        }),
+      };
+      mockContext.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+
+      const preflightError = new Error('accessibility failed');
+      const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/readability/preflight/handler.js': {
+          default: sinon.stub().callsFake(async () => {
+            handlerOrder.push('readability-completed');
+            return { processing: true };
+          }),
+        },
+        '../../src/preflight/accessibility.js': {
+          default: sinon.stub().callsFake(async () => {
+            handlerOrder.push('accessibility-failed');
+            throw preflightError;
+          }),
+        },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
+        },
+      });
+
+      await expect(testPreflightAudit(mockContext)).to.be.rejectedWith('accessibility failed');
+
+      expect(handlerOrder).to.deep.equal(['readability-completed', 'accessibility-failed']);
+      expect(completedJobEntity.getResult()).to.equal(enrichedResult);
+      expect(completedJobEntity.setStatus).not.to.have.been.called;
+      expect(completedJobEntity.setError).not.to.have.been.called;
+      expect(completedJobEntity.setEndedAt).not.to.have.been.called;
+      expect(completedJobEntity.save).not.to.have.been.called;
     });
 
     it('should handle null handlerResults and use fallback', async () => {
@@ -2072,6 +2247,7 @@ describe('Preflight Audit', () => {
 
     beforeEach(() => {
       mockJobEntity = {
+        getStatus: sinon.stub().returns('IN_PROGRESS'),
         setResult: sinon.stub(),
         save: sinon.stub().resolves(),
       };
@@ -2110,6 +2286,19 @@ describe('Preflight Audit', () => {
       expect(mockJobEntity.save).to.have.been.calledOnce;
       expect(context.log.debug).to.have.been.calledWith(
         '[preflight-audit] site: site-123, job: job-456, step: test-step. test-audit: Intermediate results saved successfully',
+      );
+    });
+
+    it('preserves results when async guidance has already completed the job', async () => {
+      const result = { test: 'stale data' };
+      mockJobEntity.getStatus.returns('COMPLETED');
+
+      await saveIntermediateResults(context, result, 'test-audit');
+
+      expect(mockJobEntity.setResult).not.to.have.been.called;
+      expect(mockJobEntity.save).not.to.have.been.called;
+      expect(context.log.debug).to.have.been.calledWith(
+        '[preflight-audit] site: site-123, job: job-456, step: test-step. test-audit: Async guidance already completed the job; preserving its result',
       );
     });
 

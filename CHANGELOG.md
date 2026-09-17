@@ -1,3 +1,181 @@
+## [1.541.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.541.1...v1.541.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **offsite:** preserve all YouTube query params so url-prompts matches exactly (LLMO-6712) ([#2983](https://github.com/adobe/spacecat-audit-worker/issues/2983)) ([c670503](https://github.com/adobe/spacecat-audit-worker/commit/c67050370dd487ae151a85ad2e995ff46252ef5a)), closes [#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981) [#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981) [#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981)
+
+## [1.541.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.541.0...v1.541.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **offsite:** preserve YouTube URL form + dedupe by video id so url-prompts matches (LLMO-6712) ([#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981)) ([74d07cb](https://github.com/adobe/spacecat-audit-worker/commit/74d07cb88d2bbc956ab79fab3a6e517f495efac1))
+
+# [1.541.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.540.1...v1.541.0) (2026-09-16)
+
+
+### Features
+
+* **url-prompts:** gate url-prompts enrichment on the shared Semrush entitlement check (LLMO-6712) ([#2978](https://github.com/adobe/spacecat-audit-worker/issues/2978)) ([c5b9933](https://github.com/adobe/spacecat-audit-worker/commit/c5b99334263c57c3bf6433c1ceef6ad99f3ea3a7))
+
+## [1.540.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.540.0...v1.540.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* do not exclude failed commerce scrapes ([#2980](https://github.com/adobe/spacecat-audit-worker/issues/2980)) ([3e16457](https://github.com/adobe/spacecat-audit-worker/commit/3e164572ff724610853c7172e68988794aec2701))
+
+# [1.540.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.2...v1.540.0) (2026-09-16)
+
+
+### Features
+
+* ingest additional Google and Meta user agents ([#2979](https://github.com/adobe/spacecat-audit-worker/issues/2979)) ([fc47703](https://github.com/adobe/spacecat-audit-worker/commit/fc47703f399c3882283f398f17423f84214551dd)), closes [Hi#level](https://github.com/Hi/issues/level)
+
+## [1.539.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.1...v1.539.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **preflight:** preserve completed readability guidance (SITES-51778) ([#2976](https://github.com/adobe/spacecat-audit-worker/issues/2976)) ([556f12d](https://github.com/adobe/spacecat-audit-worker/commit/556f12d5d16a078250c115ac06db3698fc71ceb2))
+
+## [1.539.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.0...v1.539.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* extract SKUs from multiple JSON-LD blocks ([#2977](https://github.com/adobe/spacecat-audit-worker/issues/2977)) ([7ac3da7](https://github.com/adobe/spacecat-audit-worker/commit/7ac3da771254c27730e7d5a783d96d8c3651edee))
+
+# [1.539.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.538.0...v1.539.0) (2026-09-15)
+
+
+### Features
+
+* index opportunity and suggestion source URLs on persist ([#2928](https://github.com/adobe/spacecat-audit-worker/issues/2928)) ([d561129](https://github.com/adobe/spacecat-audit-worker/commit/d561129aecedba1bbe36e95a8d4991b7d54bf435))
+
+# [1.538.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.5...v1.538.0) (2026-09-15)
+
+
+### Features
+
+* **url-prompts:** Semrush url-prompts enrichment over S2S (LLMO-6712) ([#2972](https://github.com/adobe/spacecat-audit-worker/issues/2972)) ([0c60087](https://github.com/adobe/spacecat-audit-worker/commit/0c60087a1b41a8e51e40a4e2194857603cc7402b)), closes [#2872](https://github.com/adobe/spacecat-audit-worker/issues/2872) [#2965](https://github.com/adobe/spacecat-audit-worker/issues/2965) [#2970](https://github.com/adobe/spacecat-audit-worker/issues/2970) [#2971](https://github.com/adobe/spacecat-audit-worker/issues/2971) [#2872](https://github.com/adobe/spacecat-audit-worker/issues/2872)
+
+## [1.537.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.4...v1.537.5) (2026-09-14)
+
+
+### Bug Fixes
+
+* **broken-internal-links:** don't resolve the shared opportunity on V2 bow-out (SITES-51620) ([#2973](https://github.com/adobe/spacecat-audit-worker/issues/2973)) ([699af06](https://github.com/adobe/spacecat-audit-worker/commit/699af06bb2155f861df2a3da444761eaca8db3c0)), closes [#2916](https://github.com/adobe/spacecat-audit-worker/issues/2916)
+
+## [1.537.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.3...v1.537.4) (2026-09-14)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** enableSemrush:true falls back to legacy on failure (LLMO-6709) ([#2971](https://github.com/adobe/spacecat-audit-worker/issues/2971)) ([87b7bc9](https://github.com/adobe/spacecat-audit-worker/commit/87b7bc97f961d6536a9966f8c27e0062a199d100)), closes [#2970](https://github.com/adobe/spacecat-audit-worker/issues/2970)
+
+## [1.537.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.2...v1.537.3) (2026-09-12)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#2969](https://github.com/adobe/spacecat-audit-worker/issues/2969)) ([cc60124](https://github.com/adobe/spacecat-audit-worker/commit/cc601245f64cb98df5d8e4051d931470a4a9d7dd))
+
+## [1.537.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.1...v1.537.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** domain-urls timeout 60s, page size 50 (LLMO-6709) ([#2968](https://github.com/adobe/spacecat-audit-worker/issues/2968)) ([fb8bd35](https://github.com/adobe/spacecat-audit-worker/commit/fb8bd3500258058375e5bc40349289391b146cb8)), closes [#2967](https://github.com/adobe/spacecat-audit-worker/issues/2967)
+
+## [1.537.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.537.0...v1.537.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** send the /api/v1 gateway prefix on the domain-urls call (LLMO-6709) ([#2967](https://github.com/adobe/spacecat-audit-worker/issues/2967)) ([7edc2e9](https://github.com/adobe/spacecat-audit-worker/commit/7edc2e997aeb8d4c25e3f82611ae478116d169c7)), closes [#2965](https://github.com/adobe/spacecat-audit-worker/issues/2965)
+
+# [1.537.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.536.0...v1.537.0) (2026-09-11)
+
+
+### Bug Fixes
+
+* **offsite-brand-presence:** declare missing SEMRUSH_S2S_* template params ([#2962](https://github.com/adobe/spacecat-audit-worker/issues/2962)) ([7da0f83](https://github.com/adobe/spacecat-audit-worker/commit/7da0f839c9e8a5560bed907d3f198bc7c9aec7e1)), closes [#2958](https://github.com/adobe/spacecat-audit-worker/issues/2958)
+
+
+### Features
+
+* **offsite-brand-presence:** richer diagnostics for Semrush S2S auth (LLMO-6709) ([#2965](https://github.com/adobe/spacecat-audit-worker/issues/2965)) ([631535a](https://github.com/adobe/spacecat-audit-worker/commit/631535ad764eb25273f8357bb4394250eccbf1b3))
+
+# [1.536.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.3...v1.536.0) (2026-09-11)
+
+
+### Features
+
+* **offsite-brand-presence:** temporary S2S auth diagnostic probe (LLMO-6709) ([#2963](https://github.com/adobe/spacecat-audit-worker/issues/2963)) ([f47e2eb](https://github.com/adobe/spacecat-audit-worker/commit/f47e2eba415df4adb18055827cf404f3f57dbe8a)), closes [#2958](https://github.com/adobe/spacecat-audit-worker/issues/2958)
+
+## [1.535.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.2...v1.535.3) (2026-09-11)
+
+
+### Bug Fixes
+
+* **toc:** remove [Beta] label from TOC opportunity title ([#2835](https://github.com/adobe/spacecat-audit-worker/issues/2835)) ([2035a72](https://github.com/adobe/spacecat-audit-worker/commit/2035a72e6fd53fa1635770e1dfc5d55a9fc6c75a))
+
+## [1.535.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.1...v1.535.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v4.29.1 ([#2961](https://github.com/adobe/spacecat-audit-worker/issues/2961)) ([9bef593](https://github.com/adobe/spacecat-audit-worker/commit/9bef5936c9a255b52b3f2b4d6c4ec4b5ec5ff99f))
+
+## [1.535.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.535.0...v1.535.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **broken-internal-links:** flag uncorroborated boilerplate crawl links (SITES-50131) ([#2955](https://github.com/adobe/spacecat-audit-worker/issues/2955)) ([1c52e20](https://github.com/adobe/spacecat-audit-worker/commit/1c52e20e2e333dc58dd78e32b5af86ab121dca16))
+
+# [1.535.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.534.3...v1.535.0) (2026-09-10)
+
+
+### Bug Fixes
+
+* **llm-error-pages:** reconcile agentic LLM provider set with Agentic Traffic tab ([#2960](https://github.com/adobe/spacecat-audit-worker/issues/2960)) ([8799731](https://github.com/adobe/spacecat-audit-worker/commit/879973193b607496ba85dcaf25b15013ab5a5151))
+
+
+### Features
+
+* **offsite-brand-presence:** retrieve Semrush URLs via S2S session-token flow (LLMO-6709) ([#2958](https://github.com/adobe/spacecat-audit-worker/issues/2958)) ([9b4ef36](https://github.com/adobe/spacecat-audit-worker/commit/9b4ef36f016d08b0569e3f3dc9707ad3eede4a45)), closes [#3217](https://github.com/adobe/spacecat-audit-worker/issues/3217) [#3217](https://github.com/adobe/spacecat-audit-worker/issues/3217)
+
+## [1.534.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.534.2...v1.534.3) (2026-09-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-html-analyzer to v1.3.5 ([#2959](https://github.com/adobe/spacecat-audit-worker/issues/2959)) ([bf5051f](https://github.com/adobe/spacecat-audit-worker/commit/bf5051f82bf25368b082b60e1dd58a39fb177031))
+
+## [1.534.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.534.1...v1.534.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **toc:** correct TOC opportunity description to reflect on-page placement ([#2926](https://github.com/adobe/spacecat-audit-worker/issues/2926)) ([abaffa8](https://github.com/adobe/spacecat-audit-worker/commit/abaffa879e317553b499c9f429fcc4d72d076cd1))
+
+## [1.534.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.534.0...v1.534.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **broken-links:** prefer parent-path over homepage fallbacks and block record-ID sibling suggestions ([#2576](https://github.com/adobe/spacecat-audit-worker/issues/2576)) ([838717a](https://github.com/adobe/spacecat-audit-worker/commit/838717a5510ea6cc1e19bccf9b9852abbe91d6c6))
+
+# [1.534.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.7...v1.534.0) (2026-09-09)
+
+
+### Features
+
+* add new agentic bots and merge Research into Chatbots (LLMO-7325) ([#2950](https://github.com/adobe/spacecat-audit-worker/issues/2950)) ([8a44a06](https://github.com/adobe/spacecat-audit-worker/commit/8a44a06eea1533ea501b35a850e13231d631bf4a)), closes [adobe/project-elmo-ui#3095](https://github.com/adobe/project-elmo-ui/issues/3095)
+
 ## [1.533.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.533.6...v1.533.7) (2026-09-09)
 
 

@@ -2084,7 +2084,7 @@ describe('TOC (Table of Contents) Audit', () => {
       expect(opportunityData).to.be.an('object');
       expect(opportunityData).to.have.property('runbook', '');
       expect(opportunityData).to.have.property('origin', 'AUTOMATION');
-      expect(opportunityData).to.have.property('title', '[Beta] Add Table of Content');
+      expect(opportunityData).to.have.property('title', 'Add Table of Content');
       expect(opportunityData).to.have.property('description');
       expect(opportunityData.description).to.include('table of contents');
     });
@@ -2119,7 +2119,7 @@ describe('TOC (Table of Contents) Audit', () => {
       const steps = opportunityData.guidance.steps;
       expect(steps[0]).to.include('Review pages flagged for TOC issues');
       expect(steps[1]).to.include('AI-generated suggestions');
-      expect(steps[2]).to.include('properly implemented in the <head> section');
+      expect(steps[2]).to.include('placed within the page body');
     });
 
     it('has correct tags for TOC', async () => {
