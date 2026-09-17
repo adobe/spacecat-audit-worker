@@ -172,6 +172,8 @@ describe('LLM Error Pages Utils', () => {
     });
 
     it('should normalize Claude user agents', () => {
+      expect(normalizeUserAgentToProvider('claude-code/2.1.270')).to.equal('Anthropic');
+      expect(normalizeUserAgentToProvider('Claude Code')).to.equal('Anthropic');
       expect(normalizeUserAgentToProvider('Claude-Web/1.0')).to.equal('Claude');
       expect(normalizeUserAgentToProvider('Anthropic-ai/1.0')).to.equal('Claude');
     });
@@ -181,7 +183,7 @@ describe('LLM Error Pages Utils', () => {
       expect(normalizeUserAgentToProvider('google-gemini')).to.equal('Gemini');
     });
 
-    it('should normalize Copilot user agents', () => {
+    it('should normalize GitHub and generic Copilot user agents separately', () => {
       expect(normalizeUserAgentToProvider('GitHubCopilotRuntime-WebFetch')).to.equal('GitHub Copilot');
       expect(normalizeUserAgentToProvider('GitHub Copilot')).to.equal('GitHub Copilot');
       expect(normalizeUserAgentToProvider('CopilotBot/1.0')).to.equal('Copilot');

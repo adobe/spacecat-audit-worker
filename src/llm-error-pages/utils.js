@@ -84,12 +84,16 @@ export function normalizeUserAgentToProvider(rawUserAgent) {
   if (/perplexity/i.test(rawUserAgent)) {
     return 'Perplexity';
   }
+  if (/claude-code|^claude code$/i.test(rawUserAgent)) {
+    return 'Anthropic';
+  }
   if (/claude|anthropic/i.test(rawUserAgent)) {
     return 'Claude';
   }
   if (/gemini/i.test(rawUserAgent)) {
     return 'Gemini';
   }
+  // Keep GitHub Copilot distinct; the fallback preserves existing generic Copilot labels.
   if (/githubcopilotruntime-webfetch|^github copilot$/i.test(rawUserAgent)) {
     return 'GitHub Copilot';
   }
