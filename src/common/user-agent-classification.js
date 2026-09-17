@@ -123,7 +123,7 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%oai-searchbot%', result: 'Web search crawlers' },
     { pattern: '%oai-adsbot%', result: 'Ads bots' },
     { pattern: '%chatgpt-user%', result: 'Chatbots' },
-    { pattern: '%chatgpt%atlas%', result: 'Media fetcher' },
+    { pattern: '%chatgpt%atlas%', result: 'Media fetchers' },
     { pattern: '%chatgpt/%', result: 'Media fetchers' },
     // Perplexity
     { pattern: '%perplexitybot%', result: 'Web search crawlers' },
