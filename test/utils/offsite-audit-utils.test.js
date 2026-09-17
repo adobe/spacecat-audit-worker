@@ -23,8 +23,6 @@ import {
   resolveDrsPollIntervalSeconds,
   resolveEnableBrandProfile,
   resolveEnableSemrush,
-  resolveEnableSemrushWithHardstop,
-  buildSemrushDebugHaltResult,
   requestOffsiteScrape,
   computeBrandTokens,
   isExcludedCitedHost,
@@ -652,59 +650,6 @@ describe('offsite-audit-utils', () => {
     });
   });
 
-  describe('resolveEnableSemrushWithHardstop', () => {
-    it('returns true / false / undefined by the same tri-state rules as resolveEnableSemrush', () => {
-      expect(resolveEnableSemrushWithHardstop({})).to.be.undefined;
-      expect(resolveEnableSemrushWithHardstop(
-        { messageData: { enableSemrushWithHardstop: true } },
-      )).to.equal(true);
-      expect(resolveEnableSemrushWithHardstop(
-        { messageData: { enableSemrushWithHardstop: 'true' } },
-      )).to.equal(true);
-      expect(resolveEnableSemrushWithHardstop(
-        { messageData: { enableSemrushWithHardstop: 'false' } },
-      )).to.equal(false);
-    });
-
-    it('warns via the bound olog under data_acquisition_url_prompts_read for an invalid value', () => {
-      const olog = makeOlog();
-      expect(resolveEnableSemrushWithHardstop(
-        { messageData: { enableSemrushWithHardstop: 'yes' } },
-        olog,
-      )).to.be.undefined;
-      const [event, , extra] = olog.warn.firstCall.args;
-      expect(event).to.equal('data_acquisition_url_prompts_read');
-      expect(extra).to.include({ reason: 'invalid_override', field: 'enableSemrushWithHardstop' });
-    });
-  });
-
-  describe('buildSemrushDebugHaltResult', () => {
-    it('logs a skip line and returns a success:false result carrying the storeData', () => {
-      const olog = makeOlog();
-      const storeData = { urls: [{ url: 'a' }, { url: 'b' }] };
-      const result = buildSemrushDebugHaltResult({ olog, url: 'https://ref', storeData });
-
-      expect(result.fullAuditRef).to.equal('https://ref');
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.reason).to.equal('semrush_debug_halt');
-      expect(result.auditResult.storeData).to.equal(storeData);
-      expect(result.auditResult.error).to.be.a('string');
-
-      const [event, , extra] = olog.warn.firstCall.args;
-      expect(event).to.equal('audit_orchestration_end');
-      expect(extra).to.include({
-        outcome: OUTCOME.SKIP, reason: 'semrush_debug_halt', urls: 2,
-      });
-    });
-
-    it('defaults the url count to 0 when storeData has no urls', () => {
-      const olog = makeOlog();
-      const result = buildSemrushDebugHaltResult({ olog, url: 'https://ref', storeData: {} });
-      expect(result.auditResult.success).to.be.false;
-      expect(olog.warn.firstCall.args[2]).to.include({ urls: 0 });
-    });
-  });
-
   describe('requestOffsiteScrape', () => {
     let context;
     let olog;
@@ -725,7 +670,7 @@ describe('offsite-audit-utils', () => {
     });
 
     it('sends a scoped offsite-brand-presence message without enableBrandProfile by default', async () => {
-      await requestOffsiteScrape(context, 'site-1', 'top-cited', { channelId: 'C1', threadTs: 'T1' }, undefined, undefined, undefined, undefined, olog);
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', { channelId: 'C1', threadTs: 'T1' }, undefined, undefined, undefined, olog);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const [queueUrl, msg] = context.sqs.sendMessage.firstCall.args;
@@ -797,20 +742,10 @@ describe('offsite-audit-utils', () => {
       expect(msg.auditContext.messageData).to.deep.equal({ domainScope: 'top-cited', enableSemrush: false });
     });
 
-    it('forwards enableSemrushWithHardstop in messageData so the debug flag survives the round-trip', async () => {
-      await requestOffsiteScrape(context, 'site-1', 'reddit.com', undefined, undefined, undefined, undefined, true);
-
-      const msg = context.sqs.sendMessage.firstCall.args[1];
-      expect(msg.auditContext.messageData).to.deep.equal({
-        domainScope: 'reddit.com',
-        enableSemrushWithHardstop: true,
-      });
-    });
-
     it('swallows and logs a failure when the send fails', async () => {
       context.dataAccess.Configuration.findLatest.rejects(new Error('boom'));
 
-      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, true, undefined, undefined, undefined, olog);
+      await requestOffsiteScrape(context, 'site-1', 'top-cited', undefined, true, undefined, undefined, olog);
 
       expect(olog.failure).to.have.been.calledWith(
         'data_acquisition_drs_scrape_job_request_dispatched',

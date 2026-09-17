@@ -640,55 +640,6 @@ export const resolveEnableSemrush = makeResolveOverride(
 );
 
 /**
- * Optional `enableSemrushWithHardstop` flag from `auditContext.messageData`. A debugging
- * switch: like `enableSemrush` it turns on the Semrush url-prompts enrichment, but it ALSO
- * halts the analysis audit right after enrichment so nothing is dispatched to Mystique — the
- * run ends inside audit-worker with `success:false` (reason `semrush_debug_halt`) so the
- * enrichment result can be inspected in the logs without spending downstream resources. The
- * enrichment runs whenever EITHER flag is set; the hardstop is applied only for this one.
- * `undefined`/absent means no hardstop. See {@link buildSemrushDebugHaltResult}.
- *
- * @param {object} [auditContext]
- * @param {boolean|string} [auditContext.messageData.enableSemrushWithHardstop]
- * @param {object} [olog] - bound offsite logger (see createOffsiteLogger)
- * @returns {boolean|undefined}
- */
-export const resolveEnableSemrushWithHardstop = makeResolveOverride(
-  'enableSemrushWithHardstop',
-  'data_acquisition_url_prompts_read',
-);
-
-/**
- * Builds the terminal audit result for the `enableSemrushWithHardstop` debug mode: logs a
- * skip line and returns a `success:false` result carrying the enriched `storeData`, so the
- * Mystique dispatch post-processor (which skips on a falsy `success`) never fires. The run
- * shows up as a failed audit by design — `reason: 'semrush_debug_halt'` distinguishes it from
- * a genuine failure. The url-prompts stats themselves are logged by the loader's own summary.
- *
- * @param {object} params
- * @param {object} params.olog - bound offsite logger
- * @param {string} params.url - fullAuditRef
- * @param {object} params.storeData - the enriched store data (URLs + prompts)
- * @returns {{ auditResult: object, fullAuditRef: string }}
- */
-export function buildSemrushDebugHaltResult({ olog, url, storeData }) {
-  olog.warn(
-    'audit_orchestration_end',
-    'Semrush debug hardstop: url-prompts enrichment done, skipping Mystique dispatch',
-    { outcome: OUTCOME.SKIP, reason: 'semrush_debug_halt', urls: storeData?.urls?.length ?? 0 },
-  );
-  return {
-    auditResult: {
-      success: false,
-      reason: 'semrush_debug_halt',
-      error: 'Semrush debug hardstop (enableSemrushWithHardstop): url-prompts enrichment completed; Mystique dispatch skipped',
-      storeData,
-    },
-    fullAuditRef: url,
-  };
-}
-
-/**
  * Same validation/cap as {@link resolveMystiqueUrlLimit}, but returns `undefined` when
  * `urlLimit` is absent instead of defaulting to `MYSTIQUE_URLS_LIMIT`. Used by
  * offsite-brand-presence to forward an explicitly-requested urlLimit through the DRS
@@ -727,8 +678,6 @@ export function resolveForwardedUrlLimit(auditContext, log, logPrefix) {
  * @param {boolean} [enableSemrush] - Forwarded so this scoped offsite-brand-presence run honors
  *   the same `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` override originally requested on Slack for
  *   the analysis audit that triggered it, instead of falling back to the plain env var.
- * @param {boolean} [enableSemrushWithHardstop] - Forwarded so the debug hardstop flag survives
- *   the scrape round-trip and the re-triggered analysis audit still enriches + hardstops.
  * @param {object} [olog] - bound offsite logger (see createOffsiteLogger);
  *   emits `data_acquisition_drs_scrape_job_request_dispatched`
  *   with `reason=self_heal`. Threaded from the analysis-handler caller so the audit slug/ids are
@@ -746,17 +695,15 @@ export async function requestOffsiteScrape(
   enableBrandProfile,
   urlLimit,
   enableSemrush,
-  enableSemrushWithHardstop,
   olog,
 ) {
   const { sqs, dataAccess } = context;
-  // The Semrush flags are included so a Splunk search on siteId shows whether a per-run
+  // The Semrush flag is included so a Splunk search on siteId shows whether a per-run
   // override survives this scrape round-trip, or gets lost/swallowed here.
   const overrides = {
     ...(enableBrandProfile != null && { enableBrandProfile }),
     ...(urlLimit != null && { urlLimit }),
     ...(enableSemrush != null && { enableSemrush }),
-    ...(enableSemrushWithHardstop != null && { enableSemrushWithHardstop }),
   };
   try {
     const configuration = await dataAccess.Configuration.findLatest();
