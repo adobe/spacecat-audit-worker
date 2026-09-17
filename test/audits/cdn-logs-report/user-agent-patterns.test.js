@@ -153,6 +153,20 @@ describe('User Agent Patterns', () => {
       expect(filter).to.not.include('meta-webindexer');
       expect(filter).to.not.include('Meta-Muse-User');
     });
+
+    it('allows both supported Meta user agents through the generated report filter', () => {
+      const { buildUserAgentFilter } = cdnUtils;
+      const filter = buildUserAgentFilter();
+      const [, metaPattern] = filter.match(
+        /REGEXP_LIKE\(user_agent, '([^']*meta-external[^']*)'\)/,
+      );
+      const regex = new RegExp(metaPattern.replace('(?i)', ''), 'i');
+
+      expect(regex.test('Meta-ExternalAgent/1.1')).to.equal(true);
+      expect(regex.test('Meta-ExternalFetcher/1.1')).to.equal(true);
+      expect(regex.test('meta-webindexer/1.0')).to.equal(false);
+      expect(regex.test('Meta-Muse-User/1.0')).to.equal(false);
+    });
   });
 
   describe('buildAgentTypeClassificationSQL', () => {
