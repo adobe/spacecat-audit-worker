@@ -225,7 +225,7 @@ describe('agentic traffic mapper', () => {
       userAgent,
     }))).to.deep.equal([
       {
-        platform: 'Claude',
+        platform: 'Anthropic',
         agentType: 'Coding agents',
         userAgent: 'Claude Code',
       },
