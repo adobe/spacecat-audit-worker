@@ -141,6 +141,61 @@ describe('agentic traffic mapper', () => {
     });
   });
 
+  it('maps both supported Meta user agents to the Meta platform', async () => {
+    const site = {
+      getId: () => 'site-1',
+      getBaseURL: () => 'https://www.example.com',
+      getConfig: () => ({
+        getLlmoCountryCodeIgnoreList: () => [],
+      }),
+    };
+    const rows = [
+      {
+        agent_type: 'Training bots',
+        user_agent_display: 'Meta-ExternalAgent',
+        status: 200,
+        number_of_hits: 2,
+        avg_ttfb_ms: 10,
+        country_code: 'US',
+        url: '/agent',
+        host: 'www.example.com',
+        product: 'Docs',
+        category: 'Documentation',
+      },
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'Meta-ExternalFetcher',
+        status: 200,
+        number_of_hits: 3,
+        avg_ttfb_ms: 20,
+        country_code: 'US',
+        url: '/fetcher',
+        host: 'www.example.com',
+        product: 'Docs',
+        category: 'Documentation',
+      },
+    ];
+
+    const result = await mapToAgenticTrafficBundle(rows, site, {}, '2026-09-17');
+
+    expect(result.trafficRows.map(({ platform, agent_type: agentType, user_agent: userAgent }) => ({
+      platform,
+      agentType,
+      userAgent,
+    }))).to.deep.equal([
+      {
+        platform: 'Meta',
+        agentType: 'Training bots',
+        userAgent: 'Meta-ExternalAgent',
+      },
+      {
+        platform: 'Meta',
+        agentType: 'Chatbots',
+        userAgent: 'Meta-ExternalFetcher',
+      },
+    ]);
+  });
+
   it('classifies common image and icon asset content types', async () => {
     const site = {
       getId: () => 'site-1',
