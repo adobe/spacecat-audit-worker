@@ -11,6 +11,7 @@
  */
 
 import { isValidUrl } from '@adobe/spacecat-shared-utils';
+import { cleanTopicText } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Helpers shared by `lookup-index.js`'s dimension-scoped functions (`indexOpportunityByUrl`, ...
@@ -129,11 +130,12 @@ const MAX_TOPICS_PER_ENTITY = 500;
  * extracts are scraped/LLM-derived and every survivor ends up embedded and written to a shared,
  * cross-tenant lookup table, so the gate lives here once rather than in each caller's extractor.
  *
- * Rejects a candidate whose `title` is not a non-empty string or exceeds `MAX_TITLE_LENGTH`.
- * Trims the title; de-duplicates on the case-folded, whitespace-collapsed title (the same
- * normalization the writer hashes on, so two variants that would collapse to one stored row do not
- * inflate `topicCount`); and caps the result at `MAX_TOPICS_PER_ENTITY`. Keeps the first-seen
- * `sourceId` for each distinct title.
+ * Per-item hygiene is delegated to `cleanTopicText` (shared from `spacecat-shared-data-access`, so
+ * the read side's `by-topics` request parsing rejects the same junk and de-duplicates on the same
+ * key the writer hashes on). This adds the write-side specifics on top: the `{ id, title }` input
+ * shape, the `MAX_TITLE_LENGTH` bound, the `{ sourceId, text }` output, and the
+ * `MAX_TOPICS_PER_ENTITY` cap. De-dupes on the shared normalized key; keeps the first-seen
+ * `sourceId` per distinct title.
  *
  * @param {unknown[]} candidates - raw topic rows (`{ id, title }`) from the opportunity payload
  * @returns {{sourceId: (string|undefined), text: string}[]} indexable topics, de-duplicated, in
@@ -143,23 +145,13 @@ export function sanitizeTopics(candidates) {
   const seen = new Set();
   const cleaned = [];
   for (const candidate of candidates) {
-    const title = candidate?.title;
-    if (typeof title !== 'string') {
+    const topic = cleanTopicText(candidate?.title, { maxLength: MAX_TITLE_LENGTH });
+    if (topic === null || seen.has(topic.key)) {
       // eslint-disable-next-line no-continue
       continue;
     }
-    const text = title.trim();
-    if (text.length === 0 || text.length > MAX_TITLE_LENGTH) {
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-    const dedupeKey = text.replace(/\s+/g, ' ').toLowerCase();
-    if (seen.has(dedupeKey)) {
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-    seen.add(dedupeKey);
-    cleaned.push({ sourceId: candidate.id, text });
+    seen.add(topic.key);
+    cleaned.push({ sourceId: candidate.id, text: topic.text });
   }
   return cleaned.slice(0, MAX_TOPICS_PER_ENTITY);
 }
