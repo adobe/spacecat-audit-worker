@@ -19,7 +19,11 @@ import {
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
-import { PROVIDER_USER_AGENT_PATTERNS, AGENTIC_TRAFFIC_PROVIDERS, buildAdobeInternalUaExclusion } from '../common/user-agent-classification.js';
+import {
+  PROVIDER_USER_AGENT_PATTERNS,
+  AGENTIC_TRAFFIC_REPORT_PROVIDERS,
+  buildAdobeInternalUaExclusion,
+} from '../common/user-agent-classification.js';
 
 /* c8 ignore start */
 export const CDN_TYPES = {
@@ -611,7 +615,7 @@ export function buildDateFilter(startDate, endDate) {
  * Used by cdn-logs-report and page-citability audits
  */
 export function buildUserAgentFilter() {
-  const clauses = AGENTIC_TRAFFIC_PROVIDERS
+  const clauses = AGENTIC_TRAFFIC_REPORT_PROVIDERS
     .map((key) => `REGEXP_LIKE(user_agent, '${PROVIDER_USER_AGENT_PATTERNS[key]}')`)
     .join(' OR\n    ');
 
