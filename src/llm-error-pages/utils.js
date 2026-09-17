@@ -90,6 +90,9 @@ export function normalizeUserAgentToProvider(rawUserAgent) {
   if (/gemini/i.test(rawUserAgent)) {
     return 'Gemini';
   }
+  if (/githubcopilotruntime-webfetch|^github copilot$/i.test(rawUserAgent)) {
+    return 'GitHub Copilot';
+  }
   if (/copilot/i.test(rawUserAgent)) {
     return 'Copilot';
   }

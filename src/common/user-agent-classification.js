@@ -27,31 +27,6 @@ export function buildAdobeInternalUaExclusion(column = 'user_agent') {
   return `NOT REGEXP_LIKE(${column}, '${ADOBE_INTERNAL_UA_PATTERN}')`;
 }
 
-// Claude Code provenance: Anthropic's signed
-// @anthropic-ai/claude-code-darwin-arm64@2.1.274 artifact states that gateway auth
-// requests send `User-Agent: claude-code/<version>`. The provider's gateway docs
-// describe the protocol endpoint:
-// https://code.claude.com/docs/en/claude-apps-gateway#other-gateway-implementations
-// Artifact metadata:
-// https://registry.npmjs.org/@anthropic-ai/claude-code/2.1.274
-// Native artifact:
-// https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.274.tgz
-// Integrity:
-// sha512-/rlrB+1ovRPWuLYNpuOvWY4dGOGyanW008KeHST6ZjOVfEFBFyqqFJiBaRpDNy5LdlnozZZYWUoMWr8W0KXyEg==
-//
-// GitHub Copilot provenance is deliberately version-bounded: GitHub's trusted-publisher
-// @github/copilot-darwin-arm64@1.0.83 artifact embeds `GitHubCopilotRuntime-WebFetch`
-// in its web_fetch HTTP implementation. Version 1.0.85 no longer contains that token,
-// and GitHub publishes no stability contract for it, so only the exact observed token
-// is supported rather than a generic Copilot substring.
-// Artifact metadata:
-// https://registry.npmjs.org/@github/copilot-darwin-arm64/1.0.83
-// Integrity:
-// sha512-gv+SZRhxlQCmKOlzCCP6B2SOAaAPPc+VYGd6iC9va06wXNlmigYSCBhQeOSQoSeZ0mK2KR7RTM+AbiXLytBUfA==
-// Current comparison:
-// https://registry.npmjs.org/@github/copilot-darwin-arm64/1.0.85
-// Integrity:
-// sha512-FqoLTSpgJanY1FmuE2636Fxup9sc5w/VnNzvF8OLyXHtlwWzNm21Zl8an9/MOJHEt1442EUxZlgjItdVdeW7Fg==
 export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)',
   perplexity: '(?i)Perplexity',
@@ -59,7 +34,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   googleai: '(?i)(^Google$|Google-NotebookLM|Google-?Agent)',
   google: '(?i)(Google-Extended|Googlebot)',
   mistralai: '(?i)MistralAI-User',
-  copilot: '(?i)GitHubCopilotRuntime-WebFetch',
+  githubcopilot: '(?i)GitHubCopilotRuntime-WebFetch',
   bing: '(?i)Bingbot',
   amazon: '(?i)Amzn-User',
   parallel: '(?i)Shap(Bot|-User)',
@@ -75,7 +50,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
  * (`buildUserAgentFilter`) and the llm-error-pages provider list (`LLM_PROVIDERS`)
  * derive from this array so the two surfaces cannot drift out of sync.
  */
-export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable', 'meta', 'copilot'];
+export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable', 'meta', 'githubcopilot'];
 
 /**
  * User agent display name mappings for better readability in reports
@@ -113,7 +88,7 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%claude-searchbot%', displayName: 'Claude-SearchBot' },
   { pattern: '%com.anthropic.claude%', displayName: 'Claude Clients' },
   { pattern: '%claude/%', displayName: 'Claude Clients' },
-  // Historical/observed token; intentionally not a generic Copilot match.
+  // Exact runtime token avoids matching unrelated Copilot products.
   { pattern: '%githubcopilotruntime-webfetch%', displayName: 'GitHub Copilot' },
   // MistralAI
   { pattern: '%mistralai-user%', displayName: 'MistralAI-User' },
@@ -170,15 +145,14 @@ export function buildAgentTypeClassificationSQL() {
     // Bing
     { pattern: '%bingbot%', result: 'Search Bots' },
     // Claude
-    // User-directed coding agent; keep ahead of the generic Claude media client.
-    { pattern: '%claude-code/%', result: 'Action agents' },
+    // Keep Claude Code ahead of the generic Claude media client.
+    { pattern: '%claude-code/%', result: 'Coding agents' },
     { pattern: '%claudebot%', result: 'Training bots' },
     { pattern: '%claude-searchbot%', result: 'Web search crawlers' },
     { pattern: '%claude-user%', result: 'Chatbots' },
     { pattern: '%com.anthropic.claude%', result: 'Media fetchers' },
     { pattern: '%claude/%', result: 'Media fetchers' },
-    // User-directed web fetch from the version-bounded runtime token documented above.
-    { pattern: '%githubcopilotruntime-webfetch%', result: 'Action agents' },
+    { pattern: '%githubcopilotruntime-webfetch%', result: 'Coding agents' },
     // MistralAI
     { pattern: '%mistralai-user%', result: 'Chatbots' },
     // Amazon
@@ -226,7 +200,7 @@ export function inferProviderFromUserAgent(userAgent = '') {
     return 'Google';
   }
   if (/(githubcopilotruntime-webfetch|^github copilot$)/.test(ua)) {
-    return 'Copilot';
+    return 'GitHub Copilot';
   }
   if (/bing/.test(ua)) {
     return 'Bing';

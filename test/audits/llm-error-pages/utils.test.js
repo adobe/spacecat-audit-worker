@@ -111,14 +111,14 @@ describe('LLM Error Pages Utils', () => {
       expect(providers).to.include('claude');
       expect(providers).to.include('googleai');
       // Full-matches the Agentic Traffic tab's canonical set (AGENTIC_TRAFFIC_PROVIDERS):
-      // mistralai, amazon, parallel, manus, keenable, meta, and copilot are in.
+      // mistralai, amazon, parallel, manus, keenable, meta, and githubcopilot are in.
       expect(providers).to.include('mistralai');
       expect(providers).to.include('amazon');
       expect(providers).to.include('parallel');
       expect(providers).to.include('manus');
       expect(providers).to.include('keenable');
       expect(providers).to.include('meta');
-      expect(providers).to.include('copilot');
+      expect(providers).to.include('githubcopilot');
     });
   });
 
@@ -182,6 +182,8 @@ describe('LLM Error Pages Utils', () => {
     });
 
     it('should normalize Copilot user agents', () => {
+      expect(normalizeUserAgentToProvider('GitHubCopilotRuntime-WebFetch')).to.equal('GitHub Copilot');
+      expect(normalizeUserAgentToProvider('GitHub Copilot')).to.equal('GitHub Copilot');
       expect(normalizeUserAgentToProvider('CopilotBot/1.0')).to.equal('Copilot');
       expect(normalizeUserAgentToProvider('microsoft-copilot')).to.equal('Copilot');
     });

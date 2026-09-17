@@ -77,11 +77,9 @@ describe('User Agent Patterns', () => {
 
     it('uses the specific GitHub Copilot runtime token for reporting', () => {
       const { PROVIDER_USER_AGENT_PATTERNS } = userAgentPatterns;
-      const pattern = PROVIDER_USER_AGENT_PATTERNS.copilot;
+      const pattern = PROVIDER_USER_AGENT_PATTERNS.githubcopilot;
       const regex = new RegExp(pattern.replace('(?i)', ''), 'i');
 
-      // The first-party 1.0.83 artifact contains this exact web-fetch token, while
-      // 1.0.85 does not and GitHub documents no stable generic Copilot UA contract.
       expect(regex.test('GitHubCopilotRuntime-WebFetch')).to.equal(true);
       expect(regex.test('githubcopilotruntime-webfetch/1.0')).to.equal(true);
       expect(regex.test('CopilotBot/1.0')).to.equal(false);
@@ -226,12 +224,12 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include("LIKE '%claude/%' THEN 'Media fetchers'");
     });
 
-    it('classifies coding-agent fetches as Action agents', () => {
+    it('classifies coding-agent fetches as Coding agents', () => {
       const { buildAgentTypeClassificationSQL } = userAgentPatterns;
       const sql = buildAgentTypeClassificationSQL();
 
-      expect(sql).to.include("LIKE '%claude-code/%' THEN 'Action agents'");
-      expect(sql).to.include("LIKE '%githubcopilotruntime-webfetch%' THEN 'Action agents'");
+      expect(sql).to.include("LIKE '%claude-code/%' THEN 'Coding agents'");
+      expect(sql).to.include("LIKE '%githubcopilotruntime-webfetch%' THEN 'Coding agents'");
       expect(sql.indexOf("LIKE '%claude-code/%'")).to.be.lessThan(sql.indexOf("LIKE '%claude/%'"));
     });
 
@@ -319,7 +317,7 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('Google-Agent')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('Google-AI-Mode')).to.equal('Google AI Mode');
       expect(inferProviderFromUserAgent('google-notebooklm')).to.equal('Google');
-      expect(inferProviderFromUserAgent('githubcopilotruntime-webfetch')).to.equal('Copilot');
+      expect(inferProviderFromUserAgent('githubcopilotruntime-webfetch')).to.equal('GitHub Copilot');
       expect(inferProviderFromUserAgent('BingBot')).to.equal('Bing');
       expect(inferProviderFromUserAgent('MistralAI-Search')).to.equal('MistralAI');
       expect(inferProviderFromUserAgent('Amazonbot/0.1')).to.equal('Amazon');
@@ -330,8 +328,8 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('Meta-ExternalAgent')).to.equal('Meta');
       expect(inferProviderFromUserAgent('Meta-ExternalFetcher')).to.equal('Meta');
       expect(inferProviderFromUserAgent('claude-code/2.1.270')).to.equal('Anthropic');
-      expect(inferProviderFromUserAgent('GitHubCopilotRuntime-WebFetch')).to.equal('Copilot');
-      expect(inferProviderFromUserAgent('GitHub Copilot')).to.equal('Copilot');
+      expect(inferProviderFromUserAgent('GitHubCopilotRuntime-WebFetch')).to.equal('GitHub Copilot');
+      expect(inferProviderFromUserAgent('GitHub Copilot')).to.equal('GitHub Copilot');
       // regexes must stay as specific as PROVIDER_USER_AGENT_PATTERNS -- not broad
       // substring matches that would misattribute an unrelated bot's provider
       expect(inferProviderFromUserAgent('reshape-bot/1.0')).to.equal('Other');
@@ -441,7 +439,7 @@ describe('User Agent Patterns', () => {
         'i',
       );
       const copilotReportingRegex = new RegExp(
-        userAgentPatterns.PROVIDER_USER_AGENT_PATTERNS.copilot.replace('(?i)', ''),
+        userAgentPatterns.PROVIDER_USER_AGENT_PATTERNS.githubcopilot.replace('(?i)', ''),
         'i',
       );
 
@@ -449,7 +447,6 @@ describe('User Agent Patterns', () => {
       expect(claudeReportingRegex.test('claude-code/2.1.270')).to.equal(true);
       expect(ingestionRegex.test('GitHubCopilotRuntime-WebFetch')).to.equal(true);
       expect(copilotReportingRegex.test('GitHubCopilotRuntime-WebFetch')).to.equal(true);
-      // `meta-masu` has neither first-party provenance nor live Splunk evidence.
       expect(ingestionRegex.test('meta-masu')).to.equal(false);
     });
   });

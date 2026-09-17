@@ -205,7 +205,7 @@ describe('agentic traffic mapper', () => {
       }),
     };
     const rows = ['Claude Code', 'GitHub Copilot'].map((userAgent, index) => ({
-      agent_type: 'Action agents',
+      agent_type: 'Coding agents',
       user_agent_display: userAgent,
       status: 200,
       number_of_hits: 1,
@@ -226,12 +226,12 @@ describe('agentic traffic mapper', () => {
     }))).to.deep.equal([
       {
         platform: 'Anthropic',
-        agentType: 'Action agents',
+        agentType: 'Coding agents',
         userAgent: 'Claude Code',
       },
       {
-        platform: 'Copilot',
-        agentType: 'Action agents',
+        platform: 'GitHub Copilot',
+        agentType: 'Coding agents',
         userAgent: 'GitHub Copilot',
       },
     ]);
