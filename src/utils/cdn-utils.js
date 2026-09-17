@@ -615,9 +615,7 @@ export function buildDateFilter(startDate, endDate) {
  * Used by cdn-logs-report and page-citability audits
  */
 export function buildUserAgentFilter() {
-  // GitHub Copilot is Agentic Traffic-only; LLM Error Pages retains the base provider set.
-  const providerKeys = [...AGENTIC_TRAFFIC_PROVIDERS, 'githubcopilot'];
-  const clauses = providerKeys
+  const clauses = AGENTIC_TRAFFIC_PROVIDERS
     .map((key) => `REGEXP_LIKE(user_agent, '${PROVIDER_USER_AGENT_PATTERNS[key]}')`)
     .join(' OR\n    ');
 

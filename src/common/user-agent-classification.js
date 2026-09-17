@@ -44,10 +44,9 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
 };
 
 /**
- * Shared agentic/LLM provider set. Search bots and Copilot are excluded; report
- * surfaces may add narrowly scoped providers where needed.
+ * Shared agentic/LLM provider set. Search bots are excluded.
  */
-export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable', 'meta'];
+export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable', 'meta', 'githubcopilot'];
 
 /**
  * User agent display name mappings for better readability in reports
