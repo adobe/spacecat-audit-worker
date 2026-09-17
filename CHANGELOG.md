@@ -1,3 +1,10 @@
+## [1.541.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.541.1...v1.541.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **offsite:** preserve all YouTube query params so url-prompts matches exactly (LLMO-6712) ([#2983](https://github.com/adobe/spacecat-audit-worker/issues/2983)) ([c670503](https://github.com/adobe/spacecat-audit-worker/commit/c67050370dd487ae151a85ad2e995ff46252ef5a)), closes [#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981) [#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981) [#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981)
+
 ## [1.541.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.541.0...v1.541.1) (2026-09-16)
 
 
