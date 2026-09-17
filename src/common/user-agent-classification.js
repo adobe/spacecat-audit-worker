@@ -40,6 +40,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   parallel: '(?i)Shap(Bot|-User)',
   manus: '(?i)Manus-User',
   keenable: '(?i)Keenable-User',
+  meta: '(?i)meta-external(agent|fetcher)',
 };
 
 /**
@@ -49,7 +50,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
  * (`buildUserAgentFilter`) and the llm-error-pages provider list (`LLM_PROVIDERS`)
  * derive from this array so the two surfaces cannot drift out of sync.
  */
-export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable'];
+export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable', 'meta'];
 
 /**
  * User agent display name mappings for better readability in reports
@@ -96,6 +97,9 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%manus-user%', displayName: 'Manus-User' },
   // Keenable.ai
   { pattern: '%keenable-user%', displayName: 'Keenable-User' },
+  // Meta
+  { pattern: '%meta-externalagent%', displayName: 'Meta-ExternalAgent' },
+  { pattern: '%meta-externalfetcher%', displayName: 'Meta-ExternalFetcher' },
 ];
 
 /**
@@ -154,6 +158,9 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%manus-user%', result: 'Chatbots' },
     // Keenable.ai
     { pattern: '%keenable-user%', result: 'Web search crawlers' },
+    // Meta: ExternalAgent crawls for model improvement; ExternalFetcher is user-initiated.
+    { pattern: '%meta-externalagent%', result: 'Training bots' },
+    { pattern: '%meta-externalfetcher%', result: 'Chatbots' },
   ];
 
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');
@@ -205,6 +212,9 @@ export function inferProviderFromUserAgent(userAgent = '') {
   }
   if (/keenable-user/.test(ua)) {
     return 'Keenable.ai';
+  }
+  if (/meta-external(agent|fetcher)/.test(ua)) {
+    return 'Meta';
   }
 
   return 'Other';
