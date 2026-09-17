@@ -21,7 +21,7 @@ import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
 import {
   PROVIDER_USER_AGENT_PATTERNS,
-  AGENTIC_TRAFFIC_REPORT_PROVIDERS,
+  AGENTIC_TRAFFIC_PROVIDERS,
   buildAdobeInternalUaExclusion,
 } from '../common/user-agent-classification.js';
 
@@ -615,7 +615,9 @@ export function buildDateFilter(startDate, endDate) {
  * Used by cdn-logs-report and page-citability audits
  */
 export function buildUserAgentFilter() {
-  const clauses = AGENTIC_TRAFFIC_REPORT_PROVIDERS
+  // GitHub Copilot is Agentic Traffic-only; LLM Error Pages retains the base provider set.
+  const providerKeys = [...AGENTIC_TRAFFIC_PROVIDERS, 'githubcopilot'];
+  const clauses = providerKeys
     .map((key) => `REGEXP_LIKE(user_agent, '${PROVIDER_USER_AGENT_PATTERNS[key]}')`)
     .join(' OR\n    ');
 

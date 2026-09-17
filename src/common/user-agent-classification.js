@@ -44,20 +44,10 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
 };
 
 /**
- * Canonical agentic/LLM provider set — the Agentic Traffic tab's source of truth.
- * Keys index into PROVIDER_USER_AGENT_PATTERNS; the set deliberately excludes search
- * bots (google/bing). Both the agentic-traffic report filter
- * (`buildUserAgentFilter`) and the llm-error-pages provider list (`LLM_PROVIDERS`)
- * derive from this array so the two surfaces cannot drift out of sync.
+ * Shared agentic/LLM provider set. Search bots and Copilot are excluded; report
+ * surfaces may add narrowly scoped providers where needed.
  */
 export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable', 'meta'];
-
-// GitHub Copilot is supported by Agentic Traffic only; LLM Error Pages intentionally
-// retains its existing provider set.
-export const AGENTIC_TRAFFIC_REPORT_PROVIDERS = [
-  ...AGENTIC_TRAFFIC_PROVIDERS,
-  'githubcopilot',
-];
 
 /**
  * User agent display name mappings for better readability in reports
