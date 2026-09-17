@@ -489,7 +489,7 @@ describe('offsite-brand-presence-enrichment', function () {
       expect(result).to.have.lengthOf(1);
     });
 
-    it('normalizes youtu.be watch URLs and classifies youtube domain', async () => {
+    it('classifies a youtube watch URL as youtube domain, unchanged', async () => {
       await setupSharePointStubs([makeBrandPresenceRow({
         Sources: 'https://www.youtube.com/watch?v=abc123',
         Topics: 'Vid',
@@ -499,7 +499,42 @@ describe('offsite-brand-presence-enrichment', function () {
       const site = makeSite();
 
       const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
-      expect(result[0].urls[0].url).to.equal('https://youtu.be/abc123');
+      expect(result[0].urls[0].url).to.equal('https://www.youtube.com/watch?v=abc123');
+    });
+
+    it('preserves EXTRA query params on a youtube watch URL byte-identically (no v=-only stripping)', async () => {
+      await setupSharePointStubs([makeBrandPresenceRow({
+        Sources: 'https://www.youtube.com/watch?v=abc123&t=30&list=xyz',
+        Topics: 'Vid',
+      })]);
+      const site = makeSite();
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
+      // Semrush's CBF_source is the exact string it captured — dropping "extra" params would
+      // itself be a mismatch, so nothing beyond the hash fragment is stripped.
+      expect(result[0].urls[0].url).to.equal('https://www.youtube.com/watch?v=abc123&t=30&list=xyz');
+    });
+
+    it('drops a hash fragment from a youtube watch URL (never sent to a server)', async () => {
+      await setupSharePointStubs([makeBrandPresenceRow({
+        Sources: 'https://www.youtube.com/watch?v=abc123#t=30s',
+        Topics: 'Vid',
+      })]);
+      const site = makeSite();
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
+      expect(result[0].urls[0].url).to.equal('https://www.youtube.com/watch?v=abc123');
+    });
+
+    it('preserves query params on a non-watch youtube URL (e.g. shorts) too', async () => {
+      await setupSharePointStubs([makeBrandPresenceRow({
+        Sources: 'https://www.youtube.com/shorts/xyz?feature=share',
+        Topics: 'Vid',
+      })]);
+      const site = makeSite();
+
+      const result = await computeTopicsFromBrandPresence(SITE_ID, { log }, site);
+      expect(result[0].urls[0].url).to.equal('https://www.youtube.com/shorts/xyz?feature=share');
     });
 
     it('handles youtube watch without video id using origin pathname', async () => {

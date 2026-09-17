@@ -22,6 +22,7 @@ import {
   decodeS2sConsumerClaims,
 } from './offsite-s2s-auth.js';
 import { resolveSemrushTimeoutMs } from './offsite-brand-presence-semrush.js';
+import { resolveSemrushEntitlement } from './semrush-entitlement.js';
 import {
   createOffsiteLogger, errorField, OUTCOME, PEER,
 } from './offsite-logging.js';
@@ -262,6 +263,34 @@ export async function loadUrlPromptsFromSemrush({
       return new Map();
     }
 
+    // Gate on Semrush entitlement using the SAME shared flag-AND-workspace check the domain-urls
+    // source uses (resolveSemrushEntitlement) — BEFORE minting an IMS token / S2S login — so a
+    // brand not provisioned for Semrush doesn't pay the wasted auth round-trip. This is a local
+    // DB check (feature flag + workspace lookup), NOT a Semrush API call, and fails closed (any
+    // error/timeout → skip). Mirrors the offsite-brand-presence gate; keeps the two audits'
+    // "should we call Semrush?" decision in one reusable place.
+    const entitlement = await resolveSemrushEntitlement(context, {
+      orgId: spaceCatId, brandId: brand.brandId,
+    });
+    if (!entitlement.entitled) {
+      olog.warn(
+        URL_PROMPTS_EVENT,
+        entitlement.resolved
+          ? 'Brand not entitled for Semrush; skipping url-prompts'
+          : 'Semrush entitlement check inconclusive; skipping url-prompts',
+        {
+          peer: PEER.SEMRUSH,
+          direction: 'inbound',
+          orgId: spaceCatId,
+          brandId: brand.brandId,
+          reason: entitlement.resolved ? 'not_entitled' : 'entitlement_check_failed',
+          entitlementReason: entitlement.reason,
+          outcome: OUTCOME.SKIP,
+        },
+      );
+      return new Map();
+    }
+
     const dateWindow = getDateWindowForPreviousWeeks(getPreviousWeeks());
     if (!dateWindow) {
       olog.warn(URL_PROMPTS_EVENT, 'Could not derive a date window; skipping url-prompts', {
@@ -328,6 +357,9 @@ export async function loadUrlPromptsFromSemrush({
   const requests = urls
     .filter(({ url }) => url)
     .map(({ url }) => ({
+      // Query the stored url AS-IS: it's the exact form Semrush returned from domain-urls, which
+      // is what Semrush keys `CBF_source` on (watch OR youtu.be). Rewriting the form here would
+      // break the exact match for whichever form Semrush actually stored.
       url,
       requestUrl: buildUrlPromptsUrl({
         baseUrl, spaceCatId, brandId: brand.brandId, url, startDate, endDate,

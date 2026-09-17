@@ -9,17 +9,21 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { Site } from '@adobe/spacecat-shared-data-access';
+import { AsyncJob, Site } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray, isValidUrl } from '@adobe/spacecat-shared-utils';
 
 export async function saveIntermediateResults(context, result, auditName) {
   const {
     site, job, step, dataAccess, log,
   } = context;
-  const { AsyncJob } = dataAccess;
+  const { AsyncJob: AsyncJobEntity } = dataAccess;
 
   try {
-    const jobEntity = await AsyncJob.findById(job.getId());
+    const jobEntity = await AsyncJobEntity.findById(job.getId());
+    if (jobEntity.getStatus?.() === AsyncJob.Status.COMPLETED) {
+      log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. ${auditName}: Async guidance already completed the job; preserving its result`);
+      return;
+    }
     jobEntity.setResult(result);
     await jobEntity.save();
     log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. ${auditName}: Intermediate results saved successfully`);

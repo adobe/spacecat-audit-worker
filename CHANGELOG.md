@@ -1,3 +1,45 @@
+## [1.541.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.541.1...v1.541.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **offsite:** preserve all YouTube query params so url-prompts matches exactly (LLMO-6712) ([#2983](https://github.com/adobe/spacecat-audit-worker/issues/2983)) ([c670503](https://github.com/adobe/spacecat-audit-worker/commit/c67050370dd487ae151a85ad2e995ff46252ef5a)), closes [#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981) [#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981) [#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981)
+
+## [1.541.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.541.0...v1.541.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **offsite:** preserve YouTube URL form + dedupe by video id so url-prompts matches (LLMO-6712) ([#2981](https://github.com/adobe/spacecat-audit-worker/issues/2981)) ([74d07cb](https://github.com/adobe/spacecat-audit-worker/commit/74d07cb88d2bbc956ab79fab3a6e517f495efac1))
+
+# [1.541.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.540.1...v1.541.0) (2026-09-16)
+
+
+### Features
+
+* **url-prompts:** gate url-prompts enrichment on the shared Semrush entitlement check (LLMO-6712) ([#2978](https://github.com/adobe/spacecat-audit-worker/issues/2978)) ([c5b9933](https://github.com/adobe/spacecat-audit-worker/commit/c5b99334263c57c3bf6433c1ceef6ad99f3ea3a7))
+
+## [1.540.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.540.0...v1.540.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* do not exclude failed commerce scrapes ([#2980](https://github.com/adobe/spacecat-audit-worker/issues/2980)) ([3e16457](https://github.com/adobe/spacecat-audit-worker/commit/3e164572ff724610853c7172e68988794aec2701))
+
+# [1.540.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.2...v1.540.0) (2026-09-16)
+
+
+### Features
+
+* ingest additional Google and Meta user agents ([#2979](https://github.com/adobe/spacecat-audit-worker/issues/2979)) ([fc47703](https://github.com/adobe/spacecat-audit-worker/commit/fc47703f399c3882283f398f17423f84214551dd)), closes [Hi#level](https://github.com/Hi/issues/level)
+
+## [1.539.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.1...v1.539.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **preflight:** preserve completed readability guidance (SITES-51778) ([#2976](https://github.com/adobe/spacecat-audit-worker/issues/2976)) ([556f12d](https://github.com/adobe/spacecat-audit-worker/commit/556f12d5d16a078250c115ac06db3698fc71ceb2))
+
 ## [1.539.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.539.0...v1.539.1) (2026-09-16)
 
 

@@ -694,6 +694,85 @@ describe('Commerce Product Enrichments Handler', () => {
     expect(log.warn).to.have.been.calledWith(sinon.match(/No scrape data found/));
   });
 
+  it('runAuditAndProcessResults marks scrapeResult.error pages as failed without exclusions or enrichment', async () => {
+    const productUrl = 'https://www.zip-corvette.com/84-96-center-console-door-button.html';
+    const scrapeError = "Failed to execute 'remove' on 'Element': The node to be removed is no longer a child of this node. Perhaps it was moved in response to a mutation?";
+    const mockConfig = {
+      state: {
+        commerceLlmoConfig: {
+          'https://www.zip-corvette.com/': {
+            environmentId: 'env-123',
+            websiteCode: 'base',
+            storeCode: 'main_store',
+            storeViewCode: 'default',
+          },
+        },
+      },
+      getExcludedURLs: sinon.stub().returns([]),
+      updateExcludedURLs: sinon.stub(),
+      getHandlers: sinon.stub().returns({}),
+    };
+    site.getConfig.returns(mockConfig);
+
+    const s3Client = {
+      send: sinon.stub().resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: sinon.stub().resolves(JSON.stringify({
+            url: productUrl,
+            finalUrl: productUrl,
+            scrapeResult: {
+              error: scrapeError,
+              rawBody: '',
+              textContent: '',
+              structuredData: [],
+              tags: { h1: [] },
+              canonical: {
+                exists: false,
+                count: 0,
+                href: null,
+                inHead: false,
+              },
+              lastModified: null,
+            },
+          })),
+        },
+      }),
+    };
+
+    const result = await runAuditAndProcessResults({
+      site,
+      audit: { getId: () => 'audit-scrape-error-1' },
+      finalUrl: 'https://www.zip-corvette.com',
+      log,
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        CATALOG_ENRICHMENT_ENDPOINT: 'https://test-enrichment-endpoint/catalog-enrichment',
+      },
+      dataAccess,
+      scrapeResultPaths: new Map([
+        [productUrl, 'scrapes/site-1/zip-corvette/scrape.json'],
+      ]),
+    });
+
+    expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.auditResult.processedPages).to.equal(0);
+    expect(result.auditResult.failedPages).to.equal(1);
+    expect(result.auditResult.productPages).to.equal(0);
+    expect(log.warn).to.have.been.calledWithMatch(
+      sinon.match((msg) => typeof msg === 'string'
+        && msg.includes(`Scrape failed for ${productUrl}`)
+        && msg.includes(scrapeError)),
+    );
+
+    const enrichmentCalls = fetchStub.getCalls().filter(
+      (call) => call.args[0] === 'https://test-enrichment-endpoint/catalog-enrichment',
+    );
+    expect(enrichmentCalls).to.have.lengthOf(0);
+    expect(mockConfig.updateExcludedURLs).to.not.have.been.called;
+  });
+
   it('runAuditAndProcessResults handles unexpected errors during processing', async () => {
     const s3Client = {
       send: sinon.stub().resolves({

@@ -679,7 +679,7 @@ describe('Offsite Brand Presence Handler', function () {
 
       expect(result.auditResult.urlCounts['youtube.com']).to.equal(1);
       const createCalls = dataAccess.AuditUrl.create.getCalls()
-        .filter((c) => c.args[0].url === 'https://youtu.be/shared');
+        .filter((c) => c.args[0].url === 'https://www.youtube.com/watch?v=shared');
       expect(createCalls).to.have.lengthOf(1);
     });
 
@@ -839,7 +839,7 @@ describe('Offsite Brand Presence Handler', function () {
   });
 
   describe('URL Normalization', () => {
-    it('should normalize youtube.com/watch URLs to youtu.be short form', async () => {
+    it('should normalize youtube.com/watch URLs to the canonical watch URL', async () => {
       stubBrandPresenceData(['https://www.youtube.com/watch?v=abc123']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
@@ -847,10 +847,10 @@ describe('Offsite Brand Presence Handler', function () {
       const videosCall = mockSubmitScrapeJob.getCalls().find(
         (c) => c.args[0].datasetId === 'youtube_videos',
       );
-      expect(videosCall.args[0].urls).to.deep.equal(['https://youtu.be/abc123']);
+      expect(videosCall.args[0].urls).to.deep.equal(['https://www.youtube.com/watch?v=abc123']);
     });
 
-    it('should keep youtube.com/shorts URLs as-is (strip query params only)', async () => {
+    it('should keep youtube.com/shorts URLs byte-identical, including query params', async () => {
       stubBrandPresenceData(['https://www.youtube.com/shorts/xyz?feature=share']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
@@ -858,7 +858,7 @@ describe('Offsite Brand Presence Handler', function () {
       const videosCall = mockSubmitScrapeJob.getCalls().find(
         (c) => c.args[0].datasetId === 'youtube_videos',
       );
-      expect(videosCall.args[0].urls).to.deep.equal(['https://www.youtube.com/shorts/xyz']);
+      expect(videosCall.args[0].urls).to.deep.equal(['https://www.youtube.com/shorts/xyz?feature=share']);
     });
 
     it('should normalize youtu.be short URLs via domain alias', async () => {
@@ -922,14 +922,14 @@ describe('Offsite Brand Presence Handler', function () {
       expect(dataAccess.AuditUrl.create).to.have.been.calledOnce;
       const createArg = dataAccess.AuditUrl.create.firstCall.args[0];
       expect(createArg.siteId).to.equal(SITE_ID);
-      expect(createArg.url).to.equal('https://youtu.be/test');
+      expect(createArg.url).to.equal('https://youtube.com/watch?v=test');
       expect(createArg.byCustomer).to.equal(false);
       expect(createArg.audits).to.deep.equal(['youtube-analysis']);
     });
 
     it('should still send URL to DRS when it already exists in the URL store', async () => {
       dataAccess.AuditUrl.batchGetByKeys.resolves({
-        data: [{ getUrl: () => 'https://youtu.be/test' }],
+        data: [{ getUrl: () => 'https://youtube.com/watch?v=test' }],
       });
 
       stubBrandPresenceData(['https://youtube.com/watch?v=test']);
@@ -945,7 +945,7 @@ describe('Offsite Brand Presence Handler', function () {
       const videosCall = mockSubmitScrapeJob.getCalls().find(
         (c) => c.args[0].datasetId === 'youtube_videos',
       );
-      expect(videosCall.args[0].urls).to.include('https://youtu.be/test');
+      expect(videosCall.args[0].urls).to.include('https://youtube.com/watch?v=test');
     });
 
     it('should return empty storedByDomain when batchGetByKeys fails', async () => {
@@ -1215,7 +1215,7 @@ describe('Offsite Brand Presence Handler', function () {
         datasetId: SCRAPE_DATASET_IDS.YOUTUBE_VIDEOS,
         siteId: SITE_ID,
       });
-      expect(videosCall.args[0].urls).to.deep.equal(['https://youtu.be/x']);
+      expect(videosCall.args[0].urls).to.deep.equal(['https://youtube.com/watch?v=x']);
       expect(videosCall.args[0]).to.not.have.property('daysBack');
     });
 
