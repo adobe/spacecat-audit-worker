@@ -280,7 +280,7 @@ describe('offsite-lookup-index (offsite integration with the shared foundation)'
       ({ indexOffsiteOpportunityByTopic } = await esmock('../../src/common/offsite-lookup-index.js', {
         '../../src/common/lookup-index.js': { indexOpportunityByTopic: indexOpportunityByTopicStub },
         '@adobe/spacecat-shared-gpt-client': { AzureEmbeddingClient: { createFrom: createFromStub } },
-        '@adobe/spacecat-shared-data-access': { copyEntityVectors: sandbox.stub(), SEMANTIC_INDEX_TABLES: [] },
+        '@adobe/spacecat-shared-data-access': { copyEntityVectors: sandbox.stub() },
       }));
     };
 
@@ -370,7 +370,6 @@ describe('offsite-lookup-index (offsite integration with the shared foundation)'
       ({ copyOffsiteOpportunityTopicVectors } = await esmock('../../src/common/offsite-lookup-index.js', {
         '@adobe/spacecat-shared-data-access': {
           copyEntityVectors: copyEntityVectorsStub,
-          SEMANTIC_INDEX_TABLES: ['opportunity_semantic_embedding'],
         },
         '@adobe/spacecat-shared-gpt-client': { AzureEmbeddingClient: { createFrom: sandbox.stub() } },
       }));
@@ -380,14 +379,14 @@ describe('offsite-lookup-index (offsite integration with the shared foundation)'
       copyEntityVectorsStub = sandbox.stub().resolves(3);
     });
 
-    it('copies vectors across the index tables and logs the count', async () => {
+    it('copies the opportunity vectors to the snapshot and logs the count', async () => {
       await loadCopy();
       await copyOffsiteOpportunityTopicVectors(copyArgs());
 
       expect(copyEntityVectorsStub).to.have.been.calledOnceWith(
         pgClient,
         {
-          table: 'opportunity_semantic_embedding', siteId: 'site-1', fromEntityId: 'evergreen-1', toEntityId: 'snapshot-1',
+          siteId: 'site-1', fromEntityId: 'evergreen-1', toEntityId: 'snapshot-1',
         },
       );
       const line = logStub.info.getCalls().map((c) => c.args[0])

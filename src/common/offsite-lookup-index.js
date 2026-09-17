@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { copyEntityVectors, SEMANTIC_INDEX_TABLES } from '@adobe/spacecat-shared-data-access';
+import { copyEntityVectors } from '@adobe/spacecat-shared-data-access';
 import { AzureEmbeddingClient } from '@adobe/spacecat-shared-gpt-client';
 import {
   indexOpportunityByUrl, indexOpportunitySuggestionsByUrl, indexOpportunityByTopic,
@@ -239,13 +239,9 @@ export async function copyOffsiteOpportunityTopicVectors({
   }
 
   try {
-    let copiedCount = 0;
-    for (const table of SEMANTIC_INDEX_TABLES) {
-      // eslint-disable-next-line no-await-in-loop
-      copiedCount += await copyEntityVectors(postgrestClient, {
-        table, siteId, fromEntityId, toEntityId,
-      });
-    }
+    const copiedCount = await copyEntityVectors(postgrestClient, {
+      siteId, fromEntityId, toEntityId,
+    });
     olog.success(COPY_TOPIC_SNAPSHOT_EVENT, 'Copied topic vectors to snapshot', {
       peer: PEER.POSTGRES, direction: 'outbound', snapshotId: toEntityId, copiedTopicCount: copiedCount,
     });
