@@ -1,3 +1,10 @@
+# [1.542.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.541.2...v1.542.0) (2026-09-17)
+
+
+### Features
+
+* report Meta agentic traffic ([#2986](https://github.com/adobe/spacecat-audit-worker/issues/2986)) ([55935c7](https://github.com/adobe/spacecat-audit-worker/commit/55935c7d86dcd2149d24cbe242f284d0ac3cff84)), closes [Hi#level](https://github.com/Hi/issues/level)
+
 ## [1.541.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.541.1...v1.541.2) (2026-09-17)
 
 
