@@ -80,6 +80,8 @@ describe('User Agent Patterns', () => {
       const pattern = PROVIDER_USER_AGENT_PATTERNS.copilot;
       const regex = new RegExp(pattern.replace('(?i)', ''), 'i');
 
+      // The first-party 1.0.83 artifact contains this exact web-fetch token, while
+      // 1.0.85 does not and GitHub documents no stable generic Copilot UA contract.
       expect(regex.test('GitHubCopilotRuntime-WebFetch')).to.equal(true);
       expect(regex.test('githubcopilotruntime-webfetch/1.0')).to.equal(true);
       expect(regex.test('CopilotBot/1.0')).to.equal(false);
@@ -178,6 +180,7 @@ describe('User Agent Patterns', () => {
       expect(regex.test('Meta-ExternalFetcher/1.1')).to.equal(true);
       expect(regex.test('meta-webindexer/1.0')).to.equal(false);
       expect(regex.test('Meta-Muse-User/1.0')).to.equal(false);
+      expect(regex.test('meta-masu')).to.equal(false);
     });
 
     it('allows GitHub Copilot WebFetch without generic Copilot matches', () => {
@@ -446,6 +449,8 @@ describe('User Agent Patterns', () => {
       expect(claudeReportingRegex.test('claude-code/2.1.270')).to.equal(true);
       expect(ingestionRegex.test('GitHubCopilotRuntime-WebFetch')).to.equal(true);
       expect(copilotReportingRegex.test('GitHubCopilotRuntime-WebFetch')).to.equal(true);
+      // `meta-masu` has neither first-party provenance nor live Splunk evidence.
+      expect(ingestionRegex.test('meta-masu')).to.equal(false);
     });
   });
 });
