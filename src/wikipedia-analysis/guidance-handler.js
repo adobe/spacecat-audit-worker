@@ -15,6 +15,7 @@ import {
 } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../utils/data-access.js';
+import { indexOffsiteOpportunityByUrl } from '../common/offsite-lookup-index.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { postMessageOptional } from '../utils/slack-utils.js';
@@ -25,6 +26,22 @@ import {
 } from '../utils/offsite-logging.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS;
+
+// Unlike cited/reddit/youtube, every suggestion here shares the opportunity's own source page.
+// Deliberately does NOT special-case an absent URL into an intentional empty clear: this
+// extractor is only ever reached once the handler has confirmed there are suggestions to index,
+// and Mystique cannot have suggestions to improve a page it never found - so a missing URL at
+// this point is payload drift, not a legitimate "page removed" state, and must not be submitted
+// as a clear.
+export function getOpportunityUrls(opportunity) {
+  const url = opportunity.getData()?.fullAnalysis?.wikipediaUrl;
+  return [url];
+}
+
+export function getSuggestionUrls(suggestion, opportunity) {
+  return getOpportunityUrls(opportunity);
+}
+
 // Human prefix for the two shared, untouched utils that still log via a passed-in prefix
 // string (applyScopeToOpportunity + fetchAnalysisFromPresignedUrl). All other logging in this
 // file goes through the bound offsite logger (createOffsiteLogger), which emits the same prefix.
@@ -279,6 +296,18 @@ export default async function handler(message, context) {
 
     ologOpp.success('audit_persistence_end', 'Run processed successfully', {
       count: suggestions.length, companyName,
+    });
+
+    // Runs after suggestions are persisted (wikipedia has no housekeeping step to wait on).
+    // Best-effort: lookup-index.js returns { error } instead of throwing, so this call never
+    // fails an otherwise successful persist.
+    await indexOffsiteOpportunityByUrl({
+      context,
+      opportunity,
+      auditType: AUDIT_TYPE,
+      getOpportunityUrls,
+      getSuggestionUrls,
+      olog: ologOpp,
     });
 
     await postWikipediaOutcomeToSlack(

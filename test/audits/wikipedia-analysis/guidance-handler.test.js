@@ -15,8 +15,10 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 // Use the REAL applyScopeToOpportunity (see cited-analysis test for rationale).
 import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
+import { getOpportunityUrls, getSuggestionUrls } from '../../../src/wikipedia-analysis/guidance-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -38,6 +40,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
   let fetchAnalysisStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
+  let indexOffsiteOpportunityByUrlStub;
 
   const baseURL = 'https://example.com';
   const siteId = 'test-site-id';
@@ -72,6 +75,7 @@ describe('Wikipedia Analysis Guidance Handler', function () {
     fetchAnalysisStub = sandbox.stub();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
+    indexOffsiteOpportunityByUrlStub = sandbox.stub().resolves();
 
     handler = await esmock('../../../src/wikipedia-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
@@ -79,6 +83,9 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       },
       '../../../src/common/opportunity.js': {
         convertToOpportunity: convertToOpportunityStub,
+      },
+      '../../../src/common/offsite-lookup-index.js': {
+        indexOffsiteOpportunityByUrl: indexOffsiteOpportunityByUrlStub,
       },
       '../../../src/utils/analysis-fetch.js': {
         fetchAnalysisFromPresignedUrl: fetchAnalysisStub,
@@ -154,6 +161,18 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Run processed successfully/));
+
+      // The URL index is wired in after persist with the run's ids and its own extractors.
+      expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledOnce;
+      const funnelingArg = indexOffsiteOpportunityByUrlStub.firstCall.args[0];
+      expect(funnelingArg.context).to.equal(context);
+      expect(funnelingArg.opportunity).to.equal(mockOpportunity);
+      expect(funnelingArg.auditType).to.equal(Audit.AUDIT_TYPES.WIKIPEDIA_ANALYSIS);
+      expect(funnelingArg.olog).to.be.an('object');
+      expect(funnelingArg.getOpportunityUrls).to.equal(handler.getOpportunityUrls);
+      expect(funnelingArg.getSuggestionUrls).to.equal(handler.getSuggestionUrls);
+      // The sync must run after suggestions are persisted, never before.
+      expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledAfter(syncSuggestionsStub);
     });
 
     it('should create guidance with industry analysis', async () => {
@@ -929,5 +948,39 @@ describe('Wikipedia Analysis Guidance Handler', function () {
       expect(mockOpportunity.setScopeId).to.have.been.calledWith('current-uuid');
       expect(mockOpportunity.setScopeId).not.to.have.been.calledWith('stale-uuid');
     });
+  });
+});
+
+describe('Wikipedia Analysis URL-index extractors', () => {
+  // This extractor returns a raw candidate value, unfiltered - the hygiene gate (rejecting
+  // non-http(s)/credential-bearing/oversized values) runs once inside lookup-index.js
+  // (`sanitizeUrls`, see test/common/lookup-index.test.js and test/common/lookup-index-utils.test.js)
+  // rather than being duplicated per extractor.
+  it('getOpportunityUrls pulls the wikipedia URL from fullAnalysis', () => {
+    const opportunity = {
+      getData: () => ({ fullAnalysis: { wikipediaUrl: 'https://en.wikipedia.org/wiki/Example' } }),
+    };
+
+    expect(getOpportunityUrls(opportunity)).to.deep.equal(['https://en.wikipedia.org/wiki/Example']);
+  });
+
+  it('getOpportunityUrls returns the raw (possibly undefined) wikipedia URL when there is none, rather than treating it as an intentional clear', () => {
+    // This extractor is only reached once the handler has confirmed there are suggestions to
+    // index, which Mystique cannot produce without having found the page - so a missing URL
+    // here is drift, not a legitimate empty state, and must surface as NO_INDEXABLE_URLS
+    // (via sanitizeUrls rejecting `undefined`), not as an explicit clear.
+    expect(getOpportunityUrls({ getData: () => ({}) })).to.deep.equal([undefined]);
+  });
+
+  it('getSuggestionUrls returns the opportunity URL, ignoring any bindings on the suggestion itself', () => {
+    const opportunity = {
+      getData: () => ({ fullAnalysis: { wikipediaUrl: 'https://en.wikipedia.org/wiki/Example' } }),
+    };
+    const suggestion = {
+      getData: () => ({ bindings: { sources: [{ url: 'https://example.com/should-be-ignored' }] } }),
+    };
+
+    expect(getSuggestionUrls(suggestion, opportunity))
+      .to.deep.equal(['https://en.wikipedia.org/wiki/Example']);
   });
 });

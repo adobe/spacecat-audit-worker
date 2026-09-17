@@ -10,8 +10,16 @@
  * governing permissions and limitations under the License.
  */
 
-import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import {
+  LLMO_API_DEFAULT_BASE_URL,
+  resolveApiBaseUrl,
+  getS2sSessionAuthorization,
+  evictS2sSessionToken,
+  decodeS2sConsumerClaims,
+  imsConfigDiagnostics,
+  readErrorBodySnippet,
+} from './offsite-s2s-auth.js';
 import { resolveBrandResultForSite } from './brand-resolver.js';
 import {
   resolveSemrushEntitlement,
@@ -19,7 +27,9 @@ import {
   SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON,
 } from './semrush-entitlement.js';
 import { getDateWindowForPreviousWeeks } from './offsite-brand-presence-postgrest.js';
+import { getImsOrgId } from './data-access.js';
 import { classifyAndNormalize } from './offsite-brand-presence-enrichment.js';
+import { youtubeVideoId } from './youtube-url.js';
 import { computeBrandTokens, isExcludedCitedHost } from './offsite-audit-utils.js';
 import {
   createOffsiteLogger, errorField, AUDIT, OUTCOME, PEER,
@@ -31,27 +41,13 @@ import {
 } from '../offsite-brand-presence/constants.js';
 
 /**
- * Default spacecat-api-service base URL. Its Elements proxy
- * (`src/controllers/elements.js`) serves the Semrush-backed Serenity
- * URL-Inspector endpoints at
- * `/v2/orgs/:spaceCatId/brands/:brandId/serenity/brand-presence/url-inspector/*`.
- * Overridable per-environment with `SPACECAT_API_URI`.
- */
-export const SPACECAT_API_DEFAULT_BASE_URL = 'https://spacecat.experiencecloud.live/api/v1';
-
-/**
- * `domain-urls` page size. One request (no `hostname`, `platform=all`) covers all three
- * buckets (youtube.com, reddit.com, cited third-party), sorted by citations globally, so
- * this needs to be generous or a low-citation bucket gets starved. 1000 is the server-side
+ * Default `domain-urls` page size. One request (no `hostname`, `platform=all`) covers all
+ * three buckets (youtube.com, reddit.com, cited third-party), sorted by citations globally,
+ * so this needs to be generous or a low-citation bucket gets starved. 1000 is the server-side
  * clamp (`domain-urls` in spacecat-api-service), so this is the max we can actually get.
+ * Overridable (only downward — clamped to this ceiling) with `OFFSITE_SEMRUSH_PAGE_SIZE`.
  */
 export const PAGE_SIZE = 1000;
-
-/**
- * Per-request timeout so a hung upstream can't stall the whole audit past the Lambda's
- * own timeout.
- */
-const FETCH_TIMEOUT_MS = 10_000;
 
 /**
  * Attempts for the `domain-urls` request before giving up and falling back to the
@@ -86,52 +82,59 @@ function resolveRetryBackoffMs(env) {
 }
 
 /**
- * Max chars of a non-2xx response body to log. The body of a rejected
- * serenity/Semrush call identifies the rejecter — api-service `requireImsBearer`
- * ("...send the x-promise-token header instead") vs a Semrush upstream error —
- * which decides who owns the LLMO-6709 auth fix. Capped defensively.
- */
-const ERROR_BODY_SNIPPET_MAX = 500;
-
-/**
- * Reads a non-2xx response body as a short diagnostic snippet. Never throws.
+ * Resolves the requested page size from env: an integer clamped to `[1, PAGE_SIZE]` (the
+ * server's own clamp), falling back to `PAGE_SIZE` for an absent/invalid override. The lower
+ * clamp matters: a fractional override like `0.5` is finite and `> 0` but floors to `0`, which
+ * would send `pageSize=0` and make an empty response look like a legitimate zero-URL run.
  *
- * @param {Response} response
- * @returns {Promise<string>} the body (trimmed + capped), or '' if empty/unreadable.
+ * @param {object} [env]
+ * @returns {number}
  */
-async function readErrorBodySnippet(response) {
-  try {
-    const text = await response.text();
-    return text ? text.slice(0, ERROR_BODY_SNIPPET_MAX) : '';
-  } catch {
-    return '';
+function resolvePageSize(env) {
+  const override = Number(env?.OFFSITE_SEMRUSH_PAGE_SIZE);
+  if (!Number.isFinite(override) || override <= 0) {
+    return PAGE_SIZE;
   }
+  return Math.min(Math.max(Math.floor(override), 1), PAGE_SIZE);
 }
 
 /**
- * Mints an IMS service access token as an Authorization header value.
- *
- * Uses the v2 `getServiceAccessToken()` (`authorization_code` grant) with the
- * worker's default IMS client — the same S2S path `commerce-product-enrichments`,
- * `vulnerabilities` and `permissions` use. The default client is provisioned for
- * `authorization_code`, NOT the `client_credentials` grant that
- * `getServiceAccessTokenV3()` requests (which returns IMS `400 unauthorized_client`
- * unless a dedicated client_credentials integration is configured, e.g. content-ai's
- * `CONTENTAI_*`). The scheme is normalised to `Bearer` (the endpoint may return
- * `token_type: "bearer"` lowercase, which a strict `startsWith('Bearer ')` parser
- * upstream would reject).
- *
- * @param {object} context - Lambda context (env + log).
- * @returns {Promise<string>} e.g. "Bearer eyJ...".
- * @throws {Error} when the token response has no access_token.
+ * Default timeout for an offsite Semrush data request (currently the `domain-urls` call, but
+ * generic for any such request). These are heavy queries (all hosts, `platform=all`, proxied
+ * api-service → Semrush v4-raw), routinely slower than the 10s login timeout — 10s was
+ * aborting `domain-urls` mid-flight (`Request timeout after 10000ms`). The Lambda budget is
+ * 900s, so 60s is safe headroom. Overridable with `OFFSITE_SEMRUSH_TIMEOUT_MS`, up to
+ * `SEMRUSH_TIMEOUT_MAX_MS`.
  */
-async function getAuthorizationHeader(context) {
-  const imsClient = ImsClient.createFrom(context);
-  const token = await imsClient.getServiceAccessToken();
-  if (!token?.access_token) {
-    throw new Error('IMS service token response missing access_token');
-  }
-  return `Bearer ${token.access_token}`;
+const SEMRUSH_TIMEOUT_MS = 60_000;
+
+/**
+ * Hard ceiling on the overridable Semrush data-request timeout (2 min). The 60s default keeps
+ * this call well under the Lambda's 900s budget so it degrades cleanly into the legacy
+ * fallback; an unbounded override (e.g. someone bumping it mid-incident) would risk a hard
+ * Lambda kill instead — so a valid override is clamped to this.
+ */
+const SEMRUSH_TIMEOUT_MAX_MS = 2 * 60 * 1000;
+
+/**
+ * Resolves the offsite Semrush data-request timeout from env, ignoring a non-numeric or
+ * non-positive override (fail-safe to the default rather than a 0/NaN timeout) and clamping a
+ * valid override to `SEMRUSH_TIMEOUT_MAX_MS`.
+ *
+ * Exported so the url-prompts loader shares the same `OFFSITE_SEMRUSH_TIMEOUT_MS` override + cap.
+ * `defaultMs` lets a caller pick its own default when the override is absent — url-prompts uses a
+ * shorter 30s default (one light per-URL call, and up to 10 sequential batches) while domain-urls
+ * keeps 60s for its single heavy page. The env override, when set, applies to both.
+ *
+ * @param {object} [env]
+ * @param {number} [defaultMs] - default when no valid override is set (defaults to 60s).
+ * @returns {number} timeout in ms.
+ */
+export function resolveSemrushTimeoutMs(env, defaultMs = SEMRUSH_TIMEOUT_MS) {
+  const override = Number(env?.OFFSITE_SEMRUSH_TIMEOUT_MS);
+  return Number.isFinite(override) && override > 0
+    ? Math.min(override, SEMRUSH_TIMEOUT_MAX_MS)
+    : defaultMs;
 }
 
 /**
@@ -154,22 +157,26 @@ export function buildDomainUrlsUrl({
 }
 
 /**
- * Fetches the single `domain-urls` page (all hosts, all platforms).
+ * Fetches the single `domain-urls` page (all hosts, all platforms) — ONE attempt.
+ * `fetchDomainUrls` wraps this with the retry policy; `attempt`/`maxAttempts` are logged
+ * for retry visibility only.
  *
- * @returns {Promise<{ rows: object[], ok: boolean, authFailure: boolean, truncated: boolean }>}
+ * @returns {Promise<{ rows: object[], ok: boolean, authFailure: boolean,
+ *   truncated: boolean, retryable: boolean }>}
  *   `ok` is false on network error / timeout / non-2xx / unparseable body. `authFailure`
- *   distinguishes a 401/403 (auth issue) from other failures. `truncated` is true when a
- *   full page came back (LLMO-6711 shadow-run parity signal — a starved run is visible on
- *   `diagnostics` without grepping logs).
+ *   distinguishes a 401/403 (auth issue) from other failures. `retryable` is true only for
+ *   TRANSIENT failures (network/timeout/429/5xx) that a retry could recover. `truncated` is
+ *   true when a full page came back (LLMO-6711 shadow-run parity signal — a starved run is
+ *   visible on `diagnostics` without grepping logs).
  */
-async function fetchDomainUrlsOnce(url, headers, olog, pageSize, attempt, maxAttempts) {
+async function fetchDomainUrlsOnce(url, headers, olog, pageSize, timeoutMs, attempt, maxAttempts) {
   let response;
   const startedAt = Date.now();
   try {
-    response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
+    response = await fetch(url, { headers, timeout: timeoutMs });
   } catch (error) {
     olog.warn('data_acquisition_bp_data_semrush_read', 'Fetch failed for domain-urls', {
-      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, attempt, maxAttempts, reason: 'fetch_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
+      peer: PEER.SEMRUSH, direction: 'inbound', requestUrl: url, durationMs: Date.now() - startedAt, attempt, maxAttempts, reason: 'fetch_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
     }, error);
     // Network error / timeout is transient — retryable.
     return {
@@ -184,12 +191,14 @@ async function fetchDomainUrlsOnce(url, headers, olog, pageSize, attempt, maxAtt
     // vs Semrush upstream) — the key signal for the LLMO-6709 auth gate.
     const responseBody = await readErrorBodySnippet(response);
     const logFields = {
-      peer: PEER.SEMRUSH, direction: 'inbound', status: response.status, responseBody, attempt, maxAttempts, durationMs,
+      peer: PEER.SEMRUSH, direction: 'inbound', requestUrl: url, status: response.status, responseBody, attempt, maxAttempts, durationMs,
     };
     if (authFailure) {
-      // Distinct branch so a rejected service token is visible instead of being
-      // masked as "Semrush returned nothing" (LLMO-6709 verification).
-      olog.warn('data_acquisition_bp_data_semrush_read', 'Service token rejected for domain-urls; verify the IMS service token is authorized by the Semrush proxy (LLMO-6709)', {
+      // Distinct branch so a rejected session token is visible instead of being
+      // masked as "Semrush returned nothing". On the S2S path a 401/403 here means the
+      // session token expired/was invalid, or the consumer lacks `brand:read` / its
+      // token's `tenants` claim doesn't name this org.
+      olog.warn('data_acquisition_bp_data_semrush_read', 'S2S session token rejected for domain-urls; verify the consumer has brand:read and the session token names this org', {
         ...logFields, reason: 'auth_rejected', outcome: OUTCOME.DEGRADED,
       });
     } else {
@@ -242,13 +251,15 @@ async function fetchDomainUrlsOnce(url, headers, olog, pageSize, attempt, maxAtt
  * @returns {Promise<{ rows: object[], ok: boolean, authFailure: boolean,
  *   truncated: boolean, attempts: number }>} `attempts` is how many tries were made.
  */
-async function fetchDomainUrls(url, headers, olog, pageSize, { maxAttempts, backoffMs }) {
+async function fetchDomainUrls(url, headers, olog, pageSize, {
+  timeoutMs, maxAttempts, backoffMs,
+}) {
   let last;
   let attempt = 0;
   while (attempt < maxAttempts) {
     attempt += 1;
     // eslint-disable-next-line no-await-in-loop
-    last = await fetchDomainUrlsOnce(url, headers, olog, pageSize, attempt, maxAttempts);
+    last = await fetchDomainUrlsOnce(url, headers, olog, pageSize, timeoutMs, attempt, maxAttempts);
     if (last.ok || !last.retryable) {
       break;
     }
@@ -332,6 +343,11 @@ function classifyRow(row, siteHostname, brandTokens) {
  * @param {object} params.site - Site model (`getOrganizationId()`).
  * @param {Array<{week:number, year:number}>} params.previousWeeks
  * @param {object} params.context - Lambda context (env, log, dataAccess).
+ * @param {string} [params.imsOrgId] - Customer IMS org id (`...@AdobeOrg`) the session token
+ *   is scoped to. The handler already resolves this (for DRS scraping too), so it threads it
+ *   in to avoid a second, independently-fetched lookup that could scope the session token to
+ *   a different org than the rest of the run. Falls back to `getImsOrgId(site, ...)` only when
+ *   the caller omits it.
  * @param {string} [params.siteHostname] - www-stripped site hostname for owned-URL filtering.
  * @param {function(string): Promise<*>} [params.onProgress] - Optional best-effort progress
  *   callback (e.g. a Slack thread reply), invoked with a short human-readable status string at
@@ -341,7 +357,8 @@ function classifyRow(row, siteHostname, brandTokens) {
  * @param {object} [params.diagnostics] - Optional out-param, mutated in place. On a null
  *   return, set to `{ fallbackReason }` with a specific code (`no_organization_id`,
  *   `no_active_brand`, `brand_resolution_failed`, `not_entitled`, `entitlement_check_failed`,
- *   `no_date_window`, `ims_token_failed`, `domain_urls_auth_failed`, or `domain_urls_failed`).
+ *   `no_date_window`, `no_ims_org_id`, `ims_token_failed`, `session_token_auth_failed`,
+ *   `session_token_failed`, `domain_urls_auth_failed`, or `domain_urls_failed`).
  *   The two entitlement reasons additionally set `entitlementReason` to the granular cause
  *   from `resolveSemrushEntitlement` (`flag_disabled` | `no_workspace` | `no_client` |
  *   `check_failed`) — `fallbackReason` alone cannot distinguish a confirmed non-entitlement
@@ -351,14 +368,19 @@ function classifyRow(row, siteHostname, brandTokens) {
  * @returns {Promise<Map<string, {count:number, domain:string|null}> | null>}
  */
 export async function loadCitedUrlsFromSemrush({
-  site, previousWeeks, context, siteHostname, onProgress, diagnostics,
+  site, previousWeeks, context, imsOrgId: providedImsOrgId, siteHostname, onProgress, diagnostics,
 }) {
   const { log, env } = context;
   const startedAt = Date.now();
   const siteId = site?.getId?.();
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
   const elapsed = () => Date.now() - startedAt;
-  const baseUrl = env?.SPACECAT_API_URI || SPACECAT_API_DEFAULT_BASE_URL;
+  // Host root + gateway prefix (shared resolver). The LLMO edge routes api-service under
+  // `/api/v1` (prod) — both the login and the data call carry it, matching the UI's own
+  // `/api/v1/v2/...` calls. `baseUrl` (host root only) is kept for the start-log field of the
+  // same name that ops dashboards key on.
+  const baseUrl = env?.LLMO_API_BASE_URL || LLMO_API_DEFAULT_BASE_URL;
+  const apiBaseUrl = resolveApiBaseUrl(env);
 
   const notify = async (text) => {
     if (typeof onProgress !== 'function') {
@@ -433,11 +455,11 @@ export async function loadCitedUrlsFromSemrush({
         outcome: OUTCOME.SKIP,
       });
       await notify(':information_source: Brand is not entitled for Semrush — falling back to the legacy source.');
-      // fallbackReason is the coarse, contract-level signal the handler's hard-stop
-      // exemption keys off (SEMRUSH_ENTITLEMENT_SKIP_REASONS); entitlementReason keeps
-      // the granular cause (`flag_disabled` | `no_workspace` | `no_client` |
-      // `check_failed`) visible in diagnostics/auditResult without changing that
-      // contract — see ADR 002, Decision 7.
+      // fallbackReason is the coarse, contract-level signal the handler keys off to log an
+      // entitlement skip (SEMRUSH_ENTITLEMENT_SKIP_REASONS) as outcome=skip rather than a
+      // technical failure's outcome=degraded; entitlementReason keeps the granular cause
+      // (`flag_disabled` | `no_workspace` | `no_client` | `check_failed`) visible in
+      // diagnostics/auditResult without changing that contract — see ADR 002, Decision 7.
       setDiagnostics({
         fallbackReason: SEMRUSH_NOT_ENTITLED_REASON,
         entitlementReason: entitlement.reason,
@@ -466,45 +488,132 @@ export async function loadCitedUrlsFromSemrush({
   }
   const { startDate, endDate } = dateWindow;
 
-  let authorization;
-  try {
-    authorization = await getAuthorizationHeader(context);
-  } catch (error) {
-    olog.warn('data_acquisition_bp_data_semrush_read', 'Failed to obtain IMS service token', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'ims_token_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
-    }, error);
-    await notify(`:x: Failed to obtain an IMS service token (\`${error.message}\`) — falling back to the legacy source.`);
-    setDiagnostics({ fallbackReason: 'ims_token_failed' });
+  // S2S auth (3 legs). api-service serves the Semrush-backed domain-urls route to S2S
+  // consumers, not to raw IMS service tokens (which carry no `tenants`/org membership and
+  // are rejected by the IMS path). So we:
+  //   1. resolve the customer's IMS org id (the session token must be scoped to it),
+  //   2. mint the consumer's own IMS token (client_credentials),
+  //   3. exchange it for a 15-min session token whose `tenants` claim names that org.
+  // The domain-urls call then presents that session token.
+
+  // Leg 1: the customer IMS org id (…@AdobeOrg) — distinct from spaceCatId (the SpaceCat
+  // org UUID used in the route path). This is what the session token's `tenants` claim,
+  // and thus api-service's hasAccess(organization), is keyed on. The handler already
+  // resolves this (and reuses it for DRS scraping), so prefer the threaded value; the
+  // lookup is only a fallback for callers that don't provide it.
+  const imsOrgId = providedImsOrgId || await getImsOrgId(site, context.dataAccess || {}, log);
+  if (!imsOrgId) {
+    olog.warn('data_acquisition_bp_data_semrush_read', 'Could not resolve customer IMS org id; skipping Semrush source', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'no_ims_org_id', outcome: OUTCOME.DEGRADED,
+    });
+    await notify(':x: Could not resolve the customer IMS org id — falling back to the legacy source.');
+    setDiagnostics({ fallbackReason: 'no_ims_org_id' });
     return null;
   }
 
+  // Legs 2 + 3 — mint the consumer IMS token (client_credentials), then exchange it for a
+  // customer-scoped session token, via the SHARED helper (also used by the url-prompts loader,
+  // so both reuse the one imsOrgId-keyed cache and never double-mint). Both legs are skipped on
+  // a warm-container cache hit. The helper throws a `.reason`-tagged error; this loader keeps
+  // its richer domain-urls logging + Slack-notify below rather than pushing it into the helper.
+  let auth;
+  try {
+    auth = await getS2sSessionAuthorization({ context, imsOrgId });
+  } catch (error) {
+    if (error.reason === 'ims_token_failed') {
+      olog.warn('data_acquisition_bp_data_semrush_read', 'Failed to obtain IMS service token', {
+        peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, durationMs: elapsed(), reason: 'ims_token_failed', outcome: OUTCOME.DEGRADED, ...imsConfigDiagnostics(env), ...errorField(error),
+      }, error);
+      await notify(`:x: Failed to obtain an IMS service token (\`${error.message}\`) — falling back to the legacy source.`);
+    } else {
+      // Split an authz denial (401/403 — a static config problem retries won't fix: missing
+      // brand:read, or the token's tenants claim doesn't name this org) from a transient/
+      // other failure, mirroring fetchDomainUrls' authFailure branch.
+      const authFailure = error.reason === 'session_token_auth_failed';
+      olog.warn(
+        'data_acquisition_bp_data_semrush_read',
+        authFailure
+          ? 'S2S session-token exchange denied (401/403); verify the consumer has brand:read and the token names this org'
+          : 'Failed to exchange for an S2S session token',
+        {
+          peer: PEER.SEMRUSH,
+          direction: 'inbound',
+          orgId: spaceCatId,
+          brandId: brand.brandId,
+          status: error.status,
+          responseBody: error.responseBody,
+          durationMs: elapsed(),
+          reason: error.reason,
+          outcome: OUTCOME.DEGRADED,
+          ...errorField(error),
+        },
+        error,
+      );
+      // Forward only the status to Slack — the login endpoint's error body is untrusted
+      // upstream content and must never be echoed into a user-facing channel (it stays in
+      // the structured `responseBody` log field above).
+      await notify(`:x: Failed to obtain an S2S session token${error.status ? ` (HTTP ${error.status})` : ''} — falling back to the legacy source.`);
+    }
+    setDiagnostics({ fallbackReason: error.reason });
+    return null;
+  }
+
+  const { sessionToken, fromCache: sessionTokenFromCache } = auth;
+  if (!sessionTokenFromCache) {
+    // Log the consumer identity we were granted (decoded from the token's claims, never the
+    // token itself) — the client-side match to api-service's `[s2s] granted ...` audit line.
+    // Only on a fresh mint; a cache hit already logged this on the run that minted it.
+    olog.success('data_acquisition_bp_data_semrush_read', 'Obtained S2S session token', {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, ...decodeS2sConsumerClaims(sessionToken),
+    });
+  }
+
   const headers = {
-    Authorization: authorization,
+    // The customer-scoped S2S session token authorizes the read as an S2S consumer; it is
+    // self-contained (no x-promise-token / IMS-forwarding needed on this path).
+    Authorization: auth.authorization,
     // GET has no body — advertise the desired representation with Accept rather
     // than Content-Type (some proxies buffer/reject a Content-Type on a bodyless GET).
     Accept: 'application/json',
-    // The api-service Elements proxy authenticates IMS callers directly and
-    // forwards this Bearer to Semrush (resolveElementsImsToken fallback), so a
-    // promise token is not required for a service caller. Forward one only if
-    // the platform later threads it onto the context (non-IMS callers).
-    ...(context.promiseToken ? { 'x-promise-token': context.promiseToken } : {}),
   };
 
+  const pageSize = resolvePageSize(env);
   const url = buildDomainUrlsUrl({
-    baseUrl, spaceCatId, brandId: brand.brandId, startDate, endDate, pageSize: PAGE_SIZE,
+    baseUrl: apiBaseUrl,
+    spaceCatId,
+    brandId: brand.brandId,
+    startDate,
+    endDate,
+    pageSize,
   });
   olog.start('data_acquisition_bp_data_semrush_read', 'Querying domain-urls (all hosts, all platforms)', {
-    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, pageSize: PAGE_SIZE,
+    peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, brandId: brand.brandId, pageSize,
   });
   await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
-  const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE, {
+  const timeoutMs = resolveSemrushTimeoutMs(env);
+  const result = await fetchDomainUrls(url, headers, olog, pageSize, {
+    timeoutMs,
     maxAttempts: SEMRUSH_MAX_FETCH_ATTEMPTS,
     backoffMs: resolveRetryBackoffMs(env),
   });
   if (!result.ok) {
+    if (result.authFailure) {
+      // The session token was rejected by the data call — evict it so a revoked/rotated
+      // token can't be replayed from the cache for the rest of its TTL; the next run
+      // re-mints. `wasCachedToken` lets ops tell a mid-window staleness (self-heals next
+      // run) from a genuinely broken registration (a freshly-minted token rejected).
+      evictS2sSessionToken(imsOrgId);
+    }
     olog.warn('data_acquisition_bp_data_semrush_read', `domain-urls request failed after ${result.attempts} attempt(s); using DRS/BP fallback`, {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), attempts: result.attempts, reason: 'domain_urls_failed', outcome: OUTCOME.DEGRADED,
+      peer: PEER.SEMRUSH,
+      direction: 'inbound',
+      orgId: spaceCatId,
+      durationMs: elapsed(),
+      attempts: result.attempts,
+      reason: 'domain_urls_failed',
+      outcome: OUTCOME.DEGRADED,
+      ...(result.authFailure && { wasCachedToken: sessionTokenFromCache }),
     });
     await notify(`:x: Semrush \`domain-urls\` call didn't go through after ${result.attempts} attempt(s) — routing to the DRS/BP source.`);
     setDiagnostics({
@@ -520,6 +629,10 @@ export async function loadCitedUrlsFromSemrush({
 
   const allUrls = new Map();
   const bucketCounts = { 'youtube.com': 0, 'reddit.com': 0, cited: 0 };
+  // Maps a YouTube video id -> the first stored URL for that video, so the `watch` and `youtu.be`
+  // forms of the same video collapse to ONE entry (keeping the first-seen form) and their
+  // citations sum, even though the exact strings differ. Non-YouTube dedupes by string as before.
+  const youtubeIdToUrl = new Map();
   for (const row of result.rows) {
     const bucketed = classifyRow(row, siteHostname, brandTokens);
     if (!bucketed) {
@@ -533,11 +646,25 @@ export async function loadCitedUrlsFromSemrush({
       // eslint-disable-next-line no-continue
       continue;
     }
-    const existing = allUrls.get(bucketed.url);
+    // Dedupe key: for a YouTube video, reuse the first URL already seen for its video id (so the
+    // other form's citations add to it); otherwise the URL itself is the key.
+    let key = bucketed.url;
+    if (bucketed.domain === 'youtube.com') {
+      const videoId = youtubeVideoId(bucketed.url);
+      if (videoId) {
+        const firstUrl = youtubeIdToUrl.get(videoId);
+        if (firstUrl) {
+          key = firstUrl;
+        } else {
+          youtubeIdToUrl.set(videoId, bucketed.url);
+        }
+      }
+    }
+    const existing = allUrls.get(key);
     if (existing) {
       existing.count += citations;
     } else {
-      allUrls.set(bucketed.url, { count: citations, domain: bucketed.domain });
+      allUrls.set(key, { count: citations, domain: bucketed.domain });
       bucketCounts[bucketed.domain ?? 'cited'] += 1;
     }
   }

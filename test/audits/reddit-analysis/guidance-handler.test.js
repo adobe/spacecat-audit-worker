@@ -15,8 +15,10 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 // Use the REAL applyScopeToOpportunity (see cited-analysis test for rationale).
 import { applyScopeToOpportunity as realApplyScopeToOpportunity } from '../../../src/utils/brand-resolver.js';
+import { getOpportunityUrls, getSuggestionUrls } from '../../../src/reddit-analysis/guidance-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -31,6 +33,7 @@ describe('Reddit Analysis Guidance Handler', () => {
   let handler;
   let syncSuggestionsStub;
   let convertToOpportunityStub;
+  let indexOffsiteOpportunityByUrlStub;
   let fetchAnalysisStub;
   let mockPostMessageOptional;
   let resolveBrandResultForSiteStub;
@@ -74,6 +77,7 @@ describe('Reddit Analysis Guidance Handler', () => {
 
     syncSuggestionsStub = sandbox.stub().resolves();
     convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
+    indexOffsiteOpportunityByUrlStub = sandbox.stub().resolves();
     fetchAnalysisStub = sandbox.stub();
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
     resolveBrandResultForSiteStub = sandbox.stub().resolves({ brand: null, resolved: true });
@@ -144,6 +148,9 @@ describe('Reddit Analysis Guidance Handler', () => {
     handler = await esmock('../../../src/reddit-analysis/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
         syncSuggestions: syncSuggestionsStub,
+      },
+      '../../../src/common/offsite-lookup-index.js': {
+        indexOffsiteOpportunityByUrl: indexOffsiteOpportunityByUrlStub,
       },
       '../../../src/common/offsite-refresh.js': {
         persistOffsiteOpportunity: convertToOpportunityStub,
@@ -229,6 +236,23 @@ describe('Reddit Analysis Guidance Handler', () => {
       expect(mockOpportunity.setData).to.have.been.called;
       expect(mockOpportunity.save).to.have.been.called;
       expect(context.log.info).to.have.been.calledWith(sinon.match(/Run processed successfully/));
+
+      // The URL index is wired in after persist with this audit's type and its own extractors.
+      expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledOnce;
+      const funnelingArg = indexOffsiteOpportunityByUrlStub.firstCall.args[0];
+      expect(funnelingArg.context).to.equal(context);
+      expect(funnelingArg.opportunity).to.equal(mockOpportunity);
+      expect(funnelingArg.auditType).to.equal(Audit.AUDIT_TYPES.REDDIT_ANALYSIS);
+      expect(funnelingArg.olog).to.be.an('object');
+      expect(funnelingArg.getOpportunityUrls).to.equal(handler.getOpportunityUrls);
+      expect(funnelingArg.getSuggestionUrls).to.equal(handler.getSuggestionUrls);
+      // The sync must run after housekeeping deletes stale suggestions/snapshots, never before —
+      // indexing ahead of that step would index rows housekeeping is about to remove.
+      expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledAfter(deleteExpiredOutdatedSuggestionsStub);
+      expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledAfter(deleteExpiredSnapshotsStub);
+      // A normal (non-suppressed) run must not pin suggestions SKIPPED.
+      const { mapNewSuggestion } = syncSuggestionsStub.firstCall.args[0];
+      expect(mapNewSuggestion({ id: 'sug_1', rank: 1, data: {} })).to.not.have.property('status');
     });
 
     it('should pass opportunityData from BO JSON to persistOffsiteOpportunity', async () => {
@@ -1186,6 +1210,15 @@ describe('Reddit Analysis Guidance Handler', () => {
       // a new opportunity, never reusing (or re-querying for) the visible one.
       const propsArg = convertToOpportunityStub.firstCall.args[5];
       expect(propsArg).to.have.property('opportunityToUpdate', null);
+      // A suppressed run's suggestions keep their normal status - lookup-visibility for a
+      // suppressed run's opportunity and suggestions is the read side's job (excluding an
+      // IGNORED opportunity, and - pending a matching fix there - its suggestions), not
+      // something achieved by mutating what gets persisted to the primary suggestions table.
+      const { mapNewSuggestion } = syncSuggestionsStub.firstCall.args[0];
+      expect(mapNewSuggestion({ id: 'test_1', data: {} })).to.not.have.property('status');
+      // The funneling sync still runs for a suppressed run: the index carries no status of its
+      // own, so it relies entirely on the reader to hide an IGNORED opportunity.
+      expect(indexOffsiteOpportunityByUrlStub).to.have.been.calledOnce;
     });
 
     // Whether nothing exists yet, or the only prior opportunity is already IGNORED, the
@@ -1794,5 +1827,47 @@ describe('Reddit Analysis Guidance Handler', () => {
           .and(sinon.match(/errorMessage="retention blew up"/)),
       );
     });
+  });
+});
+
+describe('Reddit Analysis URL-index extractors', () => {
+  // These extractors return raw candidate values, unfiltered - the hygiene gate (rejecting
+  // non-http(s)/credential-bearing/oversized values) runs once inside lookup-index.js
+  // (`sanitizeUrls`, see test/common/lookup-index.test.js and test/common/lookup-index-utils.test.js)
+  // rather than being duplicated per extractor.
+  it('getOpportunityUrls pulls from insights.combined.sources', () => {
+    const opportunity = {
+      getData: () => ({
+        dashboard: {
+          analytics: {
+            performance: {
+              insights: {
+                combined: {
+                  sources: [{ url: 'https://example.com/a' }, { url: '' }, {}],
+                },
+              },
+            },
+          },
+        },
+      }),
+    };
+
+    expect(getOpportunityUrls(opportunity)).to.deep.equal(['https://example.com/a', '', undefined]);
+  });
+
+  it('getOpportunityUrls returns an empty array when the dashboard data is missing', () => {
+    expect(getOpportunityUrls({ getData: () => ({}) })).to.deep.equal([]);
+  });
+
+  it('getSuggestionUrls pulls from data.bindings.sources', () => {
+    const suggestion = {
+      getData: () => ({ bindings: { sources: [{ url: 'https://example.com/b' }] } }),
+    };
+
+    expect(getSuggestionUrls(suggestion)).to.deep.equal(['https://example.com/b']);
+  });
+
+  it('getSuggestionUrls returns an empty array when bindings are missing', () => {
+    expect(getSuggestionUrls({ getData: () => ({}) })).to.deep.equal([]);
   });
 });

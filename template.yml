@@ -48,6 +48,11 @@ Resources:
           CONTENTAI_CLIENT_SECRET: !Ref CONTENTAI_CLIENT_SECRET
           CONTENTAI_CLIENT_SCOPE: !Ref CONTENTAI_CLIENT_SCOPE
           CONTENTAI_ENDPOINT: !Ref CONTENTAI_ENDPOINT
+          SEMRUSH_S2S_IMS_HOST: !Ref SEMRUSH_S2S_IMS_HOST
+          SEMRUSH_S2S_CLIENT_ID: !Ref SEMRUSH_S2S_CLIENT_ID
+          SEMRUSH_S2S_CLIENT_SECRET: !Ref SEMRUSH_S2S_CLIENT_SECRET
+          SEMRUSH_S2S_CLIENT_SCOPE: !Ref SEMRUSH_S2S_CLIENT_SCOPE
+          SEMRUSH_S2S_CLIENT_CODE: !Ref SEMRUSH_S2S_CLIENT_CODE
           S3_CONFIG_BUCKET: !Ref S3_CONFIG_BUCKET
           AZURE_OPENAI_ENDPOINT: !Ref AZURE_OPENAI_ENDPOINT
           AZURE_OPENAI_KEY: !Ref AZURE_OPENAI_KEY
@@ -154,6 +159,22 @@ Parameters:
   CONTENTAI_ENDPOINT:
     Type: String
     Description: ContentAI Endpoint
+  SEMRUSH_S2S_IMS_HOST:
+    Type: String
+    Description: Semrush S2S IMS Host
+  SEMRUSH_S2S_CLIENT_ID:
+    Type: String
+    Description: Semrush S2S Client ID
+  SEMRUSH_S2S_CLIENT_SECRET:
+    Type: String
+    Description: Semrush S2S Client Secret
+  SEMRUSH_S2S_CLIENT_SCOPE:
+    Type: String
+    Description: Semrush S2S Client Scope
+  SEMRUSH_S2S_CLIENT_CODE:
+    Type: String
+    Description: Semrush S2S Client Code (unused for client_credentials grant; defaults in code if unset)
+    Default: unused-for-client-credentials
   S3_CONFIG_BUCKET:
     Type: String
     Description: S3 Config Bucket Name
