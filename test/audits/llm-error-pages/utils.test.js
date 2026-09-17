@@ -79,6 +79,8 @@ describe('LLM Error Pages Utils', () => {
     it('should return correct pattern for valid provider', () => {
       const result = getLlmProviderPattern('chatgpt');
       expect(result).to.equal('(?i)(ChatGPT|GPTBot|OAI-SearchBot|OAI-AdsBot)');
+      expect(getLlmProviderPattern('githubcopilot'))
+        .to.equal('(?i)GitHubCopilotRuntime-WebFetch');
     });
 
     it('should return null for invalid provider', () => {
@@ -111,12 +113,14 @@ describe('LLM Error Pages Utils', () => {
       expect(providers).to.include('claude');
       expect(providers).to.include('googleai');
       // Full-matches the Agentic Traffic tab's canonical set (AGENTIC_TRAFFIC_PROVIDERS):
-      // mistralai, amazon, parallel, manus, keenable are in; copilot is out (absent from the tab).
+      // mistralai, amazon, parallel, manus, keenable, meta, and GitHub Copilot are in.
       expect(providers).to.include('mistralai');
       expect(providers).to.include('amazon');
       expect(providers).to.include('parallel');
       expect(providers).to.include('manus');
       expect(providers).to.include('keenable');
+      expect(providers).to.include('meta');
+      expect(providers).to.include('githubcopilot');
       expect(providers).to.not.include('copilot');
     });
   });
@@ -138,10 +142,12 @@ describe('LLM Error Pages Utils', () => {
       expect(result).to.include('Google-NotebookLM|Google-?Agent');
       expect(result).to.include('MistralAI-User');
       expect(result).to.include('Amzn-User');
+      expect(result).to.include('meta-external(agent|fetcher)');
       expect(result).to.include('Shap(Bot|-User)');
       expect(result).to.include('Manus-User');
       expect(result).to.include('Keenable-User');
-      expect(result).to.not.include('Copilot');
+      expect(result).to.include('GitHubCopilotRuntime-WebFetch');
+      expect(result).to.not.include('(?i)Copilot');
       expect(result).to.include("AND NOT REGEXP_LIKE(user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
     });
 
@@ -180,6 +186,8 @@ describe('LLM Error Pages Utils', () => {
     });
 
     it('should normalize Copilot user agents', () => {
+      expect(normalizeUserAgentToProvider('GitHubCopilotRuntime-WebFetch'))
+        .to.equal('GitHub Copilot');
       expect(normalizeUserAgentToProvider('CopilotBot/1.0')).to.equal('Copilot');
       expect(normalizeUserAgentToProvider('microsoft-copilot')).to.equal('Copilot');
     });

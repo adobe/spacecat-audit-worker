@@ -34,22 +34,19 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   googleai: '(?i)(^Google$|Google-NotebookLM|Google-?Agent)',
   google: '(?i)(Google-Extended|Googlebot)',
   mistralai: '(?i)MistralAI-User',
-  copilot: '(?i)Copilot',
+  githubcopilot: '(?i)GitHubCopilotRuntime-WebFetch',
   bing: '(?i)Bingbot',
   amazon: '(?i)Amzn-User',
   parallel: '(?i)Shap(Bot|-User)',
   manus: '(?i)Manus-User',
   keenable: '(?i)Keenable-User',
+  meta: '(?i)meta-external(agent|fetcher)',
 };
 
 /**
- * Canonical agentic/LLM provider set — the Agentic Traffic tab's source of truth.
- * Keys index into PROVIDER_USER_AGENT_PATTERNS; the set deliberately excludes search
- * bots (google/bing) and copilot. Both the agentic-traffic report filter
- * (`buildUserAgentFilter`) and the llm-error-pages provider list (`LLM_PROVIDERS`)
- * derive from this array so the two surfaces cannot drift out of sync.
+ * Shared agentic/LLM provider set. Search bots are excluded.
  */
-export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable'];
+export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable', 'meta', 'githubcopilot'];
 
 /**
  * User agent display name mappings for better readability in reports
@@ -80,11 +77,15 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%bingbot%', displayName: 'BingBot' },
   { pattern: '%google-extended%', displayName: 'Google-Extended' },
   // Claude
+  // Keep the versioned Claude Code prefix ahead of the generic Claude client pattern.
+  { pattern: '%claude-code/%', displayName: 'Claude Code' },
   { pattern: '%claude-user%', displayName: 'Claude-User' },
   { pattern: '%claudebot%', displayName: 'ClaudeBot' },
   { pattern: '%claude-searchbot%', displayName: 'Claude-SearchBot' },
   { pattern: '%com.anthropic.claude%', displayName: 'Claude Clients' },
   { pattern: '%claude/%', displayName: 'Claude Clients' },
+  // Exact runtime token avoids matching unrelated Copilot products.
+  { pattern: '%githubcopilotruntime-webfetch%', displayName: 'GitHub Copilot' },
   // MistralAI
   { pattern: '%mistralai-user%', displayName: 'MistralAI-User' },
   // Amazon
@@ -96,6 +97,9 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%manus-user%', displayName: 'Manus-User' },
   // Keenable.ai
   { pattern: '%keenable-user%', displayName: 'Keenable-User' },
+  // Meta
+  { pattern: '%meta-externalagent%', displayName: 'Meta-ExternalAgent' },
+  { pattern: '%meta-externalfetcher%', displayName: 'Meta-ExternalFetcher' },
 ];
 
 /**
@@ -137,11 +141,14 @@ export function buildAgentTypeClassificationSQL() {
     // Bing
     { pattern: '%bingbot%', result: 'Search Bots' },
     // Claude
+    // Keep Claude Code ahead of the generic Claude media client.
+    { pattern: '%claude-code/%', result: 'Coding agents' },
     { pattern: '%claudebot%', result: 'Training bots' },
     { pattern: '%claude-searchbot%', result: 'Web search crawlers' },
     { pattern: '%claude-user%', result: 'Chatbots' },
     { pattern: '%com.anthropic.claude%', result: 'Media fetchers' },
     { pattern: '%claude/%', result: 'Media fetchers' },
+    { pattern: '%githubcopilotruntime-webfetch%', result: 'Coding agents' },
     // MistralAI
     { pattern: '%mistralai-user%', result: 'Chatbots' },
     // Amazon
@@ -154,6 +161,9 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%manus-user%', result: 'Chatbots' },
     // Keenable.ai
     { pattern: '%keenable-user%', result: 'Web search crawlers' },
+    // Meta: ExternalAgent crawls for model improvement; ExternalFetcher is user-initiated.
+    { pattern: '%meta-externalagent%', result: 'Training bots' },
+    { pattern: '%meta-externalfetcher%', result: 'Chatbots' },
   ];
 
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');
@@ -185,8 +195,9 @@ export function inferProviderFromUserAgent(userAgent = '') {
   if (/(google|googlebot|notebooklm)/.test(ua)) {
     return 'Google';
   }
-  if (/copilot/.test(ua)) {
-    return 'Copilot';
+  // Accept the raw runtime token and the normalized display name emitted by report SQL.
+  if (/(githubcopilotruntime-webfetch|^github copilot$)/.test(ua)) {
+    return 'GitHub Copilot';
   }
   if (/bing/.test(ua)) {
     return 'Bing';
@@ -205,6 +216,9 @@ export function inferProviderFromUserAgent(userAgent = '') {
   }
   if (/keenable-user/.test(ua)) {
     return 'Keenable.ai';
+  }
+  if (/meta-external(agent|fetcher)/.test(ua)) {
+    return 'Meta';
   }
 
   return 'Other';

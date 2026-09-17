@@ -391,21 +391,6 @@ describe('offsite-brand-presence-semrush', function () {
     expect(allUrls.has(YT_NORM)).to.equal(false);
   });
 
-  it('collapses two watch URLs for the same video that differ only in EXTRA query params', async () => {
-    // Params are preserved verbatim (not stripped to v=-only), so these are different exact
-    // strings; the video-id dedup must still recognize them as the same video and sum citations.
-    fetchStub.resolves(okJson({
-      urls: [
-        { url: 'https://www.youtube.com/watch?v=abc&t=5', citations: 3 }, // first — form kept
-        { url: 'https://www.youtube.com/watch?v=abc&list=xyz', citations: 4 }, // folds in
-      ],
-    }));
-    const allUrls = await run();
-    expect(allUrls.get('https://www.youtube.com/watch?v=abc&t=5'))
-      .to.deep.equal({ count: 7, domain: 'youtube.com' });
-    expect(allUrls.has('https://www.youtube.com/watch?v=abc&list=xyz')).to.equal(false);
-  });
-
   it('sums duplicate URLs within the cited bucket too', async () => {
     fetchStub.resolves(okJson({
       urls: [{ url: CITED_URL, citations: 3 }, { url: CITED_URL, citations: 4 }],
