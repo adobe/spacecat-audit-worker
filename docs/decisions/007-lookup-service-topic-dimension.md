@@ -1,6 +1,6 @@
 # 007 — Lookup Service: Topic Dimension (audit-worker embeds)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-16
 - **Jira:** LLMO-7445
 - **Related:** ADR [006](006-lookup-service-write-foundation.md) (the write-side foundation this
@@ -58,7 +58,9 @@ happens*.
 4. **Topic vectors ARE copied to a superseded-run snapshot** (`copyOffsiteOpportunityTopicVectors` in
    `prepareSupersededRunSnapshot`), re-pointing the evergreen's rows to the new snapshot id via
    `copyEntityVectors` (copy, not re-embed — the content is identical) while the evergreen still holds
-   them, before its refresh full-replaces them. **This deliberately diverges from the URL dimension**,
+   them, before its refresh full-replaces them. The copy runs entirely server-side in data-access via
+   the `wrpc_copy_opportunity_semantic_vectors` write RPC (`INSERT … SELECT`, idempotent), so no vector
+   rows round-trip through the audit-worker. **This deliberately diverges from the URL dimension**,
    which does not copy to snapshots (ADR 006 Decision 8: forward-only, read side filters live status).
    The divergence is intentional: it makes a restored-to-visible snapshot immediately topic-resolvable.
    Best-effort; a failed copy only means that snapshot is not topic-matchable until re-indexed.

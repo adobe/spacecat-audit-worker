@@ -108,6 +108,16 @@ AWS_SESSION_TOKEN=<your-session-token-from-klam>
 POSTGREST_URL=<your-postgrest-endpoint>
 S3_SCRAPER_BUCKET_NAME=spacecat-scraper-results
 
+# AI Embeddings (offsite topic lookup — Lookup Service semantic index, LLMO-7445)
+# The offsite audits (cited/reddit/youtube) embed opportunity topic titles via AzureEmbeddingClient.
+# Only the deployment is required; endpoint/key/api-version fall back to the AZURE_OPENAI_* values
+# when embeddings share the chat resource. Must be the SAME deployment the api-service read path uses.
+AZURE_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+# AZURE_EMBEDDING_ENDPOINT=<embedding-resource-endpoint>   # falls back to AZURE_OPENAI_ENDPOINT
+# AZURE_EMBEDDING_KEY=<embedding-api-key>                  # falls back to AZURE_OPENAI_KEY
+# AZURE_EMBEDDING_API_VERSION=<api-version>                # falls back to AZURE_API_VERSION
+# AZURE_EMBEDDING_MAX_RETRIES=3                            # transient 429/5xx retries (0 disables)
+
 # Add additional secrets as needed for specific audits
 # Example: SEO_API_KEY=your-key-here
 # Example: SLACK_BOT_TOKEN=your-token-here
