@@ -199,6 +199,7 @@ export function inferProviderFromUserAgent(userAgent = '') {
   if (/(google|googlebot|notebooklm)/.test(ua)) {
     return 'Google';
   }
+  // Accept the raw runtime token and the normalized display name emitted by report SQL.
   if (/(githubcopilotruntime-webfetch|^github copilot$)/.test(ua)) {
     return 'GitHub Copilot';
   }
