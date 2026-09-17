@@ -196,6 +196,47 @@ describe('agentic traffic mapper', () => {
     ]);
   });
 
+  it('maps coding-agent display names to their providers', async () => {
+    const site = {
+      getId: () => 'site-1',
+      getBaseURL: () => 'https://www.example.com',
+      getConfig: () => ({
+        getLlmoCountryCodeIgnoreList: () => [],
+      }),
+    };
+    const rows = ['Claude Code', 'GitHub Copilot'].map((userAgent, index) => ({
+      agent_type: 'Coding agents',
+      user_agent_display: userAgent,
+      status: 200,
+      number_of_hits: 1,
+      avg_ttfb_ms: 10,
+      country_code: 'US',
+      url: `/agent-${index}`,
+      host: 'www.example.com',
+      product: 'Docs',
+      category: 'Documentation',
+    }));
+
+    const result = await mapToAgenticTrafficBundle(rows, site, {}, '2026-09-17');
+
+    expect(result.trafficRows.map(({ platform, agent_type: agentType, user_agent: userAgent }) => ({
+      platform,
+      agentType,
+      userAgent,
+    }))).to.deep.equal([
+      {
+        platform: 'Anthropic',
+        agentType: 'Coding agents',
+        userAgent: 'Claude Code',
+      },
+      {
+        platform: 'GitHub Copilot',
+        agentType: 'Coding agents',
+        userAgent: 'GitHub Copilot',
+      },
+    ]);
+  });
+
   it('classifies common image and icon asset content types', async () => {
     const site = {
       getId: () => 'site-1',

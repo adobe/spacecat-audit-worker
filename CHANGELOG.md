@@ -1,3 +1,22 @@
+# [1.543.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.542.2...v1.543.0) (2026-09-17)
+
+
+### Bug Fixes
+
+* **deps:** update HTML analyzer to 1.3.6 ([#2990](https://github.com/adobe/spacecat-audit-worker/issues/2990)) ([4be3643](https://github.com/adobe/spacecat-audit-worker/commit/4be364319b5afbee49a1884faa1842d8b5ff8ca1))
+
+
+### Features
+
+* classify Claude Code and GitHub Copilot traffic ([#2991](https://github.com/adobe/spacecat-audit-worker/issues/2991)) ([1735bf9](https://github.com/adobe/spacecat-audit-worker/commit/1735bf9130898b2f7430877418c29443ab86c257)), closes [Hi#level](https://github.com/Hi/issues/level) [adobe/spacecat-api-service#3308](https://github.com/adobe/spacecat-api-service/issues/3308) [adobe/project-elmo-ui#3201](https://github.com/adobe/project-elmo-ui/issues/3201)
+
+## [1.542.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.542.1...v1.542.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-html-analyzer to v1.3.6 ([#2989](https://github.com/adobe/spacecat-audit-worker/issues/2989)) ([3e9337b](https://github.com/adobe/spacecat-audit-worker/commit/3e9337bc9cb9635799f3df3546df7ad933bd91f1))
+
 ## [1.542.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.542.0...v1.542.1) (2026-09-17)
 
 
