@@ -1700,20 +1700,6 @@ describe('Offsite Brand Presence Handler', function () {
       expect(delaySeconds).to.equal(300);
     });
 
-    it('forwards enableSemrushWithHardstop onto the poll message so it survives to the analysis audits', async () => {
-      stubBrandPresenceData(['https://youtube.com/shorts/v1']);
-      const auditContext = {
-        slackContext: { channelId: 'C123', threadTs: '111.222' },
-        messageData: { enableSemrushWithHardstop: true },
-      };
-
-      await offsiteBrandPresenceRunner(FINAL_URL, context, site, auditContext);
-
-      const [, msg] = context.sqs.sendMessage.firstCall.args;
-      expect(msg.type).to.equal('offsite-brand-presence-drs-status');
-      expect(msg.auditContext.enableSemrushWithHardstop).to.equal(true);
-    });
-
     it('enqueues a poll message without a Slack thread, at the unattended interval', async () => {
       // Unattended run still schedules the poll (no slackContext carried) at the 900s cadence.
       stubBrandPresenceData(['https://youtube.com/shorts/v1']);

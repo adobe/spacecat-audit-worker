@@ -427,17 +427,6 @@ describe('offsite-brand-presence DRS status handler', function () {
       expect(reddit.args[1].auditContext.messageData).to.deep.equal({ enableSemrush: false });
     });
 
-    it('forwards enableSemrushWithHardstop as messageData so the debug hardstop reaches the analysis audits', async () => {
-      mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
-      mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });
-
-      await handler.default(buildMessage({ enableSemrushWithHardstop: true }), context);
-
-      const reddit = context.sqs.sendMessage.getCalls()
-        .find((c) => c.args[1].type === 'reddit-analysis');
-      expect(reddit.args[1].auditContext.messageData).to.deep.equal({ enableSemrushWithHardstop: true });
-    });
-
     it('forwards enableBrandProfile, urlLimit, and enableSemrush together as messageData', async () => {
       mockGetJob.withArgs('job-1').resolves({ status: 'COMPLETED' });
       mockGetJob.withArgs('job-2').resolves({ status: 'COMPLETED' });

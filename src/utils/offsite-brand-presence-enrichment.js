@@ -19,6 +19,7 @@ import ExcelJS from 'exceljs';
 import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { isBrandalfEnabled, resolveOrganizationIdForSite } from './brandalf-utils.js';
 import { loadBrandPresenceDataFromPostgrest } from './offsite-brand-presence-postgrest.js';
+import { normalizeYoutubeUrl } from './youtube-url.js';
 import { createLLMOSharepointClient, readFromSharePointWithRetry } from './report-uploader.js';
 import { buildColumnMap, getColumn } from '../faqs/utils.js';
 import {
@@ -200,33 +201,6 @@ function matchBrandPresencePath(path, targetWeek, targetYear) {
 export function filterBrandPresenceFiles(paths, targetWeek, targetYear) {
   const entries = paths || [];
   return entries.filter((p) => matchBrandPresencePath(p, targetWeek, targetYear));
-}
-
-/**
- * Normalizes a YouTube URL by keeping only essential identifiers, PRESERVING the URL form.
- * - /watch?v=VIDEO_ID&… → `${origin}/watch?v=VIDEO_ID` (keep only `v=`, drop other query params)
- * - other YouTube URLs (youtu.be, shorts, channels) → `${origin}${pathname}` (query stripped)
- *
- * The host/scheme/short-vs-watch form is deliberately NOT rewritten: Semrush's url-prompts keys
- * prompts on the exact `CBF_source` string it returned, which may be either the `watch` or the
- * `youtu.be` form — so preserving whatever came from the source keeps the exact match intact. The
- * two forms of the same video are reconciled by video id at dedupe time (see the loader), not by
- * rewriting one into the other.
- *
- * @param {URL} parsed - Parsed URL object
- * @returns {string} Normalized URL
- */
-function normalizeYoutubeUrl(parsed) {
-  const { pathname } = parsed;
-
-  if (pathname.startsWith('/watch')) {
-    const videoId = parsed.searchParams.get('v');
-    if (videoId) {
-      return `${parsed.origin}/watch?v=${videoId}`;
-    }
-  }
-
-  return `${parsed.origin}${pathname}`;
 }
 
 /**
