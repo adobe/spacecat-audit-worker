@@ -120,20 +120,29 @@ const DOMAIN_ALIASES = Object.freeze({
 });
 
 /**
- * Returns a YouTube URL byte-identical to what it was given (origin + pathname + query string) —
- * NO param is dropped, not even ones beyond `v=`. Semrush's url-prompts keys prompts on the exact
- * `CBF_source` string it returned; any extra query param (a tracking token, `t=`, `list=`, …) is
- * part of that exact key, so stripping "just the extras" is itself a mismatch, not a cleanup —
- * that was the bug in the previous version of this function. The `watch` vs `youtu.be` FORM is
- * also left untouched; the two forms of one video are reconciled by video id at dedupe time (see
- * the loader below), not by rewriting one into the other. Only the hash fragment is dropped — it
- * is never sent to a server, so Semrush's source URL cannot include one.
+ * Normalizes a YouTube URL by keeping only essential identifiers, PRESERVING the URL form.
+ * - /watch?v=VIDEO_ID&… → `${origin}/watch?v=VIDEO_ID` (keep only `v=`, drop other query params)
+ * - /shorts/SHORT_ID, youtu.be, channels → `${origin}${pathname}` (query stripped)
+ *
+ * The host/scheme/short-vs-watch form is NOT rewritten: Semrush's url-prompts keys prompts on the
+ * exact `CBF_source` string it returned (watch OR youtu.be), so preserving the source form keeps
+ * the exact match intact. The two forms of one video are reconciled by video id at dedupe time.
  *
  * @param {URL} parsed - Parsed URL object
- * @returns {string} The URL exactly as given, minus any hash fragment
+ * @returns {string} Normalized URL
  */
 function normalizeYoutubeUrl(parsed) {
-  return `${parsed.origin}${parsed.pathname}${parsed.search}`;
+  const { pathname } = parsed;
+
+  if (pathname.startsWith('/watch')) {
+    const videoId = parsed.searchParams.get('v');
+    if (videoId) {
+      return `${parsed.origin}/watch?v=${videoId}`;
+    }
+  }
+
+  // For other YouTube URLs (shorts, channels, playlists, etc.), strip query params
+  return `${parsed.origin}${pathname}`;
 }
 
 /**
@@ -145,13 +154,10 @@ function normalizeYoutubeUrl(parsed) {
  * @returns {string} The normalized URL
  */
 function normalizeUrl(parsed, domain) {
-  if (domain === 'youtube.com') {
-    // Preserved verbatim (see normalizeYoutubeUrl) — no trailing-slash trim, which is meant for
-    // the query-less path below and could otherwise corrupt a query string ending in `/`.
-    return normalizeYoutubeUrl(parsed);
-  }
+  let url = domain === 'youtube.com'
+    ? normalizeYoutubeUrl(parsed)
+    : `${parsed.origin}${parsed.pathname}`;
 
-  let url = `${parsed.origin}${parsed.pathname}`;
   // Remove trailing slash (unless it's just the domain)
   if (url.endsWith('/') && parsed.pathname !== '/') {
     url = url.slice(0, -1);
