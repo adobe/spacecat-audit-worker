@@ -111,14 +111,14 @@ describe('LLM Error Pages Utils', () => {
       expect(providers).to.include('claude');
       expect(providers).to.include('googleai');
       // Full-matches the Agentic Traffic tab's canonical set (AGENTIC_TRAFFIC_PROVIDERS):
-      // mistralai, amazon, parallel, manus, keenable, meta are in; copilot is out.
+      // mistralai, amazon, parallel, manus, keenable, meta, and copilot are in.
       expect(providers).to.include('mistralai');
       expect(providers).to.include('amazon');
       expect(providers).to.include('parallel');
       expect(providers).to.include('manus');
       expect(providers).to.include('keenable');
       expect(providers).to.include('meta');
-      expect(providers).to.not.include('copilot');
+      expect(providers).to.include('copilot');
     });
   });
 
@@ -143,7 +143,7 @@ describe('LLM Error Pages Utils', () => {
       expect(result).to.include('Shap(Bot|-User)');
       expect(result).to.include('Manus-User');
       expect(result).to.include('Keenable-User');
-      expect(result).to.not.include('Copilot');
+      expect(result).to.include('GitHubCopilotRuntime');
       expect(result).to.include("AND NOT REGEXP_LIKE(user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
     });
 

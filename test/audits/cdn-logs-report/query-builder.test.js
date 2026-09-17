@@ -104,6 +104,15 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include("THEN 'Meta-ExternalFetcher'");
     expect(query).to.include("LIKE '%meta-externalagent%' THEN 'Training bots'");
     expect(query).to.include("LIKE '%meta-externalfetcher%' THEN 'Chatbots'");
+    expect(query).to.include('GitHubCopilotRuntime');
+    expect(query).to.include("LIKE '%claude-code/%' THEN 'Claude Code'");
+    expect(query).to.include("LIKE '%claude-code/%' THEN 'Action agents'");
+    expect(query).to.include(
+      "LIKE '%githubcopilotruntime-webfetch%' THEN 'GitHub Copilot'",
+    );
+    expect(query).to.include(
+      "LIKE '%githubcopilotruntime-webfetch%' THEN 'Action agents'",
+    );
     expect(query).to.include('test_db.test_table');
     expect(query).to.include('agent_type');
     expect(query).to.include('user_agent_display');

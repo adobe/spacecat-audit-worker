@@ -34,7 +34,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   googleai: '(?i)(^Google$|Google-NotebookLM|Google-?Agent)',
   google: '(?i)(Google-Extended|Googlebot)',
   mistralai: '(?i)MistralAI-User',
-  copilot: '(?i)Copilot',
+  copilot: '(?i)GitHubCopilotRuntime-WebFetch',
   bing: '(?i)Bingbot',
   amazon: '(?i)Amzn-User',
   parallel: '(?i)Shap(Bot|-User)',
@@ -46,11 +46,11 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
 /**
  * Canonical agentic/LLM provider set — the Agentic Traffic tab's source of truth.
  * Keys index into PROVIDER_USER_AGENT_PATTERNS; the set deliberately excludes search
- * bots (google/bing) and copilot. Both the agentic-traffic report filter
+ * bots (google/bing). Both the agentic-traffic report filter
  * (`buildUserAgentFilter`) and the llm-error-pages provider list (`LLM_PROVIDERS`)
  * derive from this array so the two surfaces cannot drift out of sync.
  */
-export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable', 'meta'];
+export const AGENTIC_TRAFFIC_PROVIDERS = ['chatgpt', 'perplexity', 'googleai', 'claude', 'mistralai', 'amazon', 'parallel', 'manus', 'keenable', 'meta', 'copilot'];
 
 /**
  * User agent display name mappings for better readability in reports
@@ -81,11 +81,14 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%bingbot%', displayName: 'BingBot' },
   { pattern: '%google-extended%', displayName: 'Google-Extended' },
   // Claude
+  { pattern: '%claude-code/%', displayName: 'Claude Code' },
   { pattern: '%claude-user%', displayName: 'Claude-User' },
   { pattern: '%claudebot%', displayName: 'ClaudeBot' },
   { pattern: '%claude-searchbot%', displayName: 'Claude-SearchBot' },
   { pattern: '%com.anthropic.claude%', displayName: 'Claude Clients' },
   { pattern: '%claude/%', displayName: 'Claude Clients' },
+  // GitHub Copilot
+  { pattern: '%githubcopilotruntime-webfetch%', displayName: 'GitHub Copilot' },
   // MistralAI
   { pattern: '%mistralai-user%', displayName: 'MistralAI-User' },
   // Amazon
@@ -141,11 +144,14 @@ export function buildAgentTypeClassificationSQL() {
     // Bing
     { pattern: '%bingbot%', result: 'Search Bots' },
     // Claude
+    { pattern: '%claude-code/%', result: 'Action agents' },
     { pattern: '%claudebot%', result: 'Training bots' },
     { pattern: '%claude-searchbot%', result: 'Web search crawlers' },
     { pattern: '%claude-user%', result: 'Chatbots' },
     { pattern: '%com.anthropic.claude%', result: 'Media fetchers' },
     { pattern: '%claude/%', result: 'Media fetchers' },
+    // GitHub Copilot
+    { pattern: '%githubcopilotruntime-webfetch%', result: 'Action agents' },
     // MistralAI
     { pattern: '%mistralai-user%', result: 'Chatbots' },
     // Amazon
@@ -192,7 +198,7 @@ export function inferProviderFromUserAgent(userAgent = '') {
   if (/(google|googlebot|notebooklm)/.test(ua)) {
     return 'Google';
   }
-  if (/copilot/.test(ua)) {
+  if (/(githubcopilotruntime-webfetch|^github copilot$)/.test(ua)) {
     return 'Copilot';
   }
   if (/bing/.test(ua)) {

@@ -75,6 +75,17 @@ describe('User Agent Patterns', () => {
       expect(regex.test('Meta-Muse-User/1.0')).to.equal(false);
     });
 
+    it('uses the specific GitHub Copilot runtime token for reporting', () => {
+      const { PROVIDER_USER_AGENT_PATTERNS } = userAgentPatterns;
+      const pattern = PROVIDER_USER_AGENT_PATTERNS.copilot;
+      const regex = new RegExp(pattern.replace('(?i)', ''), 'i');
+
+      expect(regex.test('GitHubCopilotRuntime-WebFetch')).to.equal(true);
+      expect(regex.test('githubcopilotruntime-webfetch/1.0')).to.equal(true);
+      expect(regex.test('CopilotBot/1.0')).to.equal(false);
+      expect(regex.test('microsoft-copilot')).to.equal(false);
+    });
+
     it('keeps provider patterns free of the Adobe-internal exclusion (handled in the filter)', () => {
       const { PROVIDER_USER_AGENT_PATTERNS } = userAgentPatterns;
 
@@ -138,6 +149,7 @@ describe('User Agent Patterns', () => {
       expect(filter).to.include('Manus-User');
       expect(filter).to.include('Keenable-User');
       expect(filter).to.include('meta-external(agent|fetcher)');
+      expect(filter).to.include('GitHubCopilotRuntime');
     });
 
     it('does not broaden reporting to ingestion-only Google user agents', () => {
@@ -167,6 +179,20 @@ describe('User Agent Patterns', () => {
       expect(regex.test('meta-webindexer/1.0')).to.equal(false);
       expect(regex.test('Meta-Muse-User/1.0')).to.equal(false);
     });
+
+    it('allows GitHub Copilot WebFetch without generic Copilot matches', () => {
+      const { buildUserAgentFilter } = cdnUtils;
+      const filter = buildUserAgentFilter();
+      const [, copilotPattern] = filter.match(
+        /REGEXP_LIKE\(user_agent, '([^']*GitHubCopilotRuntime[^']*)'\)/,
+      );
+      const regex = new RegExp(copilotPattern.replace('(?i)', ''), 'i');
+
+      expect(regex.test('GitHubCopilotRuntime-WebFetch')).to.equal(true);
+      expect(regex.test('githubcopilotruntime-webfetch/1.0')).to.equal(true);
+      expect(regex.test('CopilotBot/1.0')).to.equal(false);
+      expect(regex.test('microsoft-copilot')).to.equal(false);
+    });
   });
 
   describe('buildAgentTypeClassificationSQL', () => {
@@ -195,6 +221,15 @@ describe('User Agent Patterns', () => {
 
       expect(sql).to.include("LIKE '%com.anthropic.claude%' THEN 'Media fetchers'");
       expect(sql).to.include("LIKE '%claude/%' THEN 'Media fetchers'");
+    });
+
+    it('classifies coding-agent fetches as Action agents', () => {
+      const { buildAgentTypeClassificationSQL } = userAgentPatterns;
+      const sql = buildAgentTypeClassificationSQL();
+
+      expect(sql).to.include("LIKE '%claude-code/%' THEN 'Action agents'");
+      expect(sql).to.include("LIKE '%githubcopilotruntime-webfetch%' THEN 'Action agents'");
+      expect(sql.indexOf("LIKE '%claude-code/%'")).to.be.lessThan(sql.indexOf("LIKE '%claude/%'"));
     });
 
     it('classifies Google-NotebookLM as Chatbots (Research merged into Chatbots)', () => {
@@ -246,6 +281,17 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include("LIKE '%meta-externalfetcher%' THEN 'Meta-ExternalFetcher'");
     });
 
+    it('gives coding agents distinct display names', () => {
+      const { buildUserAgentDisplaySQL } = userAgentPatterns;
+      const sql = buildUserAgentDisplaySQL();
+
+      expect(sql).to.include("LIKE '%claude-code/%' THEN 'Claude Code'");
+      expect(sql).to.include(
+        "LIKE '%githubcopilotruntime-webfetch%' THEN 'GitHub Copilot'",
+      );
+      expect(sql.indexOf("LIKE '%claude-code/%'")).to.be.lessThan(sql.indexOf("LIKE '%claude/%'"));
+    });
+
     it('collapses Claude desktop/iOS client UAs into a single "Claude Clients" bucket', () => {
       const { buildUserAgentDisplaySQL } = userAgentPatterns;
       const sql = buildUserAgentDisplaySQL();
@@ -270,7 +316,7 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('Google-Agent')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('Google-AI-Mode')).to.equal('Google AI Mode');
       expect(inferProviderFromUserAgent('google-notebooklm')).to.equal('Google');
-      expect(inferProviderFromUserAgent('CopilotBot')).to.equal('Copilot');
+      expect(inferProviderFromUserAgent('githubcopilotruntime-webfetch')).to.equal('Copilot');
       expect(inferProviderFromUserAgent('BingBot')).to.equal('Bing');
       expect(inferProviderFromUserAgent('MistralAI-Search')).to.equal('MistralAI');
       expect(inferProviderFromUserAgent('Amazonbot/0.1')).to.equal('Amazon');
@@ -280,11 +326,16 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('Keenable-User/1.0')).to.equal('Keenable.ai');
       expect(inferProviderFromUserAgent('Meta-ExternalAgent')).to.equal('Meta');
       expect(inferProviderFromUserAgent('Meta-ExternalFetcher')).to.equal('Meta');
+      expect(inferProviderFromUserAgent('claude-code/2.1.270')).to.equal('Anthropic');
+      expect(inferProviderFromUserAgent('GitHubCopilotRuntime-WebFetch')).to.equal('Copilot');
+      expect(inferProviderFromUserAgent('GitHub Copilot')).to.equal('Copilot');
       // regexes must stay as specific as PROVIDER_USER_AGENT_PATTERNS -- not broad
       // substring matches that would misattribute an unrelated bot's provider
       expect(inferProviderFromUserAgent('reshape-bot/1.0')).to.equal('Other');
       expect(inferProviderFromUserAgent('manuscript-crawler/1.0')).to.equal('Other');
       expect(inferProviderFromUserAgent('unkeenable-thing/1.0')).to.equal('Other');
+      expect(inferProviderFromUserAgent('CopilotBot/1.0')).to.equal('Other');
+      expect(inferProviderFromUserAgent('microsoft-copilot')).to.equal('Other');
       expect(inferProviderFromUserAgent('something-unknown')).to.equal('Other');
     });
   });
@@ -377,6 +428,24 @@ describe('User Agent Patterns', () => {
       ['meta-webindexer/1.0', 'Meta-Muse-User/1.0'].forEach((userAgent) => {
         expect(reportingRegex.test(userAgent), `${userAgent} reporting`).to.equal(false);
       });
+    });
+
+    it('ingests and reports the supported coding-agent user agents', () => {
+      const ingestionPattern = patternsByProvider[providerDirs[0]];
+      const ingestionRegex = new RegExp(ingestionPattern.replace('(?i)', ''), 'i');
+      const claudeReportingRegex = new RegExp(
+        userAgentPatterns.PROVIDER_USER_AGENT_PATTERNS.claude.replace('(?i)', ''),
+        'i',
+      );
+      const copilotReportingRegex = new RegExp(
+        userAgentPatterns.PROVIDER_USER_AGENT_PATTERNS.copilot.replace('(?i)', ''),
+        'i',
+      );
+
+      expect(ingestionRegex.test('claude-code/2.1.270')).to.equal(true);
+      expect(claudeReportingRegex.test('claude-code/2.1.270')).to.equal(true);
+      expect(ingestionRegex.test('GitHubCopilotRuntime-WebFetch')).to.equal(true);
+      expect(copilotReportingRegex.test('GitHubCopilotRuntime-WebFetch')).to.equal(true);
     });
   });
 });
