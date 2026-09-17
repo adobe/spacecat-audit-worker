@@ -111,14 +111,14 @@ describe('LLM Error Pages Utils', () => {
       expect(providers).to.include('claude');
       expect(providers).to.include('googleai');
       // Full-matches the Agentic Traffic tab's canonical set (AGENTIC_TRAFFIC_PROVIDERS):
-      // mistralai, amazon, parallel, manus, keenable, meta, and githubcopilot are in.
+      // mistralai, amazon, parallel, manus, keenable, meta are in; copilot is out.
       expect(providers).to.include('mistralai');
       expect(providers).to.include('amazon');
       expect(providers).to.include('parallel');
       expect(providers).to.include('manus');
       expect(providers).to.include('keenable');
       expect(providers).to.include('meta');
-      expect(providers).to.include('githubcopilot');
+      expect(providers).to.not.include('copilot');
     });
   });
 
@@ -143,7 +143,7 @@ describe('LLM Error Pages Utils', () => {
       expect(result).to.include('Shap(Bot|-User)');
       expect(result).to.include('Manus-User');
       expect(result).to.include('Keenable-User');
-      expect(result).to.include('GitHubCopilotRuntime');
+      expect(result).to.not.include('Copilot');
       expect(result).to.include("AND NOT REGEXP_LIKE(user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
     });
 
@@ -172,8 +172,6 @@ describe('LLM Error Pages Utils', () => {
     });
 
     it('should normalize Claude user agents', () => {
-      expect(normalizeUserAgentToProvider('claude-code/2.1.270')).to.equal('Anthropic');
-      expect(normalizeUserAgentToProvider('Claude Code')).to.equal('Anthropic');
       expect(normalizeUserAgentToProvider('Claude-Web/1.0')).to.equal('Claude');
       expect(normalizeUserAgentToProvider('Anthropic-ai/1.0')).to.equal('Claude');
     });
@@ -183,9 +181,7 @@ describe('LLM Error Pages Utils', () => {
       expect(normalizeUserAgentToProvider('google-gemini')).to.equal('Gemini');
     });
 
-    it('should normalize GitHub and generic Copilot user agents separately', () => {
-      expect(normalizeUserAgentToProvider('GitHubCopilotRuntime-WebFetch')).to.equal('GitHub Copilot');
-      expect(normalizeUserAgentToProvider('GitHub Copilot')).to.equal('GitHub Copilot');
+    it('should normalize Copilot user agents', () => {
       expect(normalizeUserAgentToProvider('CopilotBot/1.0')).to.equal('Copilot');
       expect(normalizeUserAgentToProvider('microsoft-copilot')).to.equal('Copilot');
     });

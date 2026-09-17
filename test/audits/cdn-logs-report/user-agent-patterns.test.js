@@ -327,7 +327,8 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('Keenable-User/1.0')).to.equal('Keenable.ai');
       expect(inferProviderFromUserAgent('Meta-ExternalAgent')).to.equal('Meta');
       expect(inferProviderFromUserAgent('Meta-ExternalFetcher')).to.equal('Meta');
-      expect(inferProviderFromUserAgent('claude-code/2.1.270')).to.equal('Anthropic');
+      expect(inferProviderFromUserAgent('claude-code/2.1.270')).to.equal('Claude');
+      expect(inferProviderFromUserAgent('Claude Code')).to.equal('Claude');
       expect(inferProviderFromUserAgent('GitHubCopilotRuntime-WebFetch')).to.equal('GitHub Copilot');
       expect(inferProviderFromUserAgent('GitHub Copilot')).to.equal('GitHub Copilot');
       // regexes must stay as specific as PROVIDER_USER_AGENT_PATTERNS -- not broad

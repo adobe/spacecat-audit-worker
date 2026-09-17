@@ -187,6 +187,9 @@ export function inferProviderFromUserAgent(userAgent = '') {
   if (/perplexity/.test(ua)) {
     return 'Perplexity';
   }
+  if (/(claude-code|^claude code$)/.test(ua)) {
+    return 'Claude';
+  }
   if (/(anthropic|claude)/.test(ua)) {
     return 'Anthropic';
   }
