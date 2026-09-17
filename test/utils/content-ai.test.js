@@ -15,7 +15,11 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
-import { calculateWeeklyCronSchedule } from '../../src/utils/content-ai.js';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import {
+  ContentAIClient as InstalledContentAIClient,
+  calculateWeeklyCronSchedule,
+} from '../../src/utils/content-ai.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -29,6 +33,28 @@ const jsonResponse = (sandbox, body, overrides = {}) => ({
 });
 
 describe('Content AI Utils', () => {
+  describe('installed Config contract', () => {
+    it('persists a source name while preserving an existing index', async () => {
+      const config = Config.fromDynamoItem({
+        contentAiConfig: { index: 'legacy-index' },
+      });
+      const site = {
+        getConfig: sinon.stub().returns(config),
+        setConfig: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      await InstalledContentAIClient.persistContentSourceName(site, 'new-source');
+
+      expect(site.setConfig).to.have.been.calledOnce;
+      expect(site.setConfig.firstCall.firstArg.contentAiConfig).to.deep.equal({
+        index: 'legacy-index',
+        name: 'new-source',
+      });
+      expect(site.save).to.have.been.calledOnce;
+    });
+  });
+
   describe('calculateWeeklyCronSchedule', () => {
     let clock;
 
