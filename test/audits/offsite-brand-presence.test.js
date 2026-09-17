@@ -850,7 +850,7 @@ describe('Offsite Brand Presence Handler', function () {
       expect(videosCall.args[0].urls).to.deep.equal(['https://www.youtube.com/watch?v=abc123']);
     });
 
-    it('should keep youtube.com/shorts URLs as-is (strip query params only)', async () => {
+    it('should keep youtube.com/shorts URLs byte-identical, including query params', async () => {
       stubBrandPresenceData(['https://www.youtube.com/shorts/xyz?feature=share']);
 
       await offsiteBrandPresenceRunner(FINAL_URL, context, site);
@@ -858,7 +858,7 @@ describe('Offsite Brand Presence Handler', function () {
       const videosCall = mockSubmitScrapeJob.getCalls().find(
         (c) => c.args[0].datasetId === 'youtube_videos',
       );
-      expect(videosCall.args[0].urls).to.deep.equal(['https://www.youtube.com/shorts/xyz']);
+      expect(videosCall.args[0].urls).to.deep.equal(['https://www.youtube.com/shorts/xyz?feature=share']);
     });
 
     it('should normalize youtu.be short URLs via domain alias', async () => {
