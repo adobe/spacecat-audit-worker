@@ -305,6 +305,7 @@ export async function prepareSupersededRunSnapshot({
     await copyOffsiteOpportunityTopicVectors({
       dataAccess,
       siteId: evergreenOpportunity.getSiteId(),
+      auditType,
       fromEntityId: evergreenOpportunity.getId(),
       toEntityId: snapshot.getId(),
       olog,

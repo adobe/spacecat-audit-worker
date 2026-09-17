@@ -1894,6 +1894,36 @@ describe('YouTube Analysis URL-index extractors', () => {
     ]);
   });
 
+  it('getOpportunityTopics returns only content topics when comments.topics is absent', () => {
+    const opportunity = {
+      getData: () => ({
+        dashboard: {
+          analytics: {
+            performance: {
+              insights: { content: { topics: [{ id: 'c1', title: 'Setup' }] } },
+            },
+          },
+        },
+      }),
+    };
+    expect(getOpportunityTopics(opportunity)).to.deep.equal([{ id: 'c1', title: 'Setup' }]);
+  });
+
+  it('getOpportunityTopics returns only comments topics when content.topics is absent', () => {
+    const opportunity = {
+      getData: () => ({
+        dashboard: {
+          analytics: {
+            performance: {
+              insights: { comments: { topics: [{ id: 'm1', title: 'Support' }] } },
+            },
+          },
+        },
+      }),
+    };
+    expect(getOpportunityTopics(opportunity)).to.deep.equal([{ id: 'm1', title: 'Support' }]);
+  });
+
   it('getOpportunityTopics returns an empty array when the dashboard data is missing', () => {
     expect(getOpportunityTopics({ getData: () => ({}) })).to.deep.equal([]);
   });

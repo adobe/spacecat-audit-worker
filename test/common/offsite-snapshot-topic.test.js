@@ -83,6 +83,7 @@ describe('offsite-snapshot topic vector copy wiring', () => {
     expect(copyStub.firstCall.args[0]).to.include({
       dataAccess,
       siteId: 'site-1',
+      auditType: 'cited-analysis',
       fromEntityId: 'evergreen-1',
       toEntityId: 'snapshot-1',
     });

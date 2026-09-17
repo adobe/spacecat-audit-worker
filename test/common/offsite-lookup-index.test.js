@@ -361,6 +361,7 @@ describe('offsite-lookup-index (offsite integration with the shared foundation)'
     const copyArgs = () => ({
       dataAccess: { services: { postgrestClient: pgClient } },
       siteId: 'site-1',
+      auditType: 'cited-analysis',
       fromEntityId: 'evergreen-1',
       toEntityId: 'snapshot-1',
       olog,
@@ -392,6 +393,7 @@ describe('offsite-lookup-index (offsite integration with the shared foundation)'
       const line = logStub.info.getCalls().map((c) => c.args[0])
         .find((l) => l.includes('event=audit_funneling_index_topic_snapshot_copied'));
       expect(line).to.include('outcome=success');
+      expect(line).to.include('auditType=cited-analysis');
       expect(line).to.include('copiedTopicCount=3');
     });
 

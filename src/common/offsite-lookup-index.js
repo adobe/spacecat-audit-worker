@@ -222,18 +222,19 @@ export async function indexOffsiteOpportunityByTopic({
  * @param {object} params
  * @param {object} params.dataAccess - the data access layer (`services.postgrestClient`)
  * @param {string} params.siteId
+ * @param {string} params.auditType - the offsite audit type (for log/Splunk filtering)
  * @param {string} params.fromEntityId - source (evergreen) opportunity id
  * @param {string} params.toEntityId - destination (snapshot) opportunity id
  * @param {object} params.olog - the caller's bound offsite logger
  * @returns {Promise<void>}
  */
 export async function copyOffsiteOpportunityTopicVectors({
-  dataAccess, siteId, fromEntityId, toEntityId, olog,
+  dataAccess, siteId, auditType, fromEntityId, toEntityId, olog,
 }) {
   const postgrestClient = resolvePostgrestClient({ dataAccess });
   if (!postgrestClient?.from) {
     olog.warn(COPY_TOPIC_SNAPSHOT_EVENT, 'Postgrest client unavailable; skipping snapshot topic copy', {
-      peer: PEER.POSTGRES, direction: 'outbound', snapshotId: toEntityId,
+      peer: PEER.POSTGRES, direction: 'outbound', auditType, snapshotId: toEntityId,
     });
     return;
   }
@@ -243,11 +244,11 @@ export async function copyOffsiteOpportunityTopicVectors({
       siteId, fromEntityId, toEntityId,
     });
     olog.success(COPY_TOPIC_SNAPSHOT_EVENT, 'Copied topic vectors to snapshot', {
-      peer: PEER.POSTGRES, direction: 'outbound', snapshotId: toEntityId, copiedTopicCount: copiedCount,
+      peer: PEER.POSTGRES, direction: 'outbound', auditType, snapshotId: toEntityId, copiedTopicCount: copiedCount,
     });
   } catch (cause) {
     olog.warn(COPY_TOPIC_SNAPSHOT_EVENT, 'Failed to copy topic vectors to snapshot', {
-      peer: PEER.POSTGRES, direction: 'outbound', snapshotId: toEntityId, ...errorField(cause),
+      peer: PEER.POSTGRES, direction: 'outbound', auditType, snapshotId: toEntityId, ...errorField(cause),
     });
   }
 }

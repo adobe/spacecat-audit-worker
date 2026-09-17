@@ -590,6 +590,19 @@ describe('lookup-index (shared foundation)', () => {
       });
     });
 
+    it('fails with EMBED_TOPICS_FAILED when the embedding count does not match the inputs', async () => {
+      getTitles.returns([{ id: 't1', title: 'Pricing' }, { id: 't2', title: 'Support' }]);
+      embeddingClient.createEmbeddings.resolves([[0, 1]]); // one vector for two inputs
+
+      const result = await indexOpportunityByTopic({
+        context, opportunity: makeOpportunity(), entityType: 'cited-analysis', getTitles, embeddingClient,
+      });
+
+      expect(result.error.message).to.equal('Failed to embed topics');
+      expect(result.error.cause.message).to.equal('Vector count mismatch: expected 2, got 1');
+      expect(syncOpportunitySemanticStub).to.not.have.been.called;
+    });
+
     it('clears (empty sources, no embed) when the opportunity genuinely has no topics', async () => {
       getTitles.returns([]);
       const opportunity = makeOpportunity();
@@ -642,7 +655,7 @@ describe('lookup-index (shared foundation)', () => {
       const result = await indexOpportunityByTopic({
         context, opportunity: makeOpportunity(), entityType: 'cited-analysis', getTitles, embeddingClient,
       });
-      expect(result.error.message).to.equal('Extraction returned candidates but none were indexable');
+      expect(result.error.message).to.equal('Extraction returned topic candidates but none were indexable');
       expect(embeddingClient.createEmbeddings).to.not.have.been.called;
     });
 

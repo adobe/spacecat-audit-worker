@@ -130,6 +130,19 @@ describe('lookup-index-utils', () => {
       expect(sanitizeTopics([{ id: 't1', title: longTitle }])).to.deep.equal([]);
     });
 
+    it('keeps a title exactly at the max length', () => {
+      const maxTitle = 'a'.repeat(1000);
+      expect(sanitizeTopics([{ id: 't1', title: maxTitle }])).to.deep.equal([
+        { sourceId: 't1', text: maxTitle },
+      ]);
+    });
+
+    it('drops a non-string sourceId to undefined', () => {
+      expect(sanitizeTopics([{ id: 42, title: 'Pricing' }])).to.deep.equal([
+        { sourceId: undefined, text: 'Pricing' },
+      ]);
+    });
+
     it('de-duplicates on the case-folded, whitespace-collapsed title, keeping the first sourceId', () => {
       expect(sanitizeTopics([
         { id: 't1', title: 'Pricing Plans' },

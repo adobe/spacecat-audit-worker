@@ -319,6 +319,9 @@ export async function indexOpportunityByTopic({
       sources = []; // genuine empty → full-replace clears this opportunity's topic vectors
     } else {
       const vectors = await embeddingClient.createEmbeddings(topics.map((t) => t.text));
+      if (!Array.isArray(vectors) || vectors.length !== topics.length) {
+        throw new Error(`Vector count mismatch: expected ${topics.length}, got ${vectors?.length}`);
+      }
       sources = topics.map((topic, i) => ({
         text: topic.text,
         vector: vectors[i],

@@ -29,7 +29,7 @@ export const REASON = {
   SYNC_URL_INDEX_FAILED: 'Failed to sync the URL index',
   // Topic dimension (semantic index).
   EXTRACT_TOPICS_FAILED: 'Failed to extract topics',
-  NO_INDEXABLE_TOPICS: 'Extraction returned candidates but none were indexable',
+  NO_INDEXABLE_TOPICS: 'Extraction returned topic candidates but none were indexable',
   EMBED_TOPICS_FAILED: 'Failed to embed topics',
   SYNC_SEMANTIC_INDEX_FAILED: 'Failed to sync the semantic index',
 };
@@ -151,7 +151,8 @@ export function sanitizeTopics(candidates) {
       continue;
     }
     seen.add(topic.key);
-    cleaned.push({ sourceId: candidate.id, text: topic.text });
+    const sourceId = typeof candidate.id === 'string' ? candidate.id : undefined;
+    cleaned.push({ sourceId, text: topic.text });
   }
   return cleaned.slice(0, MAX_TOPICS_PER_ENTITY);
 }
