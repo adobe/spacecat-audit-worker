@@ -15,19 +15,17 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
 
 ## Decision
 
-1. **Source swap behind a flag, Semrush-first — failure handling depends on HOW it
-   was enabled.** When Semrush is enabled (env var
-   `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`, or the per-run override in Decision 7),
-   the runner uses the Semrush loader. On a Semrush **failure** (loader returns `null`):
-   - **Env-enabled, or override `false`/absent →** fall back to the legacy
-     `loadBrandPresenceData` (PostgREST → SharePoint), so production is never silently
-     zeroed out.
-   - **Explicitly forced on via `enableSemrush:true` (Slack override) →** **hard stop**:
-     return `success:false` with `dataSource:'semrush'` + `fallbackReason`, and do **NOT**
-     run legacy. An operator testing Semrush on one run wants the failure **visible**, not
-     masked by legacy.
-   A genuinely-empty-but-successful result (Map size 0) is **not** a failure — it is used as
-   a normal zero-URL Semrush run in both modes. Flag off (no override) = legacy only.
+1. **Source swap behind a flag, Semrush-first — a failure ALWAYS falls back to legacy.**
+   When Semrush is enabled (env var `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED=true`, or the
+   per-run override in Decision 7), the runner uses the Semrush loader. On a Semrush
+   **failure** (loader returns `null`) — however it was enabled, including the Slack
+   `enableSemrush:true` override — it falls back to the legacy `loadBrandPresenceData`
+   (PostgREST → SharePoint), setting `dataSource:'legacy'` + `fallbackReason`, so a Semrush
+   problem never silently zeroes out offsite. (History: `enableSemrush:true` originally
+   **hard-stopped** — `success:false`, no legacy — to make a canary failure visible; that was
+   dropped so the Slack override behaves exactly like the env flag.) A
+   genuinely-empty-but-successful result (Map size 0) is **not** a failure — it is used as a
+   normal zero-URL Semrush run. Flag off (no override) = legacy only.
 2. **A single `domain-urls` request — no `hostname`, `platform=all` — serves all three
    buckets.** LLMO-6844 made `hostname` optional (returns URLs across every source host)
    and LLMO-6818 added `platform=all` (aggregates citations across every AI engine
@@ -50,25 +48,32 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    host — the legacy top-cited gate, now applied per URL rather than per domain rollup.
    Citations are clamped (`Math.max(0, …)`) and zero-citation URLs are dropped.
 5. **Auth = IMS service bearer via v2 `getServiceAccessToken()` (`authorization_code`
-   grant), default IMS client.** This is the same S2S path `commerce-product-enrichments`,
-   `vulnerabilities` and `permissions` use. v3 `getServiceAccessTokenV3()`
-   (`client_credentials`) was tried first but returns IMS **`400 unauthorized_client`** —
-   the worker's default IMS client is only provisioned for `authorization_code`; only a
-   dedicated integration (content-ai's `CONTENTAI_*`) is registered for `client_credentials`.
-   The token is forwarded unchanged to Semrush; no `x-promise-token` for a service caller.
-   **Open risk (LLMO-6709):** the proxy is designed around a real *user* IMS token, so whether
-   Semrush accepts the worker's *service* token is unverified — the flag stays off until
-   confirmed end-to-end (use `enableSemrush:true` on one canary run, per Decision 7, to test).
-6. **`PAGE_SIZE` is a fixed constant (1000).** The response is sorted by
+   grant), default IMS client.** ⚠️ **Superseded by Decision 9 (LLMO-6709 resolved).** This
+   originally minted a raw IMS *service* token and forwarded it unchanged to Semrush. That
+   token carries no `tenants`/org membership, so api-service's IMS path rejects it (401/403) —
+   the `domain-urls-auth-failed` fallbacks. The auth mechanism is now the S2S consumer
+   session-token flow; see Decision 9. Retained for history:
+   > This is the same S2S path `commerce-product-enrichments`, `vulnerabilities` and
+   > `permissions` use. v3 `getServiceAccessTokenV3()` (`client_credentials`) was tried first
+   > but returns IMS **`400 unauthorized_client`** — the worker's default IMS client is only
+   > provisioned for `authorization_code`; only a dedicated integration (content-ai's
+   > `CONTENTAI_*`) is registered for `client_credentials`. The token is forwarded unchanged
+   > to Semrush; no `x-promise-token` for a service caller.
+   > **Open risk (LLMO-6709):** the proxy is designed around a real *user* IMS token, so
+   > whether Semrush accepts the worker's *service* token is unverified.
+6. **`PAGE_SIZE` defaults to 1000, overridable (downward) via env.** The response is sorted by
    citations globally across every host, so a low-citation bucket can be starved by too
    small a page — a generous page is cheap since it's one request either way. 1000 is the
-   `domain-urls` server-side `pageSize` clamp, so it's the max we can actually get currently.
+   `domain-urls` server-side `pageSize` clamp, so it's the max we can actually get currently
+   and the default. `OFFSITE_SEMRUSH_PAGE_SIZE` can lower it (a positive integer, clamped
+   to `[1, 1000]`; invalid/absent → default) to cap response size/latency where completeness
+   can be traded off.
 7. **Per-run override via Slack custom arg — how the first live runs get tested.**
    `enableSemrush` (`auditContext.messageData.enableSemrush`, resolved by
    `resolveEnableSemrush`) lets a single Slack-triggered `offsite-brand-presence` /
    `cited-analysis` / `youtube-analysis` / `reddit-analysis` run override the env var —
-   `true` forces the Semrush attempt on for that run **and makes a failure a hard stop with
-   no legacy fallback** (Decision 1), `false` forces legacy even when the env var is on,
+   `true` forces the Semrush attempt on for that run (a failure still falls back to legacy,
+   same as the env flag — see Decision 1), `false` forces legacy even when the env var is on,
    anything else (absent, empty, invalid) falls through to the env var unchanged. This is the
    intended mechanism for verifying LLMO-6709 against the real Semrush proxy on one site at a
    time, before `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` is flipped fleet-wide. Same tri-state
@@ -105,9 +110,11 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    non-entitled brand the loader returns `null` with `fallbackReason: 'not-entitled'`
    (confirmed) or `'entitlement-check-failed'` (the check itself errored/timed out — fails
    **closed**, i.e. skip Semrush, same as any other transient PostgREST failure in this
-   loader). Both reasons are exempted from the Decision 1 hard-stop: even a canary run
-   forced on via `enableSemrush:true` falls back to legacy cleanly for these two reasons —
-   entitlement scoping is expected behavior, not a technical failure to surface loudly.
+   loader). Both reasons fall back to legacy like any Semrush failure (Decision 1), but are
+   logged as an entitlement *skip* (`outcome=skip`) rather than a technical failure
+   (`outcome=degraded`) — entitlement scoping is expected behavior, not something going wrong.
+   (Historically these were also exempted from the since-removed `enableSemrush:true`
+   hard-stop; that hard-stop no longer exists, so all failures now fall back uniformly.)
    This check is purely an **extra narrowing** inside the existing
    `OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED` / `enableSemrush` gate, not a replacement for it.
    Considered and rejected: the api-service `.../serenity/brand-presence/access` endpoint
@@ -128,19 +135,20 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    `'entitlement-check-failed'` reason strings are now exported as
    `SEMRUSH_NOT_ENTITLED_REASON` / `SEMRUSH_ENTITLEMENT_CHECK_FAILED_REASON` (plus a bundled
    `SEMRUSH_ENTITLEMENT_SKIP_REASONS` Set) from `semrush-entitlement.js`, imported by both
-   the loader (producer) and the handler's hard-stop-exemption check (consumer) — previously
+   the loader (producer) and the handler's skip-vs-failure logging (consumer) — previously
    independently-typed literals with no test tying them together. A granular
    `entitlementReason` (`flag-disabled` | `no-workspace` | `no-client` | `check-failed`) is
    now also threaded onto `diagnostics`/`auditResult` alongside the coarse `fallbackReason`,
    so a systemic wiring bug (`no-client`) stays distinguishable from a one-off transient
-   blip (`check-failed`) without changing the coarse-grained hard-stop-exemption contract
+   blip (`check-failed`) without changing the coarse-grained skip-vs-failure contract
    itself.
-8c. **Resolved: `entitlement-check-failed` stays exempted from hard-stop; visibility is via
-   the existing thread notify() and logs only — no dedicated ops channel (PR review).**
-   Decided against making `entitlement-check-failed` hard-stop like `ims-token-failed` —
-   `enableSemrush:true` is a per-run canary override, so gating a fleet-wide outage signal
-   behind it would mean the signal only fires on whichever single site happens to be
-   canary-tested at that moment. A dedicated, unconditional ops-channel Slack alert
+8c. **Historical (the `enableSemrush:true` hard-stop was later removed entirely — see
+   Decision 1, so nothing "hard-stops" now): `entitlement-check-failed` visibility is via the
+   existing thread notify() and logs only — no dedicated ops channel (PR review).**
+   At the time, decided against making `entitlement-check-failed` hard-stop like
+   `ims-token-failed` — `enableSemrush:true` is a per-run canary override, so gating a
+   fleet-wide outage signal behind it would mean the signal only fires on whichever single
+   site happens to be canary-tested at that moment. A dedicated, unconditional ops-channel Slack alert
    (`postMessageSafe` to a fixed channel, firing regardless of Slack context) was
    considered and implemented, then explicitly rejected in favor of simplicity: the loader's
    existing `notify()` call already posts `:warning: Could not verify Semrush
@@ -236,6 +244,57 @@ involves several non-obvious trade-offs, so it warrants an ADR alongside the spe
    checked against, since the sibling repo can ship the exact mechanism being ruled out
    before the review round closes.
 
+9. **Auth = S2S consumer session-token flow (LLMO-6709, supersedes Decision 5).**
+   api-service ([adobe/spacecat-api-service#3217](https://github.com/adobe/spacecat-api-service/pull/3217))
+   exposes the Semrush-backed brand-presence routes (`domain-urls` included) to **S2S
+   consumers** — authorized by the existing `hasAccess(organization)` check against the
+   caller's session-token `tenants` claim — rather than to raw IMS service tokens. The loader
+   now does a 3-leg exchange:
+   1. resolve the **customer IMS org id** (threaded in from the handler, which already
+      resolves it for DRS scraping — falling back to `getImsOrgId(site, …)` only when a
+      caller omits it, so the session token is never scoped to a different org than the run);
+   2. mint the **consumer's own** IMS token via `getServiceAccessTokenV3()`
+      (`client_credentials`) using dedicated `SEMRUSH_S2S_*` credentials (the same shape
+      content-ai's `CONTENTAI_*` uses; `IMS_CLIENT_CODE` is set to a placeholder because
+      `createFrom` validates it as required but the `client_credentials` grant never sends it);
+   3. exchange it at `POST /api/v1/auth/s2s/login` (`{ imsOrgId }`) for a 15-min,
+      customer-scoped session token, then present that as `Bearer` on the `domain-urls` call.
+   Both the login and data calls must hit the **LLMO host** (`LLMO_API_BASE_URL`, default
+   `llmo.experiencecloud.live`; `LLMO_S2S_LOGIN_URL` overrides the login URL for non-prod
+   path prefixes) because the Fastly edge sets `x-product` from the host. `x-promise-token`
+   forwarding is dropped (the session token is self-contained). The session token is cached
+   module-level keyed by `imsOrgId` (TTL under 15 min), so a warm container reuses it across
+   invocations for the same customer org, collapsing the mint+login to zero network calls.
+   New fallback reasons: `no_ims_org_id`, `ims_token_failed`, `session_token_auth_failed`
+   (401/403 — a static config problem: missing `brand:read` or wrong tenant), and
+   `session_token_failed` (transient/other). The login endpoint's error body is captured in
+   the structured log (`responseBody`) but never forwarded to Slack. **Infra required:**
+   register the worker as an S2S consumer with `brand:read` (multi-org scope), set
+   `SEMRUSH_S2S_*` + `LLMO_API_BASE_URL`, and — producer-side — `SEMRUSH_ADMIN_ELEMENT_API_KEY`
+   / `SEO_API_BASE_URL` in Vault per PR #3217. Until an org has a resolvable `imsOrgId`,
+   Semrush is skipped (`no_ims_org_id`) and the run uses the legacy source — consistent with
+   DRS scraping, which already requires `imsOrgId`.
+
+10. **Data route carries the `/api/v1` gateway prefix; data call has its own 60s timeout
+    (LLMO-6709).** Both refinements landed once the S2S flow was exercised end-to-end against
+    the real LLMO edge:
+    - **Gateway prefix.** The LLMO Fastly edge routes api-service under `/api/v1` (prod) /
+      `/api/ci` (non-prod). api-service registers the routes bare (`/v2/orgs/...`,
+      `/auth/s2s/login`), so the prefix must be added client-side to the external URL — the
+      login already carried it, but the bare `/v2/...` data URL did not and the edge rejected
+      it with a synthetic Varnish **400 in ~4ms** (before reaching api-service). One prefixed
+      base (`apiBaseUrl = baseUrl + LLMO_API_PREFIX`, default `/api/v1`) now feeds BOTH the
+      login and the data URL so they can't drift; override per-env with `LLMO_API_PREFIX`.
+      Confirmed against the UI's own `/api/v1/v2/...` network calls.
+    - **Data-call timeout.** `domain-urls` (all hosts, `platform=all`, `pageSize=1000`,
+      proxied api-service → Semrush v4-raw) routinely runs longer than the 10s login timeout
+      — 10s was aborting it (`Request timeout after 10000ms`). It now has its own
+      `SEMRUSH_TIMEOUT_MS = 60s` (a generic offsite-Semrush data-request timeout; the login
+      exchange keeps the 10s `FETCH_TIMEOUT_MS`); the Lambda budget is 900s, so 60s is safe
+      headroom. Overridable via `OFFSITE_SEMRUSH_TIMEOUT_MS` (invalid/absent → the 60s default),
+      clamped to a 2-min ceiling (`SEMRUSH_TIMEOUT_MAX_MS`) so an override can't approach the
+      900s budget and turn a clean degrade into a hard Lambda kill.
+
 ## Consequences
 
 - Enabling the flag can never silently zero out offsite (fallback), but the fallback
@@ -267,23 +326,28 @@ override (`enableSemrush`, Decision 7) is the intended tool for step 1: run a si
 request against the real Semrush proxy on one site and confirm the auth path works
 end-to-end before flipping the env var fleet-wide.
 
-1. **Auth/authz verified (LLMO-6709).** Confirm the worker's **service** IMS token is
-   accepted by the Semrush proxy end-to-end. Confirm `tracingFetch` does not emit the
-   `Authorization` header into traces/spans (service-bearer leak).
+1. **Auth/authz verified (LLMO-6709) — now the S2S consumer session-token flow (Decision 9).**
+   Confirm the worker is registered as an S2S consumer with `brand:read`, `SEMRUSH_S2S_*` +
+   `LLMO_API_BASE_URL` are set, and the producer-side Vault keys are provisioned; then confirm
+   the login exchange + `domain-urls` read succeed end-to-end on one canary org. Confirm
+   `tracingFetch` does not emit the `Authorization` header (IMS token or session token) into
+   traces/spans.
 2. **`dataSource` shipped** (this PR) — so parity can be measured.
 3. **Shadow-run parity on a canary site (LLMO-6711)** — top-70 overlap per bucket vs legacy.
 4. **Fleet enable** per environment — **US markets only** until region scoping (LLMO-6710) closes.
 
 ## Configuration / client-convention debt (to resolve before the 3rd caller)
 
-This loader reads `SPACECAT_API_URI` and mints an **IMS service bearer**; `brand-resolver.js`
-reads `SPACECAT_API_BASE_URL` and uses **`x-api-key`** — for the *same* spacecat-api-service.
-The IMS scheme is justified here (the Elements proxy must forward a bearer to Semrush), but
-**two base-URL env vars + two auth schemes** can drift (one caller repointed to stage/prod, the
-other not → IMS traffic to an untrusted issuer → 401 → silent legacy fallback). Documented as
-debt: pick one base-URL env var and one api-service client convention (a shared helper) **before
-the `cited-domains` follow-up adds a third caller** that copies whichever it finds first. A
-tracking ticket will be filed before this debt is resolved; not required to close this PR.
+This loader reads `LLMO_API_BASE_URL` and uses the **S2S consumer session-token** flow
+(Decision 9); `brand-resolver.js` reads `SPACECAT_API_BASE_URL` and uses **`x-api-key`** — for
+the *same* spacecat-api-service. The session-token scheme is required here (only S2S consumers
+may read the Semrush-backed routes), but **two base-URL env vars + two auth schemes** can drift
+(one caller repointed to stage/prod, the other not → traffic to the wrong host/issuer → 401 →
+silent legacy fallback). Documented as debt: pick one base-URL env var and one api-service
+client convention (a shared helper) **before the next S2S-backed source adds a third caller**
+that copies whichever it finds first — the org-id → IMS-token → session-token sequence in
+particular is a good extraction candidate the moment a second consumer needs it. A tracking
+ticket will be filed before this debt is resolved; not required to close this PR.
 
 ## Alternatives Considered
 

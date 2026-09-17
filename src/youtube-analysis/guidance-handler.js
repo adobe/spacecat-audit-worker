@@ -14,6 +14,7 @@ import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
 import { syncSuggestions } from '../utils/data-access.js';
+import { indexOffsiteOpportunityByUrl } from '../common/offsite-lookup-index.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { postMessageOptional, buildAnalysisVisibilityMessage } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
@@ -39,6 +40,21 @@ import {
 } from '../common/offsite-retention.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.YOUTUBE_ANALYSIS;
+
+// Kept independent from cited/reddit on purpose (ADR 006). `insights.content.sources` is used
+// rather than `insights.comments.sources`: a video can have no comments, so `content` is the
+// superset.
+export function getOpportunityUrls(opportunity) {
+  const sources = opportunity.getData()?.dashboard?.analytics?.performance
+    ?.insights?.content?.sources ?? [];
+  return sources.map((source) => source.url);
+}
+
+export function getSuggestionUrls(suggestion) {
+  const sources = suggestion.getData()?.bindings?.sources ?? [];
+  return sources.map((source) => source.url);
+}
+
 // Human prefix for the two shared, untouched utils that still log via a passed-in prefix
 // string (logOffsiteLlmUsage + applyScopeToOpportunity). All other logging in this file goes
 // through the bound offsite logger (createOffsiteLogger), which emits the same prefix.
@@ -263,6 +279,21 @@ export default async function handler(message, context) {
 
     logHousekeepingSummary(ologOpp, {
       auditType, suggestionsSummary, snapshotsSummary, suggestionsErrored, snapshotsErrored,
+    });
+
+    // Runs after housekeeping so the index never picks up a suggestion housekeeping just deleted.
+    // Always runs, including for a suppressed run's IGNORED snapshot: the index carries no status
+    // of its own, so lifecycle visibility (hiding an IGNORED opportunity, and - pending a matching
+    // fix on the read side - a suppressed opportunity's suggestions) is the reader's job, exactly
+    // as it already is for the primary tables. See ADR 006. Best-effort: lookup-index.js returns
+    // { error } instead of throwing, so this call never fails an otherwise successful persist.
+    await indexOffsiteOpportunityByUrl({
+      context,
+      opportunity,
+      auditType,
+      getOpportunityUrls,
+      getSuggestionUrls,
+      olog: ologOpp,
     });
 
     if (auditId) {

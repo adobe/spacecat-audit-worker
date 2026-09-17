@@ -41,14 +41,16 @@ without already knowing the code.
 We re-partitioned the offsite event taxonomy into five phases — `audit_orchestration`,
 `data_acquisition`, `audit_analysis`, `audit_persistence`, `audit_housekeeping` — each with a real,
 unconditional `_start`/`_end` boundary pair, and reassigned/merged events along phase and
-question boundaries rather than code-location boundaries.
+question boundaries rather than code-location boundaries. (A sixth phase, `audit_funneling`, joined
+this same fixed-boundary-pair structure later — see Consequences and ADR
+[006](006-lookup-service-write-foundation.md).)
 
 1. **Every phase gets an unconditional `_start` and `_end`, with no exceptions.** Even phases that
    previously had no explicit start marker (`data_acquisition`, `audit_persistence`,
    `audit_housekeeping`) now emit one unconditionally, as the first line of that phase's work. This
-   makes "how far did this run get" a single grep across five event names, independent of audit
-   type or outcome, instead of inferring phase boundaries from whichever event happened to fire
-   next.
+   makes "how far did this run get" a single grep across the fixed set of phase names, independent
+   of audit type or outcome, instead of inferring phase boundaries from whichever event happened to
+   fire next.
 
 2. **Control-plane decisions live in `audit_orchestration`, regardless of when they fire at
    runtime.** Brand scope resolution (`audit_orchestration_brand_scope_resolved`), the
@@ -144,9 +146,23 @@ helper, the offsite-only post-processor pattern for the audit-persist log, and t
 
 ## Consequences
 
-- Every offsite run now has exactly five `_start`/`_end` boundary pairs to check, regardless of
-  audit type or how far the run got — `stats count by audit, event` where `event` ends in `_start`
-  or `_end` gives a phase-completion funnel for free.
+- Every offsite run has a fixed set of `_start`/`_end` boundary pairs to check for the phases it
+  goes through, regardless of how far the run got — `stats count by audit, event` where `event`
+  ends in `_start` or `_end` gives a phase-completion funnel for free. Five pairs are common to
+  every offsite audit type and cover getting a result onto the customer's site
+  (`audit_orchestration`, `data_acquisition`, `audit_analysis`, `audit_persistence`,
+  `audit_housekeeping`); a sixth, **audit funneling** (`audit_funneling_start` /
+  `audit_funneling_end`), is present only for the audit types that have a funneling capability, and
+  covers what happens once a result exists — making it resolvable from a URL, claim, or topic. A
+  funnel built against all six pairs must expect the sixth to be legitimately absent for an audit
+  type with no funneling capability, not read it as a truncated run. Its first capability is
+  writing source URLs into the shared lookup index for the four offsite types that have one (ADR
+  [006](006-lookup-service-write-foundation.md)); the sync-outcome event
+  (`audit_funneling_index_url_synced`) names the URL lookup dimension in the event itself rather
+  than in a `dimension` field, so a later Topic or Claim sync gets its own
+  `audit_funneling_index_topic_synced`/`audit_funneling_index_claim_synced` event — independently
+  queryable by name, instead of a shared name split by a field — while still sharing the phase's
+  one `_start`/`_end` pair.
 - Dashboards and alerts built against ADR 002's original event names (e.g.
   `audit_persistence_opportunity_persisted`, `data_acquisition_scrape_job_submitted`) must be
   updated to the current names; there is no dual-emission period — the rename happened in the same

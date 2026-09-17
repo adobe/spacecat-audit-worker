@@ -1244,6 +1244,9 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
     const scrapeForbiddenCount = mergedPages.filter(
       (p) => p.scrapeError?.statusCode === 403,
     ).length;
+    const urlsRedirected = mergedPages.filter(
+      (p) => p.scrapingStatus === 'redirect',
+    ).length;
 
     const statusSummary = {
       baseUrl: auditUrl,
@@ -1258,6 +1261,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       scrapeForbidden: auditResult.scrapeForbidden ?? false,
       scrapeForbiddenCount,
       scrapeForbiddenSince: auditResult.scrapeForbiddenSince ?? existingStatus.scrapeForbiddenSince,
+      urlsRedirected,
       lastAuditSuccess: auditResult.lastAuditSuccess !== false,
       pages: mergedPages,
     };
@@ -1289,7 +1293,7 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
  * @param {number} urlsToCheckLength - Fallback count when ScrapeUrl is unavailable
  * @param {Object} context - Audit context with dataAccess, s3Client, env, log
  * @returns {Promise<{urlsSubmittedForScraping: number, scrapeForbiddenCount: number,
- *   scrapeForbidden: boolean, missingPages: Object[]}>}
+ *   scrapeForbidden: boolean, missingPages: Object[], redirectedUrls: string[]}>}
  */
 export async function getScrapeJobStats(
   scrapeJobId,
@@ -1308,6 +1312,7 @@ export async function getScrapeJobStats(
       scrapeForbiddenCount: 0,
       missingPages: [],
       submittedUrlSet: null,
+      redirectedUrls: [],
     };
   }
 
@@ -1321,6 +1326,7 @@ export async function getScrapeJobStats(
       scrapeForbiddenCount: completeForbiddenCount,
       missingPages: [],
       submittedUrlSet: null,
+      redirectedUrls: [],
     };
   }
 
@@ -1341,13 +1347,13 @@ export async function getScrapeJobStats(
         const scrapeJsonKey = getS3Path(url, scrapeJobId, 'scrape.json');
         const metadata = await getObjectFromKey(s3Client, bucketName, scrapeJsonKey, log)
           .catch(() => null);
-        return { url, metadata };
+        return { url, metadata, status: su.getStatus?.() };
       }),
     );
 
-    const missingPages = missingPagesRaw.map(({ url, metadata }) => ({
+    const missingPages = missingPagesRaw.map(({ url, metadata, status }) => ({
       url,
-      scrapingStatus: 'failed',
+      scrapingStatus: status === 'REDIRECT' ? 'redirect' : 'failed',
       needsPrerender: false,
       ...(metadata?.error && { scrapeError: metadata.error }),
     }));
@@ -1356,12 +1362,16 @@ export async function getScrapeJobStats(
     const missingForbiddenCount = missingPages
       .filter((p) => p.scrapeError?.statusCode === 403).length;
     const scrapeForbiddenCount = completeForbiddenCount + missingForbiddenCount;
+    const redirectedUrls = missingPages
+      .filter((p) => p.scrapingStatus === 'redirect')
+      .map((p) => p.url);
 
     return {
       urlsSubmittedForScraping: allScrapeUrls.length,
       scrapeForbiddenCount,
       missingPages,
       submittedUrlSet: new Set(allScrapeUrls.map((su) => su.getUrl())),
+      redirectedUrls,
     };
   } catch (e) {
     log.warn(`${LOG_PREFIX} Failed to fetch ScrapeUrl stats for scrapeJobId=${scrapeJobId}, using fallback: ${e.message}`);
@@ -1370,6 +1380,7 @@ export async function getScrapeJobStats(
       scrapeForbiddenCount: completeForbiddenCount,
       missingPages: [],
       submittedUrlSet: null,
+      redirectedUrls: [],
     };
   }
 }
@@ -1452,6 +1463,7 @@ export async function processContentAndGenerateOpportunities(context) {
       scrapeForbiddenCount,
       missingPages,
       submittedUrlSet,
+      redirectedUrls,
     } = await getScrapeJobStats(scrapeJobId, comparisonResults, urlCount, context);
 
     log.info(`${LOG_PREFIX} Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbiddenCount=${scrapeForbiddenCount}, totalUrlsChecked=${comparisonResults.length}, isPaidLLMOCustomer=${isPaid}`);
@@ -1488,11 +1500,16 @@ export async function processContentAndGenerateOpportunities(context) {
     // Exclude deployed URLs — don't mark their suggestions outdated regardless of needsPrerender.
     // isDeployedAtEdge=true means prerender is already active at CDN level (via RCV, LLMO
     // side-effect, or domain-wide deployment); no authoritative "resolved" judgment applies.
-    const scrapedUrlsSet = new Set(
-      successfulComparisons
+    // Redirected URLs are unioned in too: they're absent from successfulComparisons (never part
+    // of comparisonResults at all), but they represent a definitive, non-retryable outcome for
+    // this run's scope, so they should count as "examined" for the outdating coverage guard
+    // in handleOutdatedSuggestions (LLMO-6423) even though they never generate a suggestion.
+    const scrapedUrlsSet = new Set([
+      ...successfulComparisons
         .filter((r) => !r.isDeployedAtEdge)
         .map((r) => r.url),
-    );
+      ...redirectedUrls,
+    ]);
 
     const auditResult = {
       totalUrlsChecked: comparisonResults.length,
@@ -1506,10 +1523,11 @@ export async function processContentAndGenerateOpportunities(context) {
       scrapeForbidden,
       scrapeForbiddenSince,
       scrapeForbiddenCount,
+      urlsRedirected: redirectedUrls.length,
       lastAuditSuccess: true,
     };
 
-    log.info(`${LOG_PREFIX} Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapeForbiddenCount=${scrapeForbiddenCount}, scrapingErrorRate=${scrapingErrorRate}%`);
+    log.info(`${LOG_PREFIX} Scraping metrics for baseUrl=${site.getBaseURL()}, siteId=${siteId}. urlsSubmittedForScraping=${urlsSubmittedForScraping}, urlsScrapedSuccessfully=${successfulComparisons.length}, scrapeForbiddenCount=${scrapeForbiddenCount}, urlsRedirected=${redirectedUrls.length}, scrapingErrorRate=${scrapingErrorRate}%`);
 
     let opportunityWithSuggestions = null;
 

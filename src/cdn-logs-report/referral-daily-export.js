@@ -16,6 +16,7 @@ import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src/common/traffic.js';
 import { joinBaseAndPath } from '../utils/url-utils.js';
 import { loadSql, getImporterS3Client } from './utils/report-utils.js';
+import { validateCountryCode } from '../common/country-codes.js';
 import { weeklyBreakdownQueries } from './utils/query-builder.js';
 import { buildClassificationRows, serializeClassificationCsv, canonicalizeUrlPath } from '../llmo-referral-traffic-daily/classify.js';
 import { fetchAgenticUrlClassificationRules } from '../common/agentic-url-classification-rules.js';
@@ -70,6 +71,10 @@ async function ensureAthenaDatabase(athenaClient, databaseName) {
 export function mapToReferralCsvRows(rawRows, site, trafficDate) {
   const baseURL = site.getBaseURL();
   const siteHost = new URL(baseURL).hostname;
+  // Mirror the agentic path (agentic-traffic-mapper): validate the URL-path-derived
+  // region against the ISO allow-list + the site's ignore list so non-country path
+  // segments (EN/CS/UQ/…) collapse to GLOBAL instead of showing as fake markets.
+  const siteIgnoreList = site.getConfig?.()?.getLlmoCountryCodeIgnoreList?.() || [];
   const grouped = new Map();
 
   for (const row of rawRows) {
@@ -80,7 +85,7 @@ export function mapToReferralCsvRows(rawRows, site, trafficDate) {
     } = row;
     const device = row.device || '';
     const normalizedDate = (row.date || '') || trafficDate;
-    const region = row.region || 'GLOBAL';
+    const region = validateCountryCode(row.region, siteIgnoreList);
     const rowPageviews = row.pageviews;
 
     // Canonical url_path (chunk 7) — one form shared with the optel producer so the

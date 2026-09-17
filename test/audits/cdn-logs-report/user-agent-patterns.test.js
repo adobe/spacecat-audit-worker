@@ -10,10 +10,17 @@
  * governing permissions and limitations under the License.
  */
 
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 
 use(sinonChai);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SQL_PROVIDERS_DIR = path.join(__dirname, '../../../src/cdn-analysis/sql');
 
 describe('User Agent Patterns', () => {
   let userAgentPatterns;
@@ -41,7 +48,6 @@ describe('User Agent Patterns', () => {
       // Google AI agents
       expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('googleai');
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google$');
-      expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Gemini-Deep-Research');
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google-NotebookLM');
       expect(PROVIDER_USER_AGENT_PATTERNS.googleai).to.include('Google-?Agent');
 
@@ -56,6 +62,17 @@ describe('User Agent Patterns', () => {
 
       expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('bing');
       expect(PROVIDER_USER_AGENT_PATTERNS.bing).to.include('Bingbot');
+    });
+
+    it('includes only the supported Meta reporting user agents', () => {
+      const { PROVIDER_USER_AGENT_PATTERNS } = userAgentPatterns;
+      const pattern = PROVIDER_USER_AGENT_PATTERNS.meta;
+      const regex = new RegExp(pattern.replace('(?i)', ''), 'i');
+
+      expect(regex.test('Meta-ExternalAgent/1.1')).to.equal(true);
+      expect(regex.test('Meta-ExternalFetcher/1.1')).to.equal(true);
+      expect(regex.test('meta-webindexer/1.0')).to.equal(false);
+      expect(regex.test('Meta-Muse-User/1.0')).to.equal(false);
     });
 
     it('keeps provider patterns free of the Adobe-internal exclusion (handled in the filter)', () => {
@@ -115,9 +132,40 @@ describe('User Agent Patterns', () => {
       expect(filter).to.include('ChatGPT');
       expect(filter).to.include('Perplexity');
       expect(filter).to.include('Google-?Agent');
-      expect(filter).to.include('Gemini-Deep-Research');
       expect(filter).to.include('Google-NotebookLM');
       expect(filter).to.include('Claude');
+      expect(filter).to.include('Shap(Bot|-User)');
+      expect(filter).to.include('Manus-User');
+      expect(filter).to.include('Keenable-User');
+      expect(filter).to.include('meta-external(agent|fetcher)');
+    });
+
+    it('does not broaden reporting to ingestion-only Google user agents', () => {
+      const { buildUserAgentFilter } = cdnUtils;
+      const filter = buildUserAgentFilter();
+
+      [
+        'GoogleOther',
+        'Google-GeminiNotebook',
+        'Google-AdWords',
+        'Google-Lens',
+      ].forEach((token) => expect(filter).to.not.include(token));
+      expect(filter).to.not.include('meta-webindexer');
+      expect(filter).to.not.include('Meta-Muse-User');
+    });
+
+    it('allows both supported Meta user agents through the generated report filter', () => {
+      const { buildUserAgentFilter } = cdnUtils;
+      const filter = buildUserAgentFilter();
+      const [, metaPattern] = filter.match(
+        /REGEXP_LIKE\(user_agent, '([^']*meta-external[^']*)'\)/,
+      );
+      const regex = new RegExp(metaPattern.replace('(?i)', ''), 'i');
+
+      expect(regex.test('Meta-ExternalAgent/1.1')).to.equal(true);
+      expect(regex.test('Meta-ExternalFetcher/1.1')).to.equal(true);
+      expect(regex.test('meta-webindexer/1.0')).to.equal(false);
+      expect(regex.test('Meta-Muse-User/1.0')).to.equal(false);
     });
   });
 
@@ -148,6 +196,36 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include("LIKE '%com.anthropic.claude%' THEN 'Media fetchers'");
       expect(sql).to.include("LIKE '%claude/%' THEN 'Media fetchers'");
     });
+
+    it('classifies Google-NotebookLM as Chatbots (Research merged into Chatbots)', () => {
+      const { buildAgentTypeClassificationSQL } = userAgentPatterns;
+      const sql = buildAgentTypeClassificationSQL();
+
+      expect(sql).to.include("LIKE '%google-notebooklm%' THEN 'Chatbots'");
+      expect(sql).to.not.include('Research');
+      expect(sql).to.not.include('gemini-deep-research');
+      expect(sql).to.not.include('googleagent-mariner');
+    });
+
+    it('classifies new agentic search/user bots', () => {
+      const { buildAgentTypeClassificationSQL } = userAgentPatterns;
+      const sql = buildAgentTypeClassificationSQL();
+
+      expect(sql).to.include("LIKE '%shapbot%' THEN 'Web search crawlers'");
+      expect(sql).to.include("LIKE '%shap-user%' THEN 'Chatbots'");
+      expect(sql).to.include("LIKE '%manus-user%' THEN 'Chatbots'");
+      expect(sql).to.include("LIKE '%keenable-user%' THEN 'Web search crawlers'");
+    });
+
+    it('classifies Meta agents by their first-party request semantics', () => {
+      const { buildAgentTypeClassificationSQL } = userAgentPatterns;
+      const sql = buildAgentTypeClassificationSQL();
+
+      // ExternalAgent crawls/indexes for model and product improvement, like GPTBot/ClaudeBot.
+      expect(sql).to.include("LIKE '%meta-externalagent%' THEN 'Training bots'");
+      // ExternalFetcher performs user-requested retrieval, like the existing *-User chatbot UAs.
+      expect(sql).to.include("LIKE '%meta-externalfetcher%' THEN 'Chatbots'");
+    });
   });
 
   describe('buildUserAgentDisplaySQL', () => {
@@ -164,6 +242,8 @@ describe('User Agent Patterns', () => {
       expect(sql).to.include('GoogleBot');
       expect(sql).to.include('BingBot');
       expect(sql).to.include('Google-Extended');
+      expect(sql).to.include("LIKE '%meta-externalagent%' THEN 'Meta-ExternalAgent'");
+      expect(sql).to.include("LIKE '%meta-externalfetcher%' THEN 'Meta-ExternalFetcher'");
     });
 
     it('collapses Claude desktop/iOS client UAs into a single "Claude Clients" bucket', () => {
@@ -184,9 +264,7 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('PerplexityBot')).to.equal('Perplexity');
       expect(inferProviderFromUserAgent('ClaudeBot')).to.equal('Anthropic');
       expect(inferProviderFromUserAgent('Anthropic-SearchBot')).to.equal('Anthropic');
-      expect(inferProviderFromUserAgent('Gemini-Deep-Research')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('GoogleAgent-Chrome')).to.equal('Gemini');
-      expect(inferProviderFromUserAgent('GoogleAgent-Mariner')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('GoogleAgent-URLContext')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('GoogleAgent-Shopping')).to.equal('Gemini');
       expect(inferProviderFromUserAgent('Google-Agent')).to.equal('Gemini');
@@ -196,7 +274,109 @@ describe('User Agent Patterns', () => {
       expect(inferProviderFromUserAgent('BingBot')).to.equal('Bing');
       expect(inferProviderFromUserAgent('MistralAI-Search')).to.equal('MistralAI');
       expect(inferProviderFromUserAgent('Amazonbot/0.1')).to.equal('Amazon');
+      expect(inferProviderFromUserAgent('Shap-User/0.1.0')).to.equal('Parallel.ai');
+      expect(inferProviderFromUserAgent('ShapBot/0.1.0')).to.equal('Parallel.ai');
+      expect(inferProviderFromUserAgent('Manus-User/1.0')).to.equal('Manus');
+      expect(inferProviderFromUserAgent('Keenable-User/1.0')).to.equal('Keenable.ai');
+      expect(inferProviderFromUserAgent('Meta-ExternalAgent')).to.equal('Meta');
+      expect(inferProviderFromUserAgent('Meta-ExternalFetcher')).to.equal('Meta');
+      // regexes must stay as specific as PROVIDER_USER_AGENT_PATTERNS -- not broad
+      // substring matches that would misattribute an unrelated bot's provider
+      expect(inferProviderFromUserAgent('reshape-bot/1.0')).to.equal('Other');
+      expect(inferProviderFromUserAgent('manuscript-crawler/1.0')).to.equal('Other');
+      expect(inferProviderFromUserAgent('unkeenable-thing/1.0')).to.equal('Other');
       expect(inferProviderFromUserAgent('something-unknown')).to.equal('Other');
+    });
+  });
+
+  describe('CDN ingestion SQL (src/cdn-analysis/sql/*/insert-aggregated.sql)', () => {
+    // Each provider's insert-aggregated.sql independently duplicates the "match known
+    // LLM-related user-agents" REGEXP_LIKE inclusion list (different column name per
+    // CDN, same regex literal) -- a UA that isn't in *this* list never reaches the
+    // aggregated table, so Gate 1 (buildUserAgentFilter) never even sees it. This
+    // guards that every provider stays in sync and that new bots are present here too.
+    const providerDirs = fs.readdirSync(SQL_PROVIDERS_DIR)
+      .filter((name) => fs.statSync(path.join(SQL_PROVIDERS_DIR, name)).isDirectory());
+
+    function extractUaInclusionPattern(sql) {
+      const match = sql.match(/match known LLM-related user-agents\s*\n\s*AND REGEXP_LIKE\([^,]+,\s*'([^']+)'\)/);
+      return match?.[1] ?? null;
+    }
+
+    const patternsByProvider = Object.fromEntries(
+      providerDirs.map((provider) => {
+        const sql = fs.readFileSync(path.join(SQL_PROVIDERS_DIR, provider, 'insert-aggregated.sql'), 'utf8');
+        return [provider, extractUaInclusionPattern(sql)];
+      }),
+    );
+
+    it('has the UA inclusion regex in every provider file', () => {
+      providerDirs.forEach((provider) => {
+        expect(patternsByProvider[provider], `missing UA inclusion pattern in ${provider}`).to.not.be.null;
+      });
+    });
+
+    it('keeps the UA inclusion regex identical across every CDN provider', () => {
+      const [first, ...rest] = providerDirs;
+      rest.forEach((provider) => {
+        expect(patternsByProvider[provider], `${provider} drifted from ${first}`).to.equal(patternsByProvider[first]);
+      });
+    });
+
+    it('includes every new agentic bot added in LLMO-7325', () => {
+      const pattern = patternsByProvider[providerDirs[0]];
+
+      expect(pattern).to.include('Shap(Bot|-User)');
+      expect(pattern).to.include('Manus-User');
+      expect(pattern).to.include('Keenable-User');
+      expect(pattern).to.include('Google-NotebookLM');
+    });
+
+    it('includes every ingestion-only Google and Meta user-agent token', () => {
+      const pattern = patternsByProvider[providerDirs[0]];
+
+      [
+        'GoogleOther',
+        'Google-GeminiNotebook',
+        'Google-AdWords',
+        'Google-Lens',
+        'meta-externalagent',
+        'meta-externalfetcher',
+      ].forEach((token) => expect(pattern).to.include(token));
+      expect(pattern).to.not.include('Meta-Muse-User');
+    });
+
+    it('matches ingestion-only user-agent variants case-insensitively', () => {
+      const pattern = patternsByProvider[providerDirs[0]];
+      const regex = new RegExp(pattern.replace('(?i)', ''), 'i');
+
+      [
+        'GoogleOther/1.0',
+        'Google-GeminiNotebook/1.0',
+        'Google-Adwords',
+        'Google-Adwords-Instant',
+        'Google-Adwords-Instant-Mobile',
+        'Google-AdWords-Express',
+        'Google-Lens',
+        'META-EXTERNALAGENT/1.1',
+        'Meta-ExternalFetcher/1.1',
+      ].forEach((userAgent) => expect(regex.test(userAgent), userAgent).to.equal(true));
+    });
+
+    it('keeps Meta reporting matches within the Meta ingestion allowlist', () => {
+      const ingestionPattern = patternsByProvider[providerDirs[0]];
+      const ingestionRegex = new RegExp(ingestionPattern.replace('(?i)', ''), 'i');
+      const reportingPattern = userAgentPatterns.PROVIDER_USER_AGENT_PATTERNS.meta;
+      const reportingRegex = new RegExp(reportingPattern.replace('(?i)', ''), 'i');
+
+      ['Meta-ExternalAgent/1.1', 'Meta-ExternalFetcher/1.1'].forEach((userAgent) => {
+        expect(ingestionRegex.test(userAgent), `${userAgent} ingestion`).to.equal(true);
+        expect(reportingRegex.test(userAgent), `${userAgent} reporting`).to.equal(true);
+      });
+
+      ['meta-webindexer/1.0', 'Meta-Muse-User/1.0'].forEach((userAgent) => {
+        expect(reportingRegex.test(userAgent), `${userAgent} reporting`).to.equal(false);
+      });
     });
   });
 });

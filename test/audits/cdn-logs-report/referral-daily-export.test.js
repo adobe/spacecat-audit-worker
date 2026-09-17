@@ -180,6 +180,35 @@ describe('referral daily export', function referralDailyExportTests() {
     );
   });
 
+  it('validates region against ISO + site ignore list (agentic parity)', async () => {
+    const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'chatgpt' });
+    const module = await loadModule(classifyStub);
+    const site = makeSite({
+      getConfig: () => ({
+        getLlmoCdnlogsFilter: () => [],
+        getLlmoCountryCodeIgnoreList: () => ['US'],
+      }),
+    });
+
+    const rows = module.mapToReferralCsvRows(
+      [
+        {
+          path: '/a', referrer: 'chatgpt.com', device: 'desktop', date: '2026-03-31', region: 'US', pageviews: 3,
+        },
+        {
+          path: '/b', referrer: 'chatgpt.com', device: 'desktop', date: '2026-03-31', region: 'EN', pageviews: 2,
+        },
+      ],
+      site,
+      '2026-03-31',
+    );
+
+    // US is a valid ISO code but ignored for this site; EN is a language, not a
+    // country. Both collapse to GLOBAL instead of showing as fake markets.
+    expect(rows).to.have.length(2);
+    expect(rows.every((r) => r.region === 'GLOBAL')).to.equal(true);
+  });
+
   it('omits org_id when site has no organization', async () => {
     const classifyStub = sandbox.stub().returns({ type: 'earned', category: 'llm', vendor: 'perplexity' });
     const module = await loadModule(classifyStub);
@@ -573,7 +602,7 @@ describe('referral daily export', function referralDailyExportTests() {
           tracking_param: null,
           device: null,     // triggers row.device || ''
           date: '2026-03-31',
-          region: null,     // triggers row.region || 'GLOBAL'
+          region: null,     // validateCountryCode(null) -> GLOBAL
           pageviews: null,  // triggers Number(null) || 0
         }]),
       },

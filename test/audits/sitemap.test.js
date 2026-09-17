@@ -279,6 +279,88 @@ describe('Sitemap Audit', () => {
         url,
       });
     });
+
+    it('probes overrideBaseURL instead of baseURL when it is a valid http(s) URL', async () => {
+      const overrideBaseURL = 'https://override-domain.adobe';
+      const site = {
+        getId: sandbox.stub().returns('site-123'),
+        getConfig: sandbox.stub().returns({
+          getFetchConfig: sandbox.stub().returns({ overrideBaseURL }),
+        }),
+      };
+
+      nock(overrideBaseURL).get('/robots.txt').reply(404);
+
+      const result = await sitemapAuditRunner(url, context, site);
+      expect(result).to.eql({
+        auditResult: {
+          reasons: [
+            {
+              error: ERROR_CODES.CANNOT_READ_ROBOTS,
+              value: `Fetch error for ${overrideBaseURL}/robots.txt Status: 404`,
+            },
+          ],
+          url: overrideBaseURL,
+        },
+        fullAuditRef: url,
+        url,
+      });
+    });
+
+    it('falls back to baseURL when overrideBaseURL is missing a http/https protocol', async () => {
+      const site = {
+        getId: sandbox.stub().returns('site-123'),
+        getConfig: sandbox.stub().returns({
+          getFetchConfig: sandbox.stub().returns({ overrideBaseURL: 'override-domain.adobe' }),
+        }),
+      };
+
+      nock(url).get('/robots.txt').reply(404);
+
+      const result = await sitemapAuditRunner(url, context, site);
+      expect(result).to.eql({
+        auditResult: {
+          reasons: [
+            {
+              error: ERROR_CODES.CANNOT_READ_ROBOTS,
+              value: `Fetch error for ${url}/robots.txt Status: 404`,
+            },
+          ],
+          url,
+        },
+        fullAuditRef: url,
+        url,
+      });
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/ignoring overrideBaseURL "override-domain.adobe"/),
+      );
+    });
+
+    it('uses baseURL as-is when site has no overrideBaseURL configured', async () => {
+      const site = {
+        getId: sandbox.stub().returns('site-123'),
+        getConfig: sandbox.stub().returns({
+          getFetchConfig: sandbox.stub().returns({}),
+        }),
+      };
+
+      nock(url).get('/robots.txt').reply(404);
+
+      const result = await sitemapAuditRunner(url, context, site);
+      expect(result).to.eql({
+        auditResult: {
+          reasons: [
+            {
+              error: ERROR_CODES.CANNOT_READ_ROBOTS,
+              value: `Fetch error for ${url}/robots.txt Status: 404`,
+            },
+          ],
+          url,
+        },
+        fullAuditRef: url,
+        url,
+      });
+    });
   });
 
   describe('fetchWithHeadFallback', () => {

@@ -150,10 +150,28 @@ export default async function handler(message, context) {
       cleanedUrls,
       effectiveBaseURL,
     );
+
+    // Drop root-domain fallbacks (homepage with no meaningful path).
+    // When Mystique can't access site content it falls back to the base URL,
+    // which passes filterBrokenSuggestedUrls (it returns 200) but is always
+    // worse than the parent-path fallback that runs below.
+    const nonRootSuggestedUrls = filteredSuggestedUrls.filter((url) => {
+      try {
+        const { pathname } = new URL(url);
+        return pathname !== '/' && pathname !== '';
+      } catch {
+        return true;
+      }
+    });
+
     const existingSuggestedUrls = Array.isArray(existingData.urlsSuggested)
       ? existingData.urlsSuggested.filter(Boolean)
       : [];
-    let nextSuggestedUrls = filteredSuggestedUrls;
+
+    // Handle AI rationale - omit it if all URLs were filtered out or none were provided
+    // This prevents storing an empty string which fails schema validation
+    let aiRationale = brokenLink.aiRationale || undefined;
+    let nextSuggestedUrls = nonRootSuggestedUrls;
     if (nextSuggestedUrls.length === 0) {
       if (existingSuggestedUrls.length > 0) {
         nextSuggestedUrls = existingSuggestedUrls;
@@ -164,15 +182,25 @@ export default async function handler(message, context) {
         if (parentFallback) {
           log.info(`[${opportunity.getType()}] Using parent path fallback: ${parentFallback} (broken: ${brokenUrl})`);
           nextSuggestedUrls = [parentFallback];
+          // Mystique suggested only the homepage but we replaced it with a parent
+          // path: Mystique's rationale was written about the homepage, not the
+          // parent path, so drop it. Scoped to this branch specifically (rather
+          // than an after-the-fact URL-membership check) so it can't also fire
+          // when we fell back to a prior run's existingSuggestedUrls above, which
+          // would otherwise wipe a still-valid existingData.aiRationale.
+          aiRationale = undefined;
+        } else if (filteredSuggestedUrls.length > 0) {
+          // No valid parent path exists — restore Mystique's homepage suggestion since it
+          // may be intentional (e.g. the entire section was removed) and is better than
+          // hardcoding the base URL with no context from Mystique
+          log.info(`[${opportunity.getType()}] No parent path found, keeping Mystique's root-domain suggestion (broken: ${brokenUrl})`);
+          nextSuggestedUrls = filteredSuggestedUrls;
         } else {
           nextSuggestedUrls = [effectiveBaseURL];
         }
       }
     }
 
-    // Handle AI rationale - omit it if all URLs were filtered out or none were provided
-    // This prevents storing an empty string which fails schema validation
-    let aiRationale = brokenLink.aiRationale || undefined;
     if (filteredSuggestedUrls.length === 0 && cleanedUrls.length > 0) {
       // All URLs were filtered out (likely invalid/broken):
       // fall back to base URL with no rationale, unless a previous run already stored valid URLs

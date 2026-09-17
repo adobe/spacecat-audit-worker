@@ -26,6 +26,7 @@ import {
   resolveDrsPollIntervalSeconds,
   resolveEnableBrandProfile,
   resolveEnableSemrush,
+  resolveEnableSemrushWithHardstop,
   resolveForwardedUrlLimit,
 } from '../utils/offsite-audit-utils.js';
 import {
@@ -119,26 +120,20 @@ const DOMAIN_ALIASES = Object.freeze({
 });
 
 /**
- * Normalizes a YouTube URL to keep only essential identifiers.
- * URL store canonicalizes URLs before storing, so we use the short form to match.
- * - /watch?v=VIDEO_ID → converts to short form https://youtu.be/VIDEO_ID
- * - /shorts/SHORT_ID → strips all query params
+ * Returns a YouTube URL byte-identical to what it was given (origin + pathname + query string) —
+ * NO param is dropped, not even ones beyond `v=`. Semrush's url-prompts keys prompts on the exact
+ * `CBF_source` string it returned; any extra query param (a tracking token, `t=`, `list=`, …) is
+ * part of that exact key, so stripping "just the extras" is itself a mismatch, not a cleanup —
+ * that was the bug in the previous version of this function. The `watch` vs `youtu.be` FORM is
+ * also left untouched; the two forms of one video are reconciled by video id at dedupe time (see
+ * the loader below), not by rewriting one into the other. Only the hash fragment is dropped — it
+ * is never sent to a server, so Semrush's source URL cannot include one.
  *
  * @param {URL} parsed - Parsed URL object
- * @returns {string} Normalized URL
+ * @returns {string} The URL exactly as given, minus any hash fragment
  */
 function normalizeYoutubeUrl(parsed) {
-  const { pathname } = parsed;
-
-  if (pathname.startsWith('/watch')) {
-    const videoId = parsed.searchParams.get('v');
-    if (videoId) {
-      return `https://youtu.be/${videoId}`;
-    }
-  }
-
-  // For other YouTube URLs (shorts, channels, playlists, etc.), strip query params
-  return `${parsed.origin}${pathname}`;
+  return `${parsed.origin}${parsed.pathname}${parsed.search}`;
 }
 
 /**
@@ -150,10 +145,13 @@ function normalizeYoutubeUrl(parsed) {
  * @returns {string} The normalized URL
  */
 function normalizeUrl(parsed, domain) {
-  let url = domain === 'youtube.com'
-    ? normalizeYoutubeUrl(parsed)
-    : `${parsed.origin}${parsed.pathname}`;
+  if (domain === 'youtube.com') {
+    // Preserved verbatim (see normalizeYoutubeUrl) — no trailing-slash trim, which is meant for
+    // the query-less path below and could otherwise corrupt a query string ending in `/`.
+    return normalizeYoutubeUrl(parsed);
+  }
 
+  let url = `${parsed.origin}${parsed.pathname}`;
   // Remove trailing slash (unless it's just the domain)
   if (url.endsWith('/') && parsed.pathname !== '/') {
     url = url.slice(0, -1);
@@ -721,6 +719,8 @@ async function notifyDrsResults(drsResults, baseURL, context, channelId, threadT
  *   scraping completes (see drs-status-handler.js) still honor the same per-run Semrush
  *   override originally requested on Slack, instead of silently reverting to the env var
  *   across the scrape round-trip — mirrors enableBrandProfile/urlLimit exactly.
+ * @param {boolean} [enableSemrushWithHardstop] - Forwarded identically so the debug hardstop
+ *   flag reaches those analysis audits after the scrape round-trip.
  */
 async function scheduleDrsStatusPoll(
   drsResults,
@@ -733,6 +733,7 @@ async function scheduleDrsStatusPoll(
   enableBrandProfile,
   urlLimit,
   enableSemrush,
+  enableSemrushWithHardstop,
 ) {
   const { sqs, dataAccess, log } = context;
   const olog = createOffsiteLogger(log, { audit: AUDIT.BRAND_PRESENCE, siteId });
@@ -764,6 +765,7 @@ async function scheduleDrsStatusPoll(
       ...(enableBrandProfile != null && { enableBrandProfile }),
       ...(urlLimit != null && { urlLimit }),
       ...(enableSemrush != null && { enableSemrush }),
+      ...(enableSemrushWithHardstop != null && { enableSemrushWithHardstop }),
     },
   }, null, pollIntervalSeconds);
 
@@ -806,6 +808,9 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
   const urlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
   const enableSemrushOverride = resolveEnableSemrush(auditContext, olog);
+  // Debug hardstop flag — this orchestrator only forwards it; the hardstop itself happens in
+  // the analysis audits (cited/youtube/reddit) triggered once DRS scraping completes.
+  const enableSemrushWithHardstop = resolveEnableSemrushWithHardstop(auditContext, olog);
 
   // Fail fast on an unrecognized scope: scoping to an unknown bucket would silently
   // empty every bucket and produce a no-op scrape → poll → re-trigger chain.
@@ -855,15 +860,11 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   let fallbackReason;
   // Per-run Slack override (resolveEnableSemrush) takes precedence over the env flag.
   // This is the mechanism for testing the Semrush path live on one site/run before
-  // flipping OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED fleet-wide (see the ADR).
+  // flipping OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED fleet-wide (see the ADR). Whichever
+  // way Semrush is enabled, a failure ALWAYS falls back to the legacy source (below) so a
+  // Semrush problem can never zero out offsite.
   const semrushEnabled = enableSemrushOverride
     ?? (context.env?.OFFSITE_BRAND_PRESENCE_SEMRUSH_ENABLED === 'true');
-  // Hard stop (NO legacy fallback) applies ONLY when a run EXPLICITLY opted into
-  // Semrush via the Slack override `enableSemrush:true` — a failure there must be
-  // visible, not masked by legacy. When Semrush was enabled by the env var (or the
-  // override is false/absent), a failure falls back to legacy so production can
-  // never be silently zeroed out.
-  const hardStopOnFailure = enableSemrushOverride === true;
   if (semrushEnabled) {
     // Semrush is the source when enabled. The loader returns the same allUrls
     // shape (count = exact citations); everything downstream (selectTopUrls ->
@@ -874,6 +875,10 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
       site,
       previousWeeks,
       context,
+      // Already resolved above (and reused for DRS scraping) — thread it through so the
+      // loader doesn't independently re-fetch it and risk scoping the session token to a
+      // different org than the rest of this run.
+      imsOrgId,
       siteHostname,
       diagnostics: semrushDiagnostics,
       onProgress: (text) => postMessageOptional(
@@ -889,39 +894,14 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
     // with size 0) is NOT a failure and continues as a normal zero-URL run.
     if (semrushUrls === null) {
       const reason = semrushDiagnostics.fallbackReason ?? 'semrush_failed';
-      // A deliberate entitlement-based skip is never a hard stop, even when this run
-      // explicitly forced Semrush on via enableSemrush:true — "no wasted calls, no
-      // errors" for a non-entitled brand must hold regardless of how Semrush was
-      // enabled. Hard-stop stays reserved for genuine technical failures (auth,
-      // outage, etc.) that a canary run wants surfaced, not for expected scoping.
-      const isEntitlementSkip = SEMRUSH_ENTITLEMENT_SKIP_REASONS.has(reason);
-      if (hardStopOnFailure && !isEntitlementSkip) {
-        // enableSemrush:true forced this run — surface the failure, no fallback.
-        olog.failure('data_acquisition_bp_data_semrush_read', `Semrush source failed (${reason}); hard stop — no legacy fallback (enableSemrush:true)`, {
-          peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
-        });
-        await postMessageOptional(
-          context,
-          channelId,
-          `:x: *offsite-brand-presence* for *${baseURL}* — Semrush source failed (${reason}); stopping (enableSemrush:true, no fallback).`,
-          { threadTs },
-        );
-        return {
-          auditResult: {
-            success: false,
-            error: `Semrush source failed (${reason}); hard stop (enableSemrush:true)`,
-            dataSource: 'semrush',
-            fallbackReason: reason,
-          },
-          fullAuditRef: finalUrl,
-        };
-      }
-      // Enabled by the env var (or override not forced, or an entitlement skip) —
-      // fall back to legacy so a Semrush problem never silently zeroes out offsite.
+      // On ANY Semrush failure — however Semrush was enabled (env var or the per-run
+      // Slack `enableSemrush:true` override) — fall back to the legacy source so a Semrush
+      // problem never silently zeroes out offsite.
       fallbackReason = reason;
-      // An entitlement-based skip is expected scoping, not a failure — it still deviates
-      // from the happy path for this run, so it stays warn/outcome=skip; a genuine
-      // technical failure is warn/outcome=degraded.
+      // An entitlement-based skip (`not_entitled` / `entitlement_check_failed`) is expected
+      // scoping, not a failure — it still deviates from the happy path for this run, so it
+      // stays warn/outcome=skip; a genuine technical failure is warn/outcome=degraded.
+      const isEntitlementSkip = SEMRUSH_ENTITLEMENT_SKIP_REASONS.has(reason);
       if (isEntitlementSkip) {
         olog.warn('data_acquisition_bp_data_semrush_read', `Semrush skipped (${reason}); falling back to PostgREST/SharePoint`, {
           outcome: OUTCOME.SKIP, peer: PEER.SEMRUSH, direction: 'inbound', source: 'semrush', reason,
@@ -959,13 +939,12 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
   // `no_workspace` | `no_client` | `check_failed`) — set only on the two entitlement
   // skip reasons (see the loader). Kept separate from `fallbackReason` so a wiring
   // bug (`no_client`) stays distinguishable from a one-off transient blip
-  // (`check_failed`) without changing the coarse-grained hard-stop-exemption contract.
+  // (`check_failed`) in diagnostics/auditResult.
   const entitlementReason = semrushDiagnostics?.entitlementReason;
 
-  // Legacy source: runs when the flag is off, OR when Semrush was env-enabled but
-  // failed (fallback). An enableSemrush:true run that failed already hard-stopped
-  // above — there is
-  // no legacy fallback on the Semrush path.
+  // Legacy source: runs when Semrush is disabled for this run, OR when Semrush was
+  // enabled (by the env var or the enableSemrush:true override) but failed — a failure
+  // always falls back here.
   if (!usedSemrush) {
     const brandPresenceData = await loadBrandPresenceData({
       siteId, site, previousWeeks, context,
@@ -1052,6 +1031,7 @@ export async function offsiteBrandPresenceRunner(finalUrl, context, site, auditC
         enableBrandProfile,
         urlLimit,
         enableSemrushOverride,
+        enableSemrushWithHardstop,
       );
     } catch (err) {
       // The DRS jobs were already submitted successfully, but with no poll ever scheduled,

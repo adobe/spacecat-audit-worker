@@ -42,6 +42,7 @@ describe('Reddit Analysis Handler', function () {
   let mockFilterUrlsByDrsStatus;
   let mockDrsClient;
   let mockPostMessageOptional;
+  let mockEnrichUrlsWithSemrushPrompts;
   let redditAnalysisHandler;
   let StoreEmptyError;
 
@@ -106,6 +107,7 @@ describe('Reddit Analysis Handler', function () {
     mockDrsClient = { isConfigured: sandbox.stub().returns(true) };
 
     mockPostMessageOptional = sandbox.stub().resolves({ success: true });
+    mockEnrichUrlsWithSemrushPrompts = sandbox.stub().callsFake(async ({ urls }) => urls);
 
     mockStoreClient = {
       getUrls: sandbox.stub().resolves(mockUrls),
@@ -144,6 +146,9 @@ describe('Reddit Analysis Handler', function () {
       },
       '../../../src/utils/slack-utils.js': {
         postMessageOptional: mockPostMessageOptional,
+      },
+      '../../../src/utils/url-prompts-semrush.js': {
+        enrichUrlsWithSemrushPrompts: mockEnrichUrlsWithSemrushPrompts,
       },
     });
 
@@ -253,6 +258,89 @@ describe('Reddit Analysis Handler', function () {
       );
 
       expect(result.auditResult.config.urlLimit).to.equal(3);
+    });
+
+    it('should not enrich with Semrush url-prompts when enableSemrush is not set', async () => {
+      const result = await redditAnalysisHandler.default.runner(baseURL, context, mockSite);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.storeData.urls).to.deep.equal(mockUrls);
+      expect(mockEnrichUrlsWithSemrushPrompts).to.not.have.been.called;
+    });
+
+    it('should enrich URLs via enrichUrlsWithSemrushPrompts when enableSemrush is true', async () => {
+      mockEnrichUrlsWithSemrushPrompts.resolves([
+        { ...mockUrls[0], isUrlFromSemrush: true, prompts: ['prompt one', 'prompt two'] },
+        { ...mockUrls[1], isUrlFromSemrush: true },
+      ]);
+
+      const result = await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { enableSemrush: 'true' } },
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      const [first, second] = result.auditResult.storeData.urls;
+      expect(first.isUrlFromSemrush).to.be.true;
+      expect(first.prompts).to.deep.equal(['prompt one', 'prompt two']);
+      expect(second.isUrlFromSemrush).to.be.true;
+      expect(second.prompts).to.be.undefined;
+      expect(mockEnrichUrlsWithSemrushPrompts).to.have.been.calledWithMatch({
+        site: mockSite, urls: mockUrls, limit: MYSTIQUE_URLS_LIMIT,
+      });
+    });
+
+    it('caps enrichment at a smaller urlLimit override', async () => {
+      await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { enableSemrush: 'true', urlLimit: 3 } },
+      );
+      expect(mockEnrichUrlsWithSemrushPrompts).to.have.been.calledWithMatch({ limit: 3 });
+    });
+
+    it('with enableSemrushWithHardstop:true, enriches then hardstops before Mystique (failed audit)', async () => {
+      mockEnrichUrlsWithSemrushPrompts.resolves([
+        { ...mockUrls[0], isUrlFromSemrush: true, prompts: ['p1', 'p2'] },
+        { ...mockUrls[1], isUrlFromSemrush: true },
+      ]);
+
+      const result = await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { enableSemrushWithHardstop: 'true' } },
+      );
+
+      expect(mockEnrichUrlsWithSemrushPrompts).to.have.been.called;
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.reason).to.equal('semrush_debug_halt');
+      expect(result.auditResult.storeData.urls[0].isUrlFromSemrush).to.be.true;
+      expect(result.auditResult.storeData.urls[0].prompts).to.deep.equal(['p1', 'p2']);
+      // Debug hardstop short-circuits before any downstream dispatch (Mystique post-processor
+      // also skips on success:false).
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('runs enrichment AND hardstops when both flags are set', async () => {
+      mockEnrichUrlsWithSemrushPrompts.resolves([
+        { ...mockUrls[0], isUrlFromSemrush: true, prompts: ['p'] },
+      ]);
+
+      const result = await redditAnalysisHandler.default.runner(
+        baseURL,
+        context,
+        mockSite,
+        { messageData: { enableSemrush: 'true', enableSemrushWithHardstop: 'true' } },
+      );
+
+      expect(mockEnrichUrlsWithSemrushPrompts).to.have.been.called;
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.reason).to.equal('semrush_debug_halt');
+      expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
     it('should set config.enableBrandProfile on auditResult from messageData.enableBrandProfile', async () => {
