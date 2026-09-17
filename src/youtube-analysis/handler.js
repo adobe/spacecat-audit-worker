@@ -24,8 +24,6 @@ import {
   resolveForwardedUrlLimit,
   resolveEnableBrandProfile,
   resolveEnableSemrush,
-  resolveEnableSemrushWithHardstop,
-  buildSemrushDebugHaltResult,
   requestOffsiteScrape,
   buildAnalysisScrapeStatusMessage,
   formatDrsExtras,
@@ -174,10 +172,7 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
   const enableBrandProfile = resolveEnableBrandProfile(auditContext, olog);
   const forwardedUrlLimit = resolveForwardedUrlLimit(auditContext, log, HUMAN_PREFIX);
   const enableSemrush = resolveEnableSemrush(auditContext, olog);
-  const enableSemrushWithHardstop = resolveEnableSemrushWithHardstop(auditContext, olog);
-  // Enrichment runs when EITHER flag is set; the hardstop (skip Mystique) is applied only for
-  // the `enableSemrushWithHardstop` debug flag.
-  const runSemrush = enableSemrush === true || enableSemrushWithHardstop === true;
+  const runSemrush = enableSemrush === true;
 
   try {
     const youtubeConfig = getYouTubeConfig(site);
@@ -215,12 +210,6 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
     const urlLimit = resolveMystiqueUrlLimit(auditContext, olog);
     const storeData = await fetchStoreData(siteId, context, site, runSemrush, urlLimit);
 
-    // Debug hardstop: `enableSemrushWithHardstop` runs the url-prompts enrichment above, then
-    // ends the audit here so nothing is dispatched to Mystique (the enrichment result is in the
-    // loader's summary log). Deliberately reports as a failed audit — see the ADR.
-    if (enableSemrushWithHardstop === true) {
-      return buildSemrushDebugHaltResult({ olog, url, storeData });
-    }
     // Whether this run's DRS scrape produced the content (poll-dispatched) or we are reusing
     // a prior scrape (direct/scheduled run) changes the log and Slack wording so the thread
     // reads as a coherent sequence rather than a contradictory "no scrape needed".
@@ -311,7 +300,6 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
-        enableSemrushWithHardstop,
         olog,
       );
       return {
@@ -357,7 +345,6 @@ async function runYouTubeAnalysisAudit(url, context, site, auditContext = {}) {
         enableBrandProfile,
         forwardedUrlLimit,
         enableSemrush,
-        enableSemrushWithHardstop,
         olog,
       );
       return {
