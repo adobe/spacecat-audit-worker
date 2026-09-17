@@ -54,6 +54,38 @@ export const PAGE_SIZE = 1000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
+ * Attempts for the `domain-urls` request before giving up and falling back to the
+ * DRS/BP (legacy) source. Only TRANSIENT failures (network error, timeout, HTTP 429,
+ * or 5xx) are retried; an auth rejection (401/403) or other 4xx is NOT retried — it
+ * will not recover mid-run, so retrying only triples latency before the inevitable
+ * fallback (LLMO-7671).
+ */
+export const SEMRUSH_MAX_FETCH_ATTEMPTS = 3;
+
+/**
+ * Default backoff between `domain-urls` retries (linear: `backoffMs × attempt`), giving
+ * a rate-limited/blipping upstream breathing room instead of hammering it. Tunable per
+ * environment with `OFFSITE_SEMRUSH_RETRY_BACKOFF_MS` (set '0' in tests to skip waiting).
+ */
+export const DEFAULT_SEMRUSH_RETRY_BACKOFF_MS = 500;
+
+const sleep = (ms) => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
+
+/**
+ * Resolves the retry backoff (ms) from env, falling back to the default. A non-numeric
+ * or negative value (incl. an unset env var) resolves to the default.
+ *
+ * @param {object} env
+ * @returns {number}
+ */
+function resolveRetryBackoffMs(env) {
+  const parsed = Number(env?.OFFSITE_SEMRUSH_RETRY_BACKOFF_MS);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_SEMRUSH_RETRY_BACKOFF_MS;
+}
+
+/**
  * Max chars of a non-2xx response body to log. The body of a rejected
  * serenity/Semrush call identifies the rejecter — api-service `requireImsBearer`
  * ("...send the x-promise-token header instead") vs a Semrush upstream error —
@@ -130,17 +162,18 @@ export function buildDomainUrlsUrl({
  *   full page came back (LLMO-6711 shadow-run parity signal — a starved run is visible on
  *   `diagnostics` without grepping logs).
  */
-async function fetchDomainUrls(url, headers, olog, pageSize) {
+async function fetchDomainUrlsOnce(url, headers, olog, pageSize, attempt, maxAttempts) {
   let response;
   const startedAt = Date.now();
   try {
     response = await fetch(url, { headers, timeout: FETCH_TIMEOUT_MS });
   } catch (error) {
     olog.warn('data_acquisition_bp_data_semrush_read', 'Fetch failed for domain-urls', {
-      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, reason: 'fetch_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
+      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, attempt, maxAttempts, reason: 'fetch_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
     }, error);
+    // Network error / timeout is transient — retryable.
     return {
-      rows: [], ok: false, authFailure: false, truncated: false,
+      rows: [], ok: false, authFailure: false, truncated: false, retryable: true,
     };
   }
 
@@ -151,7 +184,7 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     // vs Semrush upstream) — the key signal for the LLMO-6709 auth gate.
     const responseBody = await readErrorBodySnippet(response);
     const logFields = {
-      peer: PEER.SEMRUSH, direction: 'inbound', status: response.status, responseBody, durationMs,
+      peer: PEER.SEMRUSH, direction: 'inbound', status: response.status, responseBody, attempt, maxAttempts, durationMs,
     };
     if (authFailure) {
       // Distinct branch so a rejected service token is visible instead of being
@@ -164,8 +197,11 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
         ...logFields, reason: 'non_2xx_status', outcome: OUTCOME.DEGRADED,
       });
     }
+    // Retry only transient upstream failures (429 rate-limit / 5xx). An auth rejection
+    // (401/403) or other 4xx will not recover mid-run, so fall back immediately.
+    const retryable = !authFailure && (response.status === 429 || response.status >= 500);
     return {
-      rows: [], ok: false, authFailure, truncated: false,
+      rows: [], ok: false, authFailure, truncated: false, retryable,
     };
   }
 
@@ -174,10 +210,12 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     body = await response.json();
   } catch (error) {
     olog.warn('data_acquisition_bp_data_semrush_read', 'Could not parse domain-urls response', {
-      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, reason: 'parse_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
+      peer: PEER.SEMRUSH, direction: 'inbound', durationMs: Date.now() - startedAt, attempt, maxAttempts, reason: 'parse_failed', outcome: OUTCOME.DEGRADED, ...errorField(error),
     }, error);
+    // A 2xx with an unparseable body signals a broken contract, not a transient blip —
+    // retrying is unlikely to help, so fall back immediately.
     return {
-      rows: [], ok: false, authFailure: false, truncated: false,
+      rows: [], ok: false, authFailure: false, truncated: false, retryable: false,
     };
   }
 
@@ -191,8 +229,35 @@ async function fetchDomainUrls(url, headers, olog, pageSize) {
     });
   }
   return {
-    rows: raw.slice(0, pageSize), ok: true, authFailure: false, truncated,
+    rows: raw.slice(0, pageSize), ok: true, authFailure: false, truncated, retryable: false,
   };
+}
+
+/**
+ * Fetches the `domain-urls` page with up to `maxAttempts` tries, retrying only
+ * transient failures (network/timeout/429/5xx) with a linear backoff. An auth
+ * rejection (401/403) or other non-transient failure stops immediately — see
+ * `fetchDomainUrlsOnce` for the `retryable` classification (LLMO-7671).
+ *
+ * @returns {Promise<{ rows: object[], ok: boolean, authFailure: boolean,
+ *   truncated: boolean, attempts: number }>} `attempts` is how many tries were made.
+ */
+async function fetchDomainUrls(url, headers, olog, pageSize, { maxAttempts, backoffMs }) {
+  let last;
+  let attempt = 0;
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    // eslint-disable-next-line no-await-in-loop
+    last = await fetchDomainUrlsOnce(url, headers, olog, pageSize, attempt, maxAttempts);
+    if (last.ok || !last.retryable) {
+      break;
+    }
+    if (attempt < maxAttempts) {
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(backoffMs * attempt);
+    }
+  }
+  return { ...last, attempts: attempt };
 }
 
 /**
@@ -433,14 +498,18 @@ export async function loadCitedUrlsFromSemrush({
   });
   await notify(':satellite: Querying `domain-urls` (all hosts, all platforms) in a single request...');
 
-  const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE);
+  const result = await fetchDomainUrls(url, headers, olog, PAGE_SIZE, {
+    maxAttempts: SEMRUSH_MAX_FETCH_ATTEMPTS,
+    backoffMs: resolveRetryBackoffMs(env),
+  });
   if (!result.ok) {
-    olog.warn('data_acquisition_bp_data_semrush_read', 'domain-urls request failed; using legacy fallback', {
-      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), reason: 'domain_urls_failed', outcome: OUTCOME.DEGRADED,
+    olog.warn('data_acquisition_bp_data_semrush_read', `domain-urls request failed after ${result.attempts} attempt(s); using DRS/BP fallback`, {
+      peer: PEER.SEMRUSH, direction: 'inbound', orgId: spaceCatId, durationMs: elapsed(), attempts: result.attempts, reason: 'domain_urls_failed', outcome: OUTCOME.DEGRADED,
     });
-    await notify(':x: `domain-urls` request failed — falling back to the legacy source.');
+    await notify(`:x: Semrush \`domain-urls\` call didn't go through after ${result.attempts} attempt(s) — routing to the DRS/BP source.`);
     setDiagnostics({
       fallbackReason: result.authFailure ? 'domain_urls_auth_failed' : 'domain_urls_failed',
+      attempts: result.attempts,
     });
     return null;
   }
