@@ -8,6 +8,10 @@
   [002-logging](002-offsite-structured-logging-taxonomy.md) / [003](003-offsite-event-taxonomy-phase-boundaries.md).
 - **Supersedes:** PR #2872's original design (raw-IMS-token auth on the ASO host), which
   predated the S2S session-token model and no longer loads against `main`.
+- **Partially historical:** §2/§3 (the `enableSemrushWithHardstop` debug flag) were **removed**
+  once url-prompts was confirmed working end-to-end in production across cited/youtube/reddit —
+  see the "Removed" note under Consequences. Kept below for historical context; the flag, the
+  hardstop, and their propagation through the trigger chain no longer exist in the code.
 
 ## Context
 
@@ -75,7 +79,12 @@ resolved Mystique URL limit, so enrichment fans out over exactly the set that wi
 dispatched — a run scoped to fewer URLs no longer issues token-bearing requests for URLs that
 get dropped downstream.
 
-### 2. Enrichment gating: `enableSemrush` OR `enableSemrushWithHardstop`
+### 2. Enrichment gating: `enableSemrush` OR `enableSemrushWithHardstop` *(historical — removed)*
+
+> **Removed** in the LLMO-6712 cleanup once url-prompts was confirmed working across all three
+> analysis audits in production (see Consequences). Enrichment today runs only on plain
+> `enableSemrush`. Kept below for the historical record of why the debug flag existed and how it
+> was gated.
 
 Enrichment runs for an analysis audit when **either** Slack flag is set on the run:
 
@@ -98,7 +107,9 @@ no-URLs-yet self-heal loop (analysis → `requestOffsiteScrape` → `offsite-bra
 hardstop itself only ever fires in the three analysis handlers; the orchestrator and DRS-status
 handler merely forward the flag.
 
-### 3. `enableSemrushWithHardstop` is a debug hardstop, reported as a failed audit
+### 3. `enableSemrushWithHardstop` is a debug hardstop, reported as a failed audit *(historical — removed)*
+
+> **Removed** along with §2 — see Consequences. The mechanism described below no longer exists.
 
 After enrichment, the runner returns `buildSemrushDebugHaltResult(...)` — a `success:false`
 result carrying `reason: 'semrush_debug_halt'` and the enriched `storeData`. The Mystique
@@ -149,10 +160,10 @@ Mystique payload path applies its own independent cap, so this only affects what
 
 - **Duplicate the S2S auth flow inside the url-prompts loader.** Rejected: a second token cache
   would double-mint per org and drift from ADR 002's host/prefix/eviction fixes.
-- **Add an `OFFSITE_..._URL_PROMPTS_ENABLED` env var (OR'd with the Slack flag).** Rejected for
-  now: with the debug hardstop coupled to "Semrush enabled", a fleet-wide env flag would stop
-  every analysis before Mystique. Revisit when url-prompts graduates from debug to a real
-  always-on enrichment (at which point the hardstop is removed and an env gate makes sense).
+- **Add an `OFFSITE_..._URL_PROMPTS_ENABLED` env var (OR'd with the Slack flag).** Rejected while
+  the hardstop existed (a fleet-wide env flag would have stopped every analysis before Mystique).
+  Still not added post-removal — `enableSemrush` remains a per-run Slack override only; revisit if
+  url-prompts needs fleet-wide always-on enablement.
 - **Per-URL success/failure logs.** Rejected: too noisy at 50 URLs/run; the aggregate summary
   plus the `start` sample-URL line give enough to debug routing and success rate.
 - **A separate url-prompts timeout env var.** Rejected in favor of one shared override
@@ -161,29 +172,43 @@ Mystique payload path applies its own independent cap, so this only affects what
   still tunes both. One knob to reason about, without forcing the same default on two very
   different call shapes.
 
-## Operational note
+## Operational notes
 
-A sustained run of `reason=session_token_auth_failed` (401/403 on the S2S login exchange) is
-**not** transient — it means the consumer registration lost `brand:read` or the token's `tenants`
-claim stopped naming the org, and every affected run will silently fall back (domain-urls → legacy;
-url-prompts → no prompts) until it's fixed. Worth an ops alert on that reason code for the
-`data_acquisition_bp_data_semrush_read` / `data_acquisition_url_prompts_read` events, distinct from
-the transient `session_token_failed`.
+**Session-token auth failure is not transient.** A sustained run of `reason=session_token_auth_failed`
+(401/403 on the S2S login exchange) means the consumer registration lost `brand:read` or the
+token's `tenants` claim stopped naming the org, and every affected run will silently fall back
+(domain-urls → legacy; url-prompts → no prompts) until it's fixed. Worth an ops alert on that
+reason code for the `data_acquisition_bp_data_semrush_read` / `data_acquisition_url_prompts_read`
+events, distinct from the transient `session_token_failed`.
+
+**`urlsWithPrompts=0` with every request `ok` usually means a stale URL store, not a bug.**
+Directly triggering an analysis audit (`youtube-analysis`, etc.) via Slack enriches whatever URLs
+are already sitting in the URL store — it does **not** call `domain-urls` itself. Only
+`offsite-brand-presence` (and only when Semrush is enabled for that run — the env var or an
+explicit `enableSemrush:true` override) writes fresh URLs into the store. The store-write path is
+append-only for URLs it already knows about (`if (existingUrlSet.has(entry.url)) { return
+entry.url; }` — a pure skip, no timestamp/citations refresh), and `youtube-analysis` reads
+`createdAt desc`. So a URL that keeps recurring as top-cited run after run can sit in the store
+indefinitely with its **original** `createdAt`, while Semrush's citation activity for it has moved
+on — its citations may no longer fall inside url-prompts' rolling ~2-week query window, even
+though the URL is well-formed and the endpoint/auth/brand are all healthy. Diagnosed live on
+LLMO-6712: a `youtube-analysis` run direct-triggered via Slack showed `tried=50 ok=50 non2xx=0
+errors=0 urlsWithPrompts=0`; re-triggering `offsite-brand-presence` (`enableSemrush:true`) first —
+to refresh the store with current top-cited URLs — then re-running `youtube-analysis` produced
+`urlsWithPrompts=37`. **Fix when this shows up:** trigger `offsite-brand-presence` (with Semrush
+enabled) for the site first, then the analysis audit, rather than the analysis audit alone.
 
 ## Consequences
 
-- Turning on `enableSemrushWithHardstop` for a run makes that run a **failed audit by design**
-  with no Mystique output — dashboards must read `reason=semrush_debug_halt` to tell it apart
-  from a real failure. It is a debugging lever, not a steady-state mode.
-- The url-prompts loader and the `domain-urls` loader now share auth, cache, base-URL, and
-  timeout resolution; a change to any of those affects both (intended).
+- The url-prompts loader and the `domain-urls` loader share auth, cache, base-URL, and timeout
+  resolution; a change to any of those affects both (intended).
 - The api-service `getUrlPrompts` service layer is flagged POC (unit tests deferred) though the
-  endpoint is live-verified — the hardstop debug path exists precisely to validate it before
-  broad enablement.
-- **Planned removal (tracked in this story, LLMO-6712).** Once url-prompts is confirmed working
-  across all audits, a **follow-up cleanup PR under LLMO-6712** removes the `enableSemrushWithHardstop`
-  debug flag and `buildSemrushDebugHaltResult` (its whole thread through the trigger chain), the
-  same way ADR 002's `domain-urls` hard-stop was removed after validation. Until then the
-  `success:false` / `reason=semrush_debug_halt` signal is deliberate and short-lived. The audit
-  framework has no first-class "skipped" terminal state, which is why the debug halt reuses
-  `success:false` rather than a dedicated status.
+  endpoint is now live-verified across all three analysis audits (see the operational note above).
+- **Removed (LLMO-6712 cleanup, was "Planned removal" above).** Once url-prompts was confirmed
+  working across cited/youtube/reddit in production, the `enableSemrushWithHardstop` debug flag,
+  `resolveEnableSemrushWithHardstop`, and `buildSemrushDebugHaltResult` — and their propagation
+  through `requestOffsiteScrape` / `scheduleDrsStatusPoll` / `drs-status-handler` /
+  `triggerAnalysisAudits` / the three analysis handlers — were deleted, the same way ADR 002's
+  `domain-urls` hard-stop was removed after its own validation. Enrichment today gates solely on
+  `enableSemrush` (no hardstop path exists); a run enriches and proceeds to Mystique normally.
+  §2/§3 above are retained as historical record of the removed design.

@@ -45,3 +45,36 @@ export function youtubeVideoId(rawUrl) {
   }
   return null;
 }
+
+/**
+ * Normalizes a YouTube URL by keeping only essential identifiers, PRESERVING the URL form.
+ * - `/watch?v=<id>&…` → `${origin}/watch?v=<id>` (keep only `v=`, drop other query params)
+ * - other YouTube URLs (`youtu.be`, shorts, channels) → `${origin}${pathname}` (query stripped)
+ *
+ * The host/scheme/short-vs-watch form is deliberately NOT rewritten to a single canonical form:
+ * Semrush's `url-prompts` keys prompts on the exact `CBF_source` string it returned from
+ * `domain-urls`, which may be either the `watch` or the `youtu.be` form — preserving whatever
+ * came from the source keeps that exact match intact. The two forms of the same video (when
+ * both appear) are reconciled by video id at dedupe time instead (see {@link youtubeVideoId} and
+ * its use in the domain-urls loader), not by rewriting one form into the other.
+ *
+ * Shared by both call sites that classify/store offsite URLs
+ * (`offsite-brand-presence-enrichment.js`'s legacy PostgREST/SharePoint path and
+ * `offsite-brand-presence/handler.js`'s Semrush `domain-urls` path) so the one rule lives in one
+ * place.
+ *
+ * @param {URL} parsed - Parsed URL object (already known to be a `youtube.com`/`youtu.be` host).
+ * @returns {string} Normalized URL
+ */
+export function normalizeYoutubeUrl(parsed) {
+  const { pathname } = parsed;
+
+  if (pathname.startsWith('/watch')) {
+    const videoId = parsed.searchParams.get('v');
+    if (videoId) {
+      return `${parsed.origin}/watch?v=${videoId}`;
+    }
+  }
+
+  return `${parsed.origin}${pathname}`;
+}

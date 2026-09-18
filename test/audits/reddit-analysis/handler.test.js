@@ -302,47 +302,6 @@ describe('Reddit Analysis Handler', function () {
       expect(mockEnrichUrlsWithSemrushPrompts).to.have.been.calledWithMatch({ limit: 3 });
     });
 
-    it('with enableSemrushWithHardstop:true, enriches then hardstops before Mystique (failed audit)', async () => {
-      mockEnrichUrlsWithSemrushPrompts.resolves([
-        { ...mockUrls[0], isUrlFromSemrush: true, prompts: ['p1', 'p2'] },
-        { ...mockUrls[1], isUrlFromSemrush: true },
-      ]);
-
-      const result = await redditAnalysisHandler.default.runner(
-        baseURL,
-        context,
-        mockSite,
-        { messageData: { enableSemrushWithHardstop: 'true' } },
-      );
-
-      expect(mockEnrichUrlsWithSemrushPrompts).to.have.been.called;
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.reason).to.equal('semrush_debug_halt');
-      expect(result.auditResult.storeData.urls[0].isUrlFromSemrush).to.be.true;
-      expect(result.auditResult.storeData.urls[0].prompts).to.deep.equal(['p1', 'p2']);
-      // Debug hardstop short-circuits before any downstream dispatch (Mystique post-processor
-      // also skips on success:false).
-      expect(context.sqs.sendMessage).to.not.have.been.called;
-    });
-
-    it('runs enrichment AND hardstops when both flags are set', async () => {
-      mockEnrichUrlsWithSemrushPrompts.resolves([
-        { ...mockUrls[0], isUrlFromSemrush: true, prompts: ['p'] },
-      ]);
-
-      const result = await redditAnalysisHandler.default.runner(
-        baseURL,
-        context,
-        mockSite,
-        { messageData: { enableSemrush: 'true', enableSemrushWithHardstop: 'true' } },
-      );
-
-      expect(mockEnrichUrlsWithSemrushPrompts).to.have.been.called;
-      expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.reason).to.equal('semrush_debug_halt');
-      expect(context.sqs.sendMessage).to.not.have.been.called;
-    });
-
     it('should set config.enableBrandProfile on auditResult from messageData.enableBrandProfile', async () => {
       const result = await redditAnalysisHandler.default.runner(
         baseURL,
