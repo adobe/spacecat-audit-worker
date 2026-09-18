@@ -164,6 +164,7 @@ describe('CDN Analysis Handler', () => {
       getBaseURL: sandbox.stub().returns('https://example.com'),
       getConfig: sandbox.stub().returns({
         getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-adobe-dev' }),
+        getLlmoCdnlogsFilter: () => undefined,
       }),
       getOrganizationId: sandbox.stub().returns('test-org-id'),
       getId: sandbox.stub().returns('test-site-id'),
@@ -183,7 +184,10 @@ describe('CDN Analysis Handler', () => {
         },
         athenaClient: {
           execute: sandbox.stub().resolves(),
-          query: sandbox.stub().rejects(new Error('Table does not exist')),
+          // Defaults to "site filter confirmed" (a matching row exists) so existing
+          // tests exercise the filtered aggregation path; override per-test to
+          // resolve([]) to exercise the unfiltered fallback (see check-site-filter).
+          query: sandbox.stub().resolves([{ host: 'example.com' }]),
         },
         dataAccess: {
           Organization: {
@@ -221,9 +225,129 @@ describe('CDN Analysis Handler', () => {
       expect(deleteWasCalled).to.be.false;
     });
 
+    it('does not apply or probe the site host filter when the kill switch is off (default)', async () => {
+      // No CDN_AGGREGATION_HOST_FILTER_ENABLED set - this must be a total no-op:
+      // no Athena probe spent, and aggregation stays exactly as it was pre-PR.
+      await cdnLogsAnalysisRunner('https://example.com', context, site);
+
+      const executeCalls = context.athenaClient.execute.getCalls();
+      const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data'));
+
+      // athenaClient.query is also used by shouldRecreateTable's schema checks,
+      // so assert specifically that no site-filter probe ran, not that the
+      // client was never called at all.
+      const probeCalls = context.athenaClient.query.getCalls()
+        .filter((call) => call.args[2]?.includes('Check site filter match'));
+      expect(probeCalls).to.have.length(0);
+      expect(aggregatedCall.args[0]).to.not.include('REGEXP_LIKE(host,');
+      expect(aggregatedCall.args[0]).to.include('  TRUE');
+    });
+
+    it('applies the site host filter at aggregation time once the probe confirms a match', async () => {
+      context.env.CDN_AGGREGATION_HOST_FILTER_ENABLED = 'true';
+      // A real check-site-filter.sql probe is `SELECT 1 ... LIMIT 1`, so a
+      // matching row looks like `{ _col0: 1 }`, not a named business column.
+      context.athenaClient.query.resolves([{ _col0: 1 }]);
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site);
+
+      const executeCalls = context.athenaClient.execute.getCalls();
+      const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data'));
+      const referralCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated referral data'));
+
+      // Probe runs once per provider per run (single fastly provider here) -
+      // scope to the probe's own description since athenaClient.query is also
+      // used by shouldRecreateTable's schema checks.
+      const probeCalls = context.athenaClient.query.getCalls()
+        .filter((call) => call.args[2]?.includes('Check site filter match'));
+      expect(probeCalls).to.have.length(1);
+      expect(aggregatedCall.args[0]).to.include('REGEXP_LIKE(host,');
+      // C1 regression guard: the referral insert must reference the same
+      // canonical columns the filter can touch, not just host/x_forwarded_host.
+      expect(referralCall.args[0]).to.include('raw_normalized');
+    });
+
+    it('falls back to unfiltered aggregation when the probe finds no matching host (site not yet confirmed)', async () => {
+      context.env.CDN_AGGREGATION_HOST_FILTER_ENABLED = 'true';
+      context.athenaClient.query.resolves([]);
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site);
+
+      const executeCalls = context.athenaClient.execute.getCalls();
+      const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data'));
+      const referralCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated referral data'));
+
+      // The real per-site REGEXP_LIKE filter must not be baked into the query -
+      // instead the tautology keeps every row, preserving the old host-agnostic
+      // aggregation behavior until the host is confirmed by a future probe.
+      expect(aggregatedCall.args[0]).to.not.include('REGEXP_LIKE(host,');
+      expect(aggregatedCall.args[0]).to.include('  TRUE');
+      expect(referralCall.args[0]).to.include('TRUE');
+
+      // Elevated to warn: this is the only signal ops has that a site is
+      // running unfiltered, since the fallback also mutes the "aggregation
+      // empty" alarm for this site (it never returns empty by design).
+      expect(context.log.warn).to.have.been.calledWithMatch(
+        /site filter matched no raw rows.*aggregating without host filter/,
+      );
+    });
+
+    it('degrades to unfiltered aggregation and warns when the probe itself fails, instead of aborting the provider', async () => {
+      context.env.CDN_AGGREGATION_HOST_FILTER_ENABLED = 'true';
+      context.athenaClient.query.rejects(new Error('Athena throttled'));
+
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site);
+
+      // A transient probe failure must not fail the whole iteration - the
+      // inserts still run, just unfiltered, same as a confirmed non-match.
+      expect(result.auditResult.providers).to.be.an('array').with.length.greaterThan(0);
+      const executeCalls = context.athenaClient.execute.getCalls();
+      const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data'));
+      expect(aggregatedCall.args[0]).to.not.include('REGEXP_LIKE(host,');
+      expect(context.log.warn).to.have.been.calledWithMatch(
+        /site filter probe failed.*Athena throttled/,
+      );
+    });
+
+    it('exercises the referral insert for a path-scoped base URL through a confirmed filter (C1 regression guard)', async () => {
+      context.env.CDN_AGGREGATION_HOST_FILTER_ENABLED = 'true';
+      context.athenaClient.query.resolves([{ _col0: 1 }]);
+      site.getBaseURL.returns('https://example.com/blog');
+
+      await cdnLogsAnalysisRunner('https://example.com/blog', context, site);
+
+      const executeCalls = context.athenaClient.execute.getCalls();
+      const referralCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated referral data'));
+
+      // buildSiteFilters emits a REGEXP_LIKE(url, ...) clause for a path-scoped
+      // base URL - this must resolve against raw_normalized's own `url` column,
+      // not throw COLUMN_NOT_FOUND against a hosts/base CTE that never had one.
+      expect(referralCall.args[0]).to.include('REGEXP_LIKE(url,');
+    });
+
+    it('exercises the referral insert for a custom cdnlogsFilter targeting a non-host key (C1 regression guard)', async () => {
+      context.env.CDN_AGGREGATION_HOST_FILTER_ENABLED = 'true';
+      context.athenaClient.query.resolves([{ _col0: 1 }]);
+      site.getConfig.returns({
+        getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-adobe-dev' }),
+        getLlmoCdnlogsFilter: () => [{ key: 'user_agent', value: ['SomeBot'], type: 'include' }],
+      });
+
+      await cdnLogsAnalysisRunner('https://example.com', context, site);
+
+      const executeCalls = context.athenaClient.execute.getCalls();
+      const referralCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated referral data'));
+
+      // A custom filter on user_agent must resolve in every CTE the clause
+      // lands in, not just the ones that historically only carried host.
+      expect(referralCall.args[0]).to.include('user_agent');
+      expect(referralCall.args[0]).to.include('SomeBot');
+    });
+
     it('returns error when no CDN bucket found', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => null,
+        getLlmoCdnlogsFilter: () => undefined,
       });
 
       context.env = {};
@@ -753,15 +877,15 @@ describe('CDN Analysis Handler', () => {
       const aggregatedCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated data for byocdn-other'));
       const referralCall = executeCalls.find((call) => call.args[2]?.includes('Insert aggregated referral data for byocdn-other'));
 
-      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NOT NULL");
-      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
-      expect(aggregatedCall.args[0]).to.include("NOT REGEXP_LIKE(url_extract_path(COALESCE(url, ''))");
-      expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(url_extract_path(COALESCE(url, '')), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|llms(-full)?\\.txt|sitemap)')");
+      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(content_type), '') IS NOT NULL");
+      expect(aggregatedCall.args[0]).to.include("NULLIF(trim(content_type), '') IS NULL");
+      expect(aggregatedCall.args[0]).to.include("NOT REGEXP_LIKE(COALESCE(url, '')");
+      expect(aggregatedCall.args[0]).to.include("REGEXP_LIKE(COALESCE(url, ''), '(?i)(\\.htm|\\.pdf|\\.md|robots\\.txt|llms(-full)?\\.txt|sitemap)')");
       // Adobe internal/proxied user agents must be filtered out at ingestion
-      expect(aggregatedCall.args[0]).to.include("AND NOT REGEXP_LIKE(request_user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
+      expect(aggregatedCall.args[0]).to.include("AND NOT REGEXP_LIKE(user_agent, '(?i)(Tokowaka|Spacecat|AdobeEdgeOptimize)')");
 
-      expect(referralCall.args[0]).to.include("lower(response_content_type) LIKE 'text/html%'");
-      expect(referralCall.args[0]).to.include("NULLIF(trim(response_content_type), '') IS NULL");
+      expect(referralCall.args[0]).to.include("lower(content_type) LIKE 'text/html%'");
+      expect(referralCall.args[0]).to.include("NULLIF(trim(content_type), '') IS NULL");
       expect(referralCall.args[0]).to.include("NOT REGEXP_LIKE(url_extract_path(COALESCE(url, ''))");
     });
 
@@ -1073,6 +1197,7 @@ describe('CDN Analysis Handler', () => {
           bucketName: 'cdn-logs-adobe-dev',
           region: 'eu-west-1',
         }),
+        getLlmoCdnlogsFilter: () => undefined,
       });
 
       const auditContext = {
@@ -1090,6 +1215,7 @@ describe('CDN Analysis Handler', () => {
     it('handles both orgId and imsOrgId being empty', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-test', orgId: '' }),
+        getLlmoCdnlogsFilter: () => undefined,
       });
       site.getOrganizationId.returns(null);
 
@@ -1102,6 +1228,7 @@ describe('CDN Analysis Handler', () => {
     it('handles empty getLlmoCdnBucketConfig config', async () => {
       site.getConfig.returns({
         getLlmoCdnBucketConfig: () => null,
+        getLlmoCdnlogsFilter: () => undefined,
       });
 
       const result = await cdnLogsAnalysisRunner('https://example.com', context, site);

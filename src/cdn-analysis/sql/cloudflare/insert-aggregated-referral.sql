@@ -1,20 +1,53 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
-WITH hosts AS (
-  -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
-  SELECT DISTINCT ClientRequestHost AS host
+WITH raw_normalized AS (
+  -- Exposes the full canonical column set (matching the aggregated table's
+  -- schema: url, user_agent, referer, host, cdn_provider, x_forwarded_host)
+  -- so siteFilterClause - which can reference any of buildSiteFilters'
+  -- ALLOWED_FILTER_KEYS, including a path-derived url check for base URLs
+  -- with a path - always resolves, in every CTE that applies it.
+  -- `url` here is path-only (matching the canonical/aggregated schema
+  -- buildSiteFilters' path regex expects); `url_with_query` keeps
+  -- ClientRequestURI as-is for the referral logic's utm extraction below.
+  SELECT
+    url_extract_path(ClientRequestURI) AS url,
+    ClientRequestURI            AS url_with_query,
+    ClientRequestUserAgent      AS user_agent,
+    ClientRequestReferer        AS referer_raw,
+    try(url_extract_host(ClientRequestReferer)) AS referer,
+    ClientRequestHost           AS host,
+    '{{serviceProvider}}' AS cdn_provider,
+    COALESCE(ClientRequestHost, '') AS x_forwarded_host,
+    EdgeResponseContentType     AS content_type
   FROM {{database}}.{{rawTable}}
   WHERE date = '{{year}}{{month}}{{day}}'
 ),
 
+hosts AS (
+  -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
+  SELECT DISTINCT host
+  FROM raw_normalized
+  WHERE
+    -- scope known-first-party hosts to this site; the raw path can be shared
+    -- across sites, so an unscoped list would treat another site's host as
+    -- first-party and wrongly drop real referral traffic from it.
+    {{siteFilterClause}}
+),
+
 base AS (
   SELECT
-    ClientRequestURI            AS url,
-    ClientRequestHost           AS host,
-    ClientRequestReferer        AS referer_raw,
-    ClientRequestUserAgent      AS user_agent,
-    EdgeResponseContentType     AS content_type
-  FROM {{database}}.{{rawTable}}
-  WHERE date = '{{year}}{{month}}{{day}}'
+    url_with_query AS url,
+    host,
+    referer_raw,
+    user_agent,
+    content_type
+  FROM raw_normalized
+  WHERE
+    -- restrict to this site's own traffic; the raw path can be shared by
+    -- multiple sites under the same org/CDN, so without this every site
+    -- sharing the path would aggregate every other site's rows too.
+    -- (evaluated against raw_normalized's path-only `url`, not the
+    -- path+query value projected above as this CTE's own `url`.)
+    {{siteFilterClause}}
 ),
 
 referrals_raw AS (
@@ -39,7 +72,7 @@ referrals_raw AS (
       ) THEN 'email'
       ELSE NULL
     END AS tracking_param,
-    
+
     -- device bucket from User-Agent
     CASE
       WHEN regexp_like(coalesce(user_agent, ''),
@@ -96,8 +129,8 @@ referrals_raw AS (
     )
 )
 
-SELECT 
-  url_extract_path(url) as url,
+SELECT
+  url,
   host,
   referrer,
   utm_source,
@@ -107,7 +140,7 @@ SELECT
   date,
   cdn_provider,
   COALESCE(host, '') as x_forwarded_host,
-  
+
   -- Add partition columns as regular columns
   '{{year}}' AS year,
   '{{month}}' AS month,

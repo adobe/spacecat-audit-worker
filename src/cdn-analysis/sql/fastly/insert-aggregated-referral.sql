@@ -1,7 +1,25 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
--- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
-WITH hosts AS (
-  SELECT DISTINCT host
+WITH raw_normalized AS (
+  -- Exposes the full canonical column set (matching the aggregated table's
+  -- schema: url, user_agent, referer, host, cdn_provider, x_forwarded_host)
+  -- so siteFilterClause - which can reference any of buildSiteFilters'
+  -- ALLOWED_FILTER_KEYS, including a path-derived url check for base URLs
+  -- with a path - always resolves, in every CTE that applies it.
+  -- `url` here is path-only (matching the canonical/aggregated schema
+  -- buildSiteFilters' path regex expects); `url_with_query` keeps the raw
+  -- `url` field (path+query) for the referral logic's utm extraction below.
+  -- Explicit column list (not SELECT *) so this doesn't silently collide if
+  -- the raw schema ever adds its own host/x_forwarded_host column.
+  SELECT
+    url_extract_path(url) AS url,
+    url AS url_with_query,
+    request_user_agent AS user_agent,
+    request_referer AS referer_raw,
+    try(url_extract_host(request_referer)) AS referer,
+    host,
+    '{{serviceProvider}}' AS cdn_provider,
+    COALESCE(request_x_forwarded_host, '') AS x_forwarded_host,
+    response_content_type AS content_type
   FROM {{database}}.{{rawTable}}
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
@@ -9,11 +27,38 @@ WITH hosts AS (
     {{hourFilter}}
 ),
 
+hosts AS (
+  SELECT DISTINCT host
+  FROM raw_normalized
+  WHERE
+    -- scope known-first-party hosts to this site; the raw path can be shared
+    -- across sites, so an unscoped list would treat another site's host as
+    -- first-party and wrongly drop real referral traffic from it.
+    {{siteFilterClause}}
+),
+
+base AS (
+  SELECT
+    url_with_query AS url,
+    host,
+    referer_raw,
+    user_agent,
+    content_type
+  FROM raw_normalized
+  WHERE
+    -- restrict to this site's own traffic; the raw path can be shared by
+    -- multiple sites under the same org/CDN, so without this every site
+    -- sharing the path would aggregate every other site's rows too.
+    -- (evaluated against raw_normalized's path-only `url`, not the
+    -- path+query value projected above as this CTE's own `url`.)
+    {{siteFilterClause}}
+),
+
 referrals_raw AS (
   SELECT
     url,
     host,
-    try(url_extract_host(request_referer)) AS referrer,
+    try(url_extract_host(referer_raw)) AS referrer,
     url_extract_parameter(url, 'utm_source') AS utm_source,
     url_extract_parameter(url, 'utm_medium') AS utm_medium,
 
@@ -31,27 +76,22 @@ referrals_raw AS (
       ) THEN 'email'
       ELSE NULL
     END AS tracking_param,
-    
+
     -- device bucket from User-Agent
     CASE
-      WHEN regexp_like(coalesce(request_user_agent, ''),
+      WHEN regexp_like(coalesce(user_agent, ''),
         '(?i)(mobi|iphone|ipod|ipad|android(?!.*tv)|windows phone|blackberry|bb10|opera mini|fennec|ucbrowser|silk|kindle|playbook|tablet)'
       )
         THEN 'mobile'
       ELSE 'desktop'
     END AS device,
-    COALESCE(request_x_forwarded_host, '') as x_forwarded_host,
     '{{serviceProvider}}' AS cdn_provider,
     CONCAT('{{year}}', '-', '{{month}}', '-', '{{day}}') as date
 
-  FROM {{database}}.{{rawTable}}
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
-    {{hourFilter}}
-
+  FROM base
+  WHERE
     -- referral traffic definition
-    AND (
+    (
       -- case 1: IF URL contains utm_source OR utm_medium
       (
         (url_extract_parameter(url, 'utm_source') IS NOT NULL AND url_extract_parameter(url, 'utm_source') <> '')
@@ -69,16 +109,16 @@ referrals_raw AS (
       -- case 3: IF cdn log contains external referrer (not one of first party hosts)
       OR (
         -- NULL-safe: a NULL in the host set makes NOT IN drop ALL external referrals (SQL three-valued logic)
-        request_referer IS NOT NULL AND try(url_extract_host(request_referer)) NOT IN (SELECT host FROM hosts WHERE host IS NOT NULL AND host <> '')
+        referer_raw IS NOT NULL AND try(url_extract_host(referer_raw)) NOT IN (SELECT host FROM hosts WHERE host IS NOT NULL AND host <> '')
       )
     )
 
     -- only count HTML page views
-    AND response_content_type LIKE 'text/html%'
+    AND content_type LIKE 'text/html%'
 
     -- basic filtering on user_agent for bots, crawlers, programmatic clients
     AND NOT REGEXP_LIKE(
-      COALESCE(request_user_agent, ''),
+      COALESCE(user_agent, ''),
       '(?i)(
          bot|crawler|crawl|spider|slurp|archiver|fetch|monitor|pingdom|preview|scanner|scrapy|httpclient|urlgrabber|
          ahrefs|semrush|mj12bot|dotbot|rogerbot|seznambot|linkdex|blexbot|screaming frog|
@@ -90,7 +130,7 @@ referrals_raw AS (
     )
 )
 
-SELECT 
+SELECT
   url_extract_path(url) as url,
   host,
   referrer,
@@ -100,8 +140,8 @@ SELECT
   device,
   date,
   cdn_provider,
-  x_forwarded_host,
-  
+  COALESCE(host, '') as x_forwarded_host,
+
   -- Add partition columns as regular columns
   '{{year}}' AS year,
   '{{month}}' AS month,
