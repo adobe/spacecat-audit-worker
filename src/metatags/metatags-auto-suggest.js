@@ -13,8 +13,48 @@
 import { GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { isObject } from '@adobe/spacecat-shared-utils';
 import { getPresignedUrl } from '../utils/getPresignedUrl.js';
+import { TAG_LENGTHS } from './constants.js';
 
 const EXPIRY_IN_SECONDS = 25 * 60;
+const TAG_NAMES = ['title', 'description', 'h1'];
+
+/**
+ * Returns true when an AI suggestion's length falls in the range that clears the metatags
+ * length audit (no issue emitted). Mirrors seo-checks.checkForTagsLength, which only treats a
+ * tag as healthy when idealMinLength <= length <= idealMaxLength. A tag without an
+ * idealMinLength (h1) has no lower bound beyond being non-empty. Shipping a suggestion outside
+ * this range makes the next audit run re-flag it (SITES-42023).
+ * @param {string} tagName - title, description or h1.
+ * @param {string} suggestion - The AI-generated suggestion text.
+ * @returns {boolean} Whether the suggestion length would clear the audit.
+ */
+export function isSuggestionLengthValid(tagName, suggestion) {
+  const limits = TAG_LENGTHS[tagName];
+  /* c8 ignore next 3 - defensive: only known tag names (title/description/h1) reach here */
+  if (!limits) {
+    return true;
+  }
+  const length = suggestion?.length ?? 0;
+  const min = limits.idealMinLength ?? 1;
+  const max = limits.idealMaxLength;
+  return length >= min && length <= max;
+}
+
+/**
+ * Calls Genvar once and validates the response shape.
+ * @throws when the response is not an object.
+ */
+async function generateGenvarSuggestions(context, requestBody) {
+  const genvarClient = GenvarClient.createFrom(context);
+  const response = await genvarClient.generateSuggestions(
+    JSON.stringify(requestBody),
+    context.env.GENVAR_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/metatags',
+  );
+  if (!isObject(response)) {
+    throw new Error(`Invalid response received from Genvar API: ${JSON.stringify(response)}`);
+  }
+  return response;
+}
 
 export default async function metatagsAutoSuggest(allTags, context, site, options = {
   forceAutoSuggest: false,
@@ -52,26 +92,27 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
   };
   let responseWithSuggestions;
   try {
-    const genvarClient = GenvarClient.createFrom(context);
-    responseWithSuggestions = await genvarClient.generateSuggestions(
-      JSON.stringify(requestBody),
-      context.env.GENVAR_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/metatags',
-    );
-    if (!isObject(responseWithSuggestions)) {
-      throw new Error(`Invalid response received from Genvar API: ${JSON.stringify(responseWithSuggestions)}`);
-    }
+    responseWithSuggestions = await generateGenvarSuggestions(context, requestBody);
   } catch (err) {
     log.error('Error while generating AI suggestions using Genvar', err);
     throw err;
   }
+
   const updatedDetectedTags = {
     ...detectedTags,
   };
   for (const [endpoint, tags] of Object.entries(responseWithSuggestions)) {
-    for (const tagName of ['title', 'description', 'h1']) {
+    for (const tagName of TAG_NAMES) {
       const tagIssueData = tags[tagName];
       if (updatedDetectedTags[endpoint]?.[tagName]
         && tagIssueData?.aiSuggestion && tagIssueData.aiRationale) {
+        // Genvar runs at temperature 0, so re-requesting returns the same text — retrying here
+        // cannot help. When a suggestion is outside the audit's ideal length range we surface it
+        // for Splunk visibility but still ship the best-effort suggestion. The durable fix is the
+        // Genvar service's own regenerate-with-feedback loop (SITES-42023).
+        if (!isSuggestionLengthValid(tagName, tagIssueData.aiSuggestion)) {
+          log.warn(`Genvar meta-tag suggestion for ${tagName} on ${endpoint} is outside the recommended length range (${tagIssueData.aiSuggestion.length} chars); shipping best-effort suggestion. See SITES-42023.`);
+        }
         updatedDetectedTags[endpoint][tagName].aiSuggestion = tagIssueData.aiSuggestion;
         updatedDetectedTags[endpoint][tagName].aiRationale = tagIssueData.aiRationale;
       }
