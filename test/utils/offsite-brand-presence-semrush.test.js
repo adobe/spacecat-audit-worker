@@ -462,7 +462,7 @@ describe('offsite-brand-presence-semrush', function () {
   it('falls back (null) on a network error', async () => {
     fetchStub.rejects(new Error('network down'));
     const diagnostics = {};
-    const result = await run({}, {}, undefined, diagnostics);
+    const result = await run({ OFFSITE_SEMRUSH_RETRY_BACKOFF_MS: '0' }, {}, undefined, diagnostics);
     expect(result).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('domain_urls_failed');
   });
@@ -470,7 +470,7 @@ describe('offsite-brand-presence-semrush', function () {
   it('falls back (null) on a non-2xx response', async () => {
     fetchStub.resolves({ ok: false, status: 500 });
     const diagnostics = {};
-    expect(await run({}, {}, undefined, diagnostics)).to.equal(null);
+    expect(await run({ OFFSITE_SEMRUSH_RETRY_BACKOFF_MS: '0' }, {}, undefined, diagnostics)).to.equal(null);
     expect(diagnostics.fallbackReason).to.equal('domain_urls_failed');
   });
 
@@ -496,7 +496,7 @@ describe('offsite-brand-presence-semrush', function () {
 
   it('handles an empty/unreadable error body on a non-2xx response', async () => {
     fetchStub.resolves({ ok: false, status: 500, text: async () => '' });
-    const result = await run();
+    const result = await run({ OFFSITE_SEMRUSH_RETRY_BACKOFF_MS: '0' });
     expect(result).to.equal(null);
     expect(log.warn.getCalls().some((c) => c.args[0].includes('status=500') && !c.args[0].includes('responseBody='))).to.equal(true);
   });
@@ -517,6 +517,101 @@ describe('offsite-brand-presence-semrush', function () {
       json: async () => { throw new Error('bad json'); },
     });
     expect(await run()).to.equal(null);
+  });
+
+  // --- retry / DRS-BP fallback (LLMO-7671) ---------------------------------
+
+  const ZERO_BACKOFF = { OFFSITE_SEMRUSH_RETRY_BACKOFF_MS: '0' };
+  const okCited = okJson({ urls: [{ url: CITED_URL, citations: 5 }] });
+
+  it('retries a transient network error and succeeds on the second attempt', async () => {
+    fetchStub.onCall(0).rejects(new Error('network blip'));
+    fetchStub.onCall(1).resolves(okCited);
+    const allUrls = await run(ZERO_BACKOFF);
+    expect(fetchStub.callCount).to.equal(2);
+    expect(allUrls.get(CITED_URL)).to.deep.equal({ count: 5, domain: null });
+  });
+
+  it('retries a transient 5xx and succeeds on a later attempt', async () => {
+    fetchStub.onCall(0).resolves({ ok: false, status: 503 });
+    fetchStub.onCall(1).resolves(okCited);
+    const allUrls = await run(ZERO_BACKOFF);
+    expect(fetchStub.callCount).to.equal(2);
+    expect(allUrls.size).to.equal(1);
+  });
+
+  it('retries a 429 rate-limit and succeeds on a later attempt', async () => {
+    fetchStub.onCall(0).resolves({ ok: false, status: 429 });
+    fetchStub.onCall(1).resolves(okCited);
+    const allUrls = await run(ZERO_BACKOFF);
+    expect(fetchStub.callCount).to.equal(2);
+    expect(allUrls.size).to.equal(1);
+  });
+
+  it('gives up after SEMRUSH_MAX_FETCH_ATTEMPTS on a persistent transient failure and falls back (null)', async () => {
+    fetchStub.rejects(new Error('network down'));
+    const diagnostics = {};
+    const result = await run(ZERO_BACKOFF, {}, undefined, diagnostics);
+    expect(result).to.equal(null);
+    expect(fetchStub.callCount).to.equal(mod.SEMRUSH_MAX_FETCH_ATTEMPTS);
+    expect(diagnostics.fallbackReason).to.equal('domain_urls_failed');
+    expect(diagnostics.attempts).to.equal(mod.SEMRUSH_MAX_FETCH_ATTEMPTS);
+  });
+
+  it('posts a Slack progress message naming the attempt count when it routes to DRS/BP', async () => {
+    fetchStub.rejects(new Error('network down'));
+    const onProgress = sandbox.stub().resolves();
+    await run(ZERO_BACKOFF, {}, onProgress);
+    const messages = onProgress.getCalls().map((c) => c.args[0]);
+    expect(messages.some((m) => /didn't go through after 3 attempt\(s\) — routing to the DRS\/BP source/.test(m))).to.equal(true);
+  });
+
+  it('does NOT retry an auth rejection (401) — one attempt, immediate fallback', async () => {
+    fetchStub.resolves({ ok: false, status: 401 });
+    const diagnostics = {};
+    const result = await run(ZERO_BACKOFF, {}, undefined, diagnostics);
+    expect(result).to.equal(null);
+    expect(fetchStub.callCount).to.equal(1);
+    expect(diagnostics.fallbackReason).to.equal('domain_urls_auth_failed');
+    expect(diagnostics.attempts).to.equal(1);
+  });
+
+  it('does NOT retry a non-auth 4xx (400) — one attempt, immediate fallback', async () => {
+    fetchStub.resolves({ ok: false, status: 400 });
+    const diagnostics = {};
+    const result = await run(ZERO_BACKOFF, {}, undefined, diagnostics);
+    expect(result).to.equal(null);
+    expect(fetchStub.callCount).to.equal(1);
+    expect(diagnostics.fallbackReason).to.equal('domain_urls_failed');
+  });
+
+  it('does NOT retry an unparseable body — one attempt', async () => {
+    fetchStub.resolves({
+      ok: true,
+      status: 200,
+      json: async () => { throw new Error('bad json'); },
+    });
+    const result = await run(ZERO_BACKOFF);
+    expect(result).to.equal(null);
+    expect(fetchStub.callCount).to.equal(1);
+  });
+
+  it('waits between retries using the default backoff when the env override is unset', async () => {
+    // env unset -> resolveRetryBackoffMs falls back to DEFAULT_SEMRUSH_RETRY_BACKOFF_MS.
+    // Succeed on the 2nd attempt so exactly one real backoff elapses; assert it waited.
+    fetchStub.onCall(0).rejects(new Error('network blip'));
+    fetchStub.onCall(1).resolves(okCited);
+    const startedAt = Date.now();
+    const allUrls = await run();
+    expect(fetchStub.callCount).to.equal(2);
+    expect(allUrls.size).to.equal(1);
+    expect(Date.now() - startedAt).to.be.at.least(mod.DEFAULT_SEMRUSH_RETRY_BACKOFF_MS);
+  });
+
+  it('treats a negative backoff override as the default (guards resolveRetryBackoffMs)', async () => {
+    fetchStub.resolves(okJson({ urls: [] }));
+    const allUrls = await run({ OFFSITE_SEMRUSH_RETRY_BACKOFF_MS: '-5' });
+    expect(allUrls.size).to.equal(0);
   });
 
   // --- precondition guards (return null) -----------------------------------
@@ -822,10 +917,10 @@ describe('offsite-brand-presence-semrush', function () {
     fetchStub.resolves({ ok: false, status: 500 });
     const onProgress = sandbox.stub().resolves();
 
-    expect(await run({}, {}, onProgress)).to.equal(null);
+    expect(await run({ OFFSITE_SEMRUSH_RETRY_BACKOFF_MS: '0' }, {}, onProgress)).to.equal(null);
 
     const messages = onProgress.getCalls().map((c) => c.args[0]);
-    expect(messages.some((m) => /domain-urls.*request failed/.test(m))).to.equal(true);
+    expect(messages.some((m) => /domain-urls.*didn't go through.*routing to the DRS\/BP source/.test(m))).to.equal(true);
   });
 
   it('logs a warning and does not throw when onProgress rejects', async () => {
