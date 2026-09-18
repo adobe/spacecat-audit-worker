@@ -296,11 +296,16 @@ export async function runAuditAndGenerateSuggestions(context) {
 
   // Per-site V1 -> V2 cutover (Spec 009-04 / ADR-0022): when the META_TAGS opportunity is
   // owned by Mystique's blackboard producer cascade (deliveryConfig.metaTagsEngine=blackboard),
-  // bow out before detection / creation / Mystique dispatch and resolve any pre-existing legacy
-  // META_TAGS opportunity so the flip strands no active rows.
+  // bow out before detection / creation / Mystique dispatch.
+  //
+  // Do NOT resolve the opportunity here (SITES-51620). V1 and V2 share the same
+  // (scopeType='site', scopeId, type) opportunity row, so resolving it on every audit
+  // cycle repeatedly retires the suggestions Mystique's V2 projector just created — the
+  // customer's fixes flip-flop out of the UI between the V2 scan and the next V1 audit.
+  // Post-cutover the V2 projector owns the opportunity lifecycle and reconciles its own
+  // stale suggestions, so V1 must leave the shared row untouched.
   if (isBlackboardEngine(site, 'metaTagsEngine')) {
-    log.info(`[metatags] siteId: ${site.getId()} | bowing out — deliveryConfig.metaTagsEngine=blackboard (Mystique-owned); resolving any legacy meta-tags opportunity, skipping detection/creation/dispatch`);
-    await resolveOpportunityIfNoIssues(site.getId(), auditType, context.dataAccess, log);
+    log.info(`[metatags] siteId: ${site.getId()} | bowing out — deliveryConfig.metaTagsEngine=blackboard (Mystique-owned); skipping detection/creation/dispatch (V2 owns the opportunity lifecycle)`);
     return {
       status: 'complete',
     };

@@ -2638,7 +2638,7 @@ describe('Canonical URL Tests', () => {
         expect(context.log.info).to.have.been.calledWith('[canonical] No scrapeResultPaths found for site test-site-id');
       });
 
-      it('bows out of legacy CANONICAL creation and resolves the legacy canonical opportunity when canonicalEngine=blackboard', async function () {
+      it('bows out of legacy CANONICAL creation WITHOUT resolving the shared canonical opportunity when canonicalEngine=blackboard (SITES-51620)', async function () {
         this.timeout(5000);
         site.getDeliveryConfig = sinon.stub().returns({ canonicalEngine: 'blackboard' });
 
@@ -2714,11 +2714,14 @@ describe('Canonical URL Tests', () => {
 
         await processScrapedContentMocked(testContext);
 
-        // The bow-out log fires and the legacy CANONICAL opportunity is resolved — neither
-        // happens on the normal issues-present path (which would create the CANONICAL row).
+        // The bow-out log fires, but SITES-51620: the bow-out must NOT resolve the shared
+        // (V1/V2) CANONICAL opportunity — post-cutover the V2 projector owns its lifecycle.
+        // No lookup, no status flip, no save, and no suggestion outdating happen here.
         expect(testContext.log.info).to.have.been.calledWithMatch('bowing out of legacy CANONICAL sync');
-        expect(legacyCanonicalOppty.setStatus).to.have.been.calledWith('RESOLVED');
-        expect(legacyCanonicalOppty.save).to.have.been.called;
+        expect(testContext.dataAccess.Opportunity.allBySiteIdAndStatus).to.not.have.been.called;
+        expect(legacyCanonicalOppty.setStatus).to.not.have.been.called;
+        expect(legacyCanonicalOppty.save).to.not.have.been.called;
+        expect(testContext.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
       });
 
       it('should process scraped content and detect canonical issues', async function () {

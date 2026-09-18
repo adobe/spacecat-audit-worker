@@ -776,12 +776,17 @@ export async function processScrapedContent(context) {
 
   // Per-site V1 -> V2 cutover (Spec 009-04 / ADR-0022): when the CANONICAL opportunity is
   // owned by Mystique's blackboard producer cascade (deliveryConfig.canonicalEngine=blackboard),
-  // bow out of the legacy CANONICAL sync and resolve any pre-existing legacy CANONICAL
-  // opportunity so the flip strands no active rows. The Elmo generic-opportunity below is a
-  // separate surface and is intentionally left running.
+  // bow out of the legacy CANONICAL sync. The Elmo generic-opportunity below is a separate
+  // surface and is intentionally left running.
+  //
+  // Do NOT resolve the opportunity here (SITES-51620). V1 and V2 share the same
+  // (scopeType='site', scopeId, type) opportunity row, so resolving it on every audit
+  // cycle repeatedly retires the suggestions Mystique's V2 projector just created — the
+  // customer's fixes flip-flop out of the UI between the V2 scan and the next V1 audit.
+  // Post-cutover the V2 projector owns the opportunity lifecycle and reconciles its own
+  // stale suggestions, so V1 must leave the shared row untouched.
   if (isBlackboardEngine(site, 'canonicalEngine')) {
-    log.info(`[canonical] siteId: ${site.getId()} | bowing out of legacy CANONICAL sync — deliveryConfig.canonicalEngine=blackboard (Mystique-owned)`);
-    await resolveOpportunityIfNoIssues(site.getId(), auditType, context.dataAccess, log);
+    log.info(`[canonical] siteId: ${site.getId()} | bowing out of legacy CANONICAL sync — deliveryConfig.canonicalEngine=blackboard (Mystique-owned); V2 owns the opportunity lifecycle`);
   } else if (sortedSuggestions.length > 0) {
     // Create opportunities and sync suggestions
     log.info(`[canonical] Creating canonical opportunity and syncing ${sortedSuggestions.length} suggestions`);

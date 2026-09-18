@@ -100,11 +100,15 @@ describe('Meta Tags — blackboard bow-out (Spec 009-04 / ADR-0022)', () => {
     expect(context.sqs.sendMessage).to.not.have.been.called;
   });
 
-  it('resolves the pre-existing legacy meta-tags opportunity and outdates only its live suggestions', async () => {
+  it('bows out WITHOUT resolving the shared meta-tags opportunity (SITES-51620)', async () => {
     await runAuditAndGenerateSuggestions(context);
 
-    expect(dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith('site-id', 'NEW');
-    expect(dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnce;
+    // V1 and V2 share the same (scopeType='site', scopeId, type) opportunity row, so the
+    // bow-out must leave it untouched — post-cutover the V2 projector owns the lifecycle.
+    // resolveOpportunityIfNoIssues looks the row up first, so a never-called lookup proves
+    // no status flip and no suggestion outdating can follow.
+    expect(dataAccess.Opportunity.allBySiteIdAndStatus).to.not.have.been.called;
+    expect(dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
   });
 });
 
