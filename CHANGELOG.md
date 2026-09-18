@@ -1,3 +1,10 @@
+# [1.544.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.543.0...v1.544.0) (2026-09-18)
+
+
+### Features
+
+* **offsite-brand-presence:** retry Semrush domain-urls up to 3x befo… ([#2988](https://github.com/adobe/spacecat-audit-worker/issues/2988)) ([fbfcb7a](https://github.com/adobe/spacecat-audit-worker/commit/fbfcb7a5d499255a7d304d348996866a8cdbb3e4))
+
 # [1.543.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.542.2...v1.543.0) (2026-09-17)
 
 
