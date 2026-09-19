@@ -262,6 +262,14 @@ describe('User Agent Patterns', () => {
       // ExternalFetcher performs user-requested retrieval, like the existing *-User chatbot UAs.
       expect(sql).to.include("LIKE '%meta-externalfetcher%' THEN 'Chatbots'");
     });
+
+    it('classifies ChatGPT Atlas media-fetch traffic as Media fetchers (plural, matching every other media-fetcher rule)', () => {
+      const { buildAgentTypeClassificationSQL } = userAgentPatterns;
+      const sql = buildAgentTypeClassificationSQL();
+
+      expect(sql).to.include("LIKE '%chatgpt%atlas%' THEN 'Media fetchers'");
+      expect(sql).to.not.include("THEN 'Media fetcher'");
+    });
   });
 
   describe('buildUserAgentDisplaySQL', () => {
