@@ -11,6 +11,7 @@
  */
 
 import { isValidUrl } from '@adobe/spacecat-shared-utils';
+import { cleanTopicText } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Helpers shared by `lookup-index.js`'s dimension-scoped functions (`indexOpportunityByUrl`, ...
@@ -26,6 +27,11 @@ export const REASON = {
   NO_INDEXABLE_URLS: 'Extraction returned candidates but none were indexable',
   FETCH_SUGGESTIONS_FAILED: 'Failed to fetch suggestions',
   SYNC_URL_INDEX_FAILED: 'Failed to sync the URL index',
+  // Topic dimension (semantic index).
+  EXTRACT_TOPICS_FAILED: 'Failed to extract topics',
+  NO_INDEXABLE_TOPICS: 'Extraction returned topic candidates but none were indexable',
+  EMBED_TOPICS_FAILED: 'Failed to embed topics',
+  SYNC_SEMANTIC_INDEX_FAILED: 'Failed to sync the semantic index',
 };
 
 export function failure(reason, cause) {
@@ -114,4 +120,39 @@ export function sanitizeUrls(candidates) {
     }
   }
   return Array.from(cleaned).slice(0, MAX_URLS_PER_ENTITY);
+}
+
+const MAX_TITLE_LENGTH = 1000;
+const MAX_TOPICS_PER_ENTITY = 500;
+
+/**
+ * Topic-dimension hygiene gate, parallel to `sanitizeUrls` (Decision 9): the topic titles a caller
+ * extracts are scraped/LLM-derived and every survivor ends up embedded and written to a shared,
+ * cross-tenant lookup table, so the gate lives here once rather than in each caller's extractor.
+ *
+ * Per-item hygiene is delegated to `cleanTopicText` (shared from `spacecat-shared-data-access`, so
+ * the read side's `by-topics` request parsing rejects the same junk and de-duplicates on the same
+ * key the writer hashes on). This adds the write-side specifics on top: the `{ id, title }` input
+ * shape, the `MAX_TITLE_LENGTH` bound, the `{ sourceId, text }` output, and the
+ * `MAX_TOPICS_PER_ENTITY` cap. De-dupes on the shared normalized key; keeps the first-seen
+ * `sourceId` per distinct title.
+ *
+ * @param {unknown[]} candidates - raw topic rows (`{ id, title }`) from the opportunity payload
+ * @returns {{sourceId: (string|undefined), text: string}[]} indexable topics, de-duplicated, in
+ *   first-seen order, capped at `MAX_TOPICS_PER_ENTITY`
+ */
+export function sanitizeTopics(candidates) {
+  const seen = new Set();
+  const cleaned = [];
+  for (const candidate of candidates) {
+    const topic = cleanTopicText(candidate?.title, { maxLength: MAX_TITLE_LENGTH });
+    if (topic === null || seen.has(topic.key)) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    seen.add(topic.key);
+    const sourceId = typeof candidate.id === 'string' ? candidate.id : undefined;
+    cleaned.push({ sourceId, text: topic.text });
+  }
+  return cleaned.slice(0, MAX_TOPICS_PER_ENTITY);
 }

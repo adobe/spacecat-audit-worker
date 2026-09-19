@@ -14,7 +14,7 @@ import {
   badRequest, notFound, ok, noContent,
 } from '@adobe/spacecat-shared-http-utils';
 import { syncSuggestions } from '../utils/data-access.js';
-import { indexOffsiteOpportunityByUrl } from '../common/offsite-lookup-index.js';
+import { indexOffsiteOpportunityByUrl, indexOffsiteOpportunityByTopic } from '../common/offsite-lookup-index.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { postMessageOptional, buildAnalysisVisibilityMessage } from '../utils/slack-utils.js';
 import { resolveBrandResultForSite, applyScopeToOpportunity } from '../utils/brand-resolver.js';
@@ -48,6 +48,16 @@ export function getOpportunityUrls(opportunity) {
   const sources = opportunity.getData()?.dashboard?.analytics?.performance
     ?.insights?.content?.sources ?? [];
   return sources.map((source) => source.url);
+}
+
+// YouTube surfaces topics on BOTH the video content and the viewer comments — embed both. Rows of
+// `{ id, title }`; duplicate titles across the two buckets collapse to one vector in the writer.
+export function getOpportunityTopics(opportunity) {
+  const insights = opportunity.getData()?.dashboard?.analytics?.performance?.insights;
+  return [
+    ...(insights?.content?.topics ?? []),
+    ...(insights?.comments?.topics ?? []),
+  ];
 }
 
 export function getSuggestionUrls(suggestion) {
@@ -293,6 +303,15 @@ export default async function handler(message, context) {
       auditType,
       getOpportunityUrls,
       getSuggestionUrls,
+      olog: ologOpp,
+    });
+
+    // Topic dimension of the same funneling phase (semantic index; best-effort, never throws).
+    await indexOffsiteOpportunityByTopic({
+      context,
+      opportunity,
+      auditType,
+      getTitles: getOpportunityTopics,
       olog: ologOpp,
     });
 

@@ -144,11 +144,13 @@ the published version containing them and adds nothing to that package.
 
 ## Out of scope / follow-up
 
-- The Topic and Claim lookup dimensions, and the semantic index they'd write to — specified in the
-  architecture doc, not built here. This integration's shape (entity-scoped functions, a raw
-  submitted/synced result, an `error`-only failure contract) is designed so adding them is additive;
-  whether the audit-event schema needs a `dimension`/`level` field at that point is a decision for
-  then, against a real second dimension to design against (see ADR 006, Decision 7).
+- The Claim lookup dimension, and the semantic index it'd write to — specified in the architecture
+  doc, not built here. This integration's shape (entity-scoped functions, a raw submitted/synced
+  result, an `error`-only failure contract) is designed so adding it is additive; whether the
+  audit-event schema needs a `dimension`/`level` field at that point is a decision for then, against a
+  real second dimension to design against (see ADR 006, Decision 7). **Update:** the **Topic**
+  dimension has since been built additively on this foundation — the audit-worker embeds topic titles
+  and writes the semantic index (`indexOpportunityByTopic`); see ADR 007.
 - Whether "nothing submitted this run" should be surfaced as its own signal (distinct from a
   genuine sync failure) is an open question this integration does not resolve — see ADR 006's
   Consequences.

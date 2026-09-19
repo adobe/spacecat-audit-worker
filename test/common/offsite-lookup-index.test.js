@@ -268,4 +268,152 @@ describe('offsite-lookup-index (offsite integration with the shared foundation)'
     expect(endLine).to.exist;
     expect(endLine).to.include('outcome=success');
   });
+
+  describe('indexOffsiteOpportunityByTopic', () => {
+    const getTitles = () => [{ id: 't1', title: 'Pricing' }];
+    let indexOpportunityByTopicStub;
+    let createFromStub;
+    let embeddingClient;
+    let indexOffsiteOpportunityByTopic;
+
+    const loadTopic = async () => {
+      ({ indexOffsiteOpportunityByTopic } = await esmock('../../src/common/offsite-lookup-index.js', {
+        '../../src/common/lookup-index.js': { indexOpportunityByTopic: indexOpportunityByTopicStub },
+        '@adobe/spacecat-shared-gpt-client': { AzureEmbeddingClient: { createFrom: createFromStub } },
+        '@adobe/spacecat-shared-data-access': { copyEntityVectors: sandbox.stub() },
+      }));
+    };
+
+    const runTopic = () => indexOffsiteOpportunityByTopic({
+      context, opportunity, auditType: 'cited-analysis', getTitles, olog,
+    });
+
+    beforeEach(() => {
+      embeddingClient = { createEmbeddings: sandbox.stub() };
+      createFromStub = sandbox.stub().returns(embeddingClient);
+      indexOpportunityByTopicStub = sandbox.stub().resolves({
+        opportunityId: 'oppty-1',
+        submittedEntry: { entityId: 'oppty-1', sourceType: 'topic', topicCount: 3 },
+        syncedIndexResult: 3,
+      });
+    });
+
+    it('constructs the embedding client and delegates to the foundation with entityType + extractor', async () => {
+      await loadTopic();
+      await runTopic();
+
+      expect(createFromStub).to.have.been.calledOnceWith(context);
+      expect(indexOpportunityByTopicStub).to.have.been.calledOnceWith({
+        context, opportunity, entityType: 'cited-analysis', getTitles, embeddingClient,
+      });
+    });
+
+    it('logs a success outcome with the topic counts, bracketed by the funneling boundary', async () => {
+      await loadTopic();
+      await runTopic();
+
+      const syncLine = logStub.info.getCalls().map((c) => c.args[0])
+        .find((l) => l.includes('event=audit_funneling_index_topic_synced'));
+      expect(syncLine).to.include('outcome=success');
+      expect(syncLine).to.include('submittedTopicCount=3');
+      expect(syncLine).to.include('syncedTopicCount=3');
+      expect(syncLine).to.include('peer=postgres');
+      const startLine = logStub.info.getCalls().map((c) => c.args[0])
+        .find((l) => l.includes('event=audit_funneling_start'));
+      const endLine = logStub.info.getCalls().map((c) => c.args[0])
+        .find((l) => l.includes('event=audit_funneling_end'));
+      expect(startLine).to.exist;
+      expect(endLine).to.exist;
+    });
+
+    it('logs a degraded outcome when the foundation returns an error', async () => {
+      indexOpportunityByTopicStub.resolves({ error: new Error('Failed to embed topics') });
+      await loadTopic();
+      await runTopic();
+
+      const warnLine = logStub.warn.firstCall.args[0];
+      expect(warnLine).to.include('event=audit_funneling_index_topic_synced');
+      expect(warnLine).to.include('outcome=degraded');
+      expect(warnLine).to.include('Failed to embed topics');
+    });
+
+    it('degrades (no throw, no foundation call) when the embedding client cannot be constructed', async () => {
+      createFromStub.throws(new Error('Missing Azure OpenAI embedding deployment name'));
+      await loadTopic();
+      await runTopic();
+
+      expect(indexOpportunityByTopicStub).to.not.have.been.called;
+      const warnLine = logStub.warn.firstCall.args[0];
+      expect(warnLine).to.include('event=audit_funneling_index_topic_synced');
+      expect(warnLine).to.include('outcome=degraded');
+      expect(warnLine).to.include('Embedding client unavailable');
+      // still emits the funneling end boundary
+      const endLine = logStub.info.getCalls().map((c) => c.args[0])
+        .find((l) => l.includes('event=audit_funneling_end'));
+      expect(endLine).to.exist;
+    });
+  });
+
+  describe('copyOffsiteOpportunityTopicVectors', () => {
+    let copyEntityVectorsStub;
+    let copyOffsiteOpportunityTopicVectors;
+    const pgClient = { id: 'pg-client', from: () => {} };
+    const copyArgs = () => ({
+      dataAccess: { services: { postgrestClient: pgClient } },
+      siteId: 'site-1',
+      auditType: 'cited-analysis',
+      fromEntityId: 'evergreen-1',
+      toEntityId: 'snapshot-1',
+      olog,
+    });
+
+    const loadCopy = async () => {
+      ({ copyOffsiteOpportunityTopicVectors } = await esmock('../../src/common/offsite-lookup-index.js', {
+        '@adobe/spacecat-shared-data-access': {
+          copyEntityVectors: copyEntityVectorsStub,
+        },
+        '@adobe/spacecat-shared-gpt-client': { AzureEmbeddingClient: { createFrom: sandbox.stub() } },
+      }));
+    };
+
+    beforeEach(() => {
+      copyEntityVectorsStub = sandbox.stub().resolves(3);
+    });
+
+    it('copies the opportunity vectors to the snapshot and logs the count', async () => {
+      await loadCopy();
+      await copyOffsiteOpportunityTopicVectors(copyArgs());
+
+      expect(copyEntityVectorsStub).to.have.been.calledOnceWith(
+        pgClient,
+        {
+          siteId: 'site-1', fromEntityId: 'evergreen-1', toEntityId: 'snapshot-1',
+        },
+      );
+      const line = logStub.info.getCalls().map((c) => c.args[0])
+        .find((l) => l.includes('event=audit_funneling_index_topic_snapshot_copied'));
+      expect(line).to.include('outcome=success');
+      expect(line).to.include('auditType=cited-analysis');
+      expect(line).to.include('copiedTopicCount=3');
+    });
+
+    it('warns (best-effort) when the postgrest client is unavailable', async () => {
+      await loadCopy();
+      await copyOffsiteOpportunityTopicVectors({ ...copyArgs(), dataAccess: { services: {} } });
+
+      expect(copyEntityVectorsStub).to.not.have.been.called;
+      expect(logStub.warn.firstCall.args[0]).to.include('event=audit_funneling_index_topic_snapshot_copied');
+    });
+
+    it('warns (best-effort, no throw) when the copy fails', async () => {
+      copyEntityVectorsStub.rejects(new Error('copy boom'));
+      await loadCopy();
+      await copyOffsiteOpportunityTopicVectors(copyArgs());
+
+      const warnLine = logStub.warn.firstCall.args[0];
+      expect(warnLine).to.include('event=audit_funneling_index_topic_snapshot_copied');
+      expect(warnLine).to.include('outcome=degraded');
+      expect(warnLine).to.include('copy boom');
+    });
+  });
 });
